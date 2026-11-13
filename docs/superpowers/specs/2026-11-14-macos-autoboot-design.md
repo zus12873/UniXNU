@@ -78,3 +78,10 @@
 ## 留给执行时决定
 
 - FAT 卷大小在 189 到 190 MiB 之间取值，以 mtools 实际能放下全部文件为准。
+
+## 修订（2026-11-14，实施中）
+
+- "全程不执行 `fastboot set_active` 就能保住槽位 a 的 successful 标记"这个前提不成立：`fastboot flash boot_a` 本身就会清掉这个标记，之后每次正常开机扣一次重试（刷入后读到 6 次）。读数和后果记录在 `HANDOFF.md` 第 8 节"槽位重试次数"。
+- 因此上机步骤第 5 步"`slot-successful:a` 和 `slot-retry-count:a` 没变"达不到。
+- 用户 2026-11-14 允许：重试次数快用完时执行 `fastboot set_active a` 补回次数。只限槽位 a，不切换到槽位 b。"不执行 `fastboot set_active`"这一条相应放宽为"不切换槽位"。
+- 关机和重启补丁原本列在"不做"里。用户两次反馈关机不正常后，作为单独的工作在做，记录在 `HANDOFF.md` 第 8 节"关机"。

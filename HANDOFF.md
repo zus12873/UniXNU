@@ -3,7 +3,9 @@
 更新时间：2026-11-14
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:00）：**macOS 已经能从 `boot_a` 自启动。** 01:43 把 `out/flash/boot-v4-flash.img` 刷进了 `boot_a`，重启后平板没有用 Mac 的启动命令就进了系统。还有两个问题没解决：① 刷 `boot_a` 清掉了槽位 a 的 successful 标记，现在每次正常开机扣一次重试，01:55 读到还剩 6 次（第 8 节"槽位重试次数"）；② 在 macOS 里点 Shut Down 不会关机，平台层没有断电实现，参考仓库有补丁（第 8 节"关机"）。还没做：冷开机复测（不接 Mac，按电源键开机）。
+当前阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
+
+上一阶段（2026-11-14 02:00）：**macOS 已经能从 `boot_a` 自启动。** 01:43 把 `out/flash/boot-v4-flash.img` 刷进了 `boot_a`，重启后平板没有用 Mac 的启动命令就进了系统。还有两个问题没解决：① 刷 `boot_a` 清掉了槽位 a 的 successful 标记，现在每次正常开机扣一次重试，01:55 读到还剩 6 次（第 8 节"槽位重试次数"）；② 在 macOS 里点 Shut Down 不会关机，平台层没有断电实现，参考仓库有补丁（第 8 节"关机"）。还没做：冷开机复测（不接 Mac，按电源键开机）。
 
 上一阶段（2026-11-14 01:00）：**macOS 已经启动到登录窗口。** 带校验补丁的新内核 00:48 用"首次安装"镜像启动，用户 00:56 反馈"已经看到锁屏登录页面"，WindowServer 崩溃循环已修复。下一步是用户用制作 seed 时 `--user` 填的账户登录（密码只有用户知道，本文件不记录），再看桌面是否正常。以后每次开机都用日常镜像 `out/flash/boot-v4-payload.img`（sha256 `4abcc8976c9c94a2…`，新内核，不带 `data-reset`）；**`out/flash/boot-v4-install.img` 每启动一次就清空一次 Data，除非要重置，否则不要再用。** 启动命令是 `python3 -I local-tools/boot-sheng.py <镜像> --serial <fastboot 序列号>`（要关沙箱）。注意：外置盘 00:56 前后从 Mac 断开了，下次构建前要先接回并重新挂载，见"第二个问题"末尾。细节见下面"黑屏加鼠标的根因"和"第二个问题"两条。 **01:10 用户提出新需求：开机自启动 macOS，并再装一个 iPadOS；调研结论在第 8 节，方案还没定，等用户回答 iPadOS 的用法后再设计，未经确认不要动平板。**
 
@@ -290,7 +292,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 解释（来自我记忆中的高通公开 ABL 源码 QcomModulePkg，本次没有逐行核对；和上面的读数吻合，但刷完当时的次数没读）：刷名字以 `boot` 开头的分区时，`FastbootUpdateAttr` 会清掉 successful 和 unbootable，并把重试次数设为 7；槽位没有 successful 标记时，每次正常开机在 `FindBootableSlot` 里扣 1；`fastboot boot`、按键进 fastboot、进 recovery 不扣。冷开机复测后再读一次，读到 5 就证实了这个解释。
 - 后果：还能正常开机 6 次。扣到 0 之后 ABL 会把槽位 a 标成不可启动并切到槽位 b。ROM 的 `flash_all.sh` 给两个槽位刷的是同一套原厂安卓镜像（`fastboot flash boot_ab …`），而 userdata 现在是 macOS 的，所以槽位 b 起不来，平板会停在 fastboot 或原厂 recovery。**在 recovery 里不要选清除数据。** 这不是变砖：接上 Mac 执行 `fastboot set_active a`，或者重刷一次 `boot_a`，次数就回到 7。
 - 四个仓库里都没有"把槽位标成 successful"的代码。安卓是系统启动完成后自己标记，postmarketOS 用 `qbootctl`。
-- 设计文档里"全程不执行 `fastboot set_active` 就能保住标记"的前提不成立。是否允许用 `set_active a` 补次数、要不要做长期方案，等用户决定；在那之前仍然不执行 `set_active`。
+- 设计文档里"全程不执行 `fastboot set_active` 就能保住标记"的前提不成立。**用户 2026-11-14 已允许：重试次数快用完时执行 `fastboot set_active a` 补回次数。** 只限槽位 a，不切到槽位 b；重刷 `boot_a` 也会把次数补满。长期方案做不做仍待用户决定。
 - 长期方案的现状：UEFI 侧做不了。`../uefi-sheng/Platforms/Xiaomi/shengPkg/sheng.dsc` 里 `SHENG_VENDOR_HW = 0`，固件不加载原厂的 UFS 驱动，读写不了内部存储。只能放在内核侧（`ShengUfs` 驱动能访问 UFS），做法是改写 LUN 4 分区表里 `boot_a` 这一项的属性位和两处 CRC，主、备分区表各一份。这个 LUN 上还有 abl 等引导链分区，分区表写坏了可能要 EDL 才能救，所以必须先得到用户同意，并且先用 ROM 里的 `gpt_main4.bin`、`gpt_backup4.bin` 做主机侧测试。
 
 **关机（2026-11-14 调研，未修）**
@@ -302,3 +304,33 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 要修就得重建内核和 ArmDTPlatform 驱动，再重建 payload、重新打包、先 `fastboot boot` 验证、再刷 `boot_a`。动手前要把外置盘接回并校验。PSCI SYSTEM_OFF 在这台机器上能不能真的断电，没有验证过。
 - 现成的替代办法（没验证过）：UniXNU 菜单有 Restart 和 Power off 两项（`boot_a` 里的 `unixnu.toml`，`action = "reset"` 和 `"shutdown"`；`package/UniXNUPkg/Library/UniXNULib/Boot.c:22,26` 调 `gRT->ResetSystem`）。菜单倒计时 3 秒。按键处理在 `Menu.c:219-232`：`SCAN_UP`、`SCAN_DOWN` 移动，回车、空格、`SCAN_RIGHT`、`SCAN_SUSPEND`（0x0102）确认。它们对应音量键和电源键，是按高通按键驱动的惯例推断的。
 - 排除的原因：设备包 `../UniXNU-sheng/package/BootReset.c` 有"把重启原因写成 bootloader，之后任何重启都进 fastboot"的调试功能，只在启动参数带 `autoreset=<秒>` 时生效。`boot_a` 里的启动参数共 58 个，没有 `autoreset`，相关的只有 `debug=0x14e`、`log=1`、`disable-watchdogd=1`、`exec-log=1`。
+
+**关机修复：进行中（2026-11-14 02:09 开始构建）**
+- 本地分支 `local/sheng-16g-macos` 上的改动：
+  - 提交 `fcbfc2e`：从参考仓库原样摘取的 `d95eaaf`（`macos-union-shutdown.patch` 和 `patches/xnu/series` 里的一行，排在 `macos-union-one-volume.patch` 后面）。
+  - 还没提交，等构建验证：`scripts/data/armdt-platform-psci.patch`（和 fork 逐字节相同）以及 `scripts/build-arm-driver.py` 里的 8 行（fork 提交 `e29de06` 的做法：把固定版本的驱动源码复制到输出目录再打补丁，不改 `drivers/ArmDTPlatform` 本身）。
+- 动手前核对过：固定的驱动源码 blob 是 `317ce20`，正是补丁的基底；交给内核的设备树里有 `/device-tree/psci`，`method = "smc"`，补丁靠它决定调用方式。
+- 外置盘 02:06 挂回，`diskutil verifyVolume` 通过，`kernel/kernel.macho` 的 sha256 仍是 `5e03486e…`。OS 镜像只读挂在 scratchpad 的 `os-mount`，构建完要卸载。
+- 构建命令：`./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`（在后台运行）。
+- 打包时的坑：v0 源镜像必须用 `<output>/boot/boot.img`，它的 UEFI 部分（sha256 前缀 `0770b709`）和 `boot_a` 里的一致。`out/flash/boot.img` 是 11-13 21:31 的旧 UEFI（前缀 `dd48bf6a`，没有内存映射修正），不能用。mkbootimg 在 `../uefi-sheng/Resources/Scripts/mkbootimg.py`。
+- 构建完要做：核对内核里有 `retained for shutdown` 字符串、驱动里有 `haltRestart` → `local-tools/make-bootimg-v4.py` 出新的 `boot-v4-payload.img`（旧的先改名留作回退）→ `local-tools/make-flash-bootimg.py` 出新的 `boot-v4-flash.img` → `fastboot boot` 验证能进系统、Shut Down 能断电（拔掉 USB 线再点，插着线断电后会被充电事件重新拉起）→ 再刷 `boot_a`。
+- 02:13 构建完成，退出码 0，用了约 5 分钟。日志里有 `== kernel: patch macos-union-shutdown.patch` 和 `== kernel: component-ArmDTPlatform`。
+- 新内核 `<output>/kernel/kernel.macho`：143753216 字节，sha256 `f393f430de822cb8f09f87494ccbfca9869e46f7f7cad81eb1159e9f9c970bd8`。里面有字符串 `retained for shutdown`，有符号 `__ZN13ArmDTPlatform11haltRestartEj` 和 `_armdt_platform_power_conduit`。`payload.json` 的 `kernel_sha256` 与它一致，启动参数里没有 `data-reset`，也没有 `autoreset`。`payload.img` 的 sha256 是 `e4b1748dd73362af4b48d5faf08b5433f836758ee712c032fda3bfde7782a388`。
+- 打包（旧镜像保持原名，新镜像先叫 `.new.img`，上机验证后再改名）：
+  - `python3 -I local-tools/make-bootimg-v4.py <output>/boot/boot.img ../uefi-sheng/Resources/Scripts/mkbootimg.py out/flash/boot-v4-payload.new.img <output>/payload/payload.img`，210903040 字节，sha256 `57bd2a2f5cd7657654a681b53f2527737977e5ea9497981ee687b321b51a8d9a`。
+  - `python3 -I local-tools/make-flash-bootimg.py out/flash/boot-v4-payload.new.img out/flash/boot-v4-flash.new.img`，200417280 字节，sha256 `4cb441e019308ab3c0db1ec3b1083e975b5221a1fee8d6606e10099950655f01`，卷里剩余 8.5 MiB。
+- 独立核对：新镜像的 UEFI 部分和头部与 `boot_a` 里的镜像逐字节相同。8 个文件里 `kernel.macho`、`.adt`、`.crypto-hmac.json`、`.gpuaddon`、`.trustcache` 变了，`.vroot`、`scratch-data.img`、`unixnu.toml` 没变，文件总量仍是 189504632 字节。两个新镜像里的文件互相一致。
+- OS 镜像已从 scratchpad 的 `os-mount` 卸载。外置盘的构建镜像还挂着。
+- 02:15 内存启动 `out/flash/boot-v4-flash.new.img`（`local-tools/boot-sheng.py`）：`Booting OKAY`，45 秒内 bootloader 没有回来。等用户反馈两件事：能否到登录页；拔掉 USB 线后点 Shut Down 是否断电。
+- 验证通过后要做：平板进 fastboot → `fastboot flash boot_a out/flash/boot-v4-flash.new.img` → 旧镜像改名为 `.prev.img`、新镜像改回正式名字 → 提交驱动部分的改动。验证不通过：`boot_a` 里仍是 01:43 刷的旧镜像，重启即回到之前的状态。
+- **用户 02:19 反馈：能正常 Shut Down。** 这是内存启动的新镜像，拔掉 USB 线后在登录页点 Shut Down，平板断电。同一条反馈里还说"现在还不能正常关机键开机"，具体看到什么还没问清。
+- 02:19:59 fastboot 读数：`slot-successful:a: no`，`slot-unbootable:a: no`，`slot-retry-count:a: 6`，槽位 b 不变，电池 3883 mV。次数从 01:55 起没变，说明这段时间没有发生过"正常开机"（内存启动和手动进 fastboot 不扣）。也就是说，用户关机后如果按过电源键，引导程序并没有走到从 `boot_a` 启动这一步。
+- 02:21:04 刷入：`fastboot flash boot_a out/flash/boot-v4-flash.new.img`，`Sending 'boot_a' (195720 KB) OKAY [4.488s]`，`Writing 'boot_a' OKAY [0.075s]`。刷完、启动前读到 `slot-successful:a: no`，`slot-unbootable:a: no`，`slot-retry-count:a: 7`。**这次读数证实：刷 `boot_a` 会把重试次数重置为 7；01:55 读到的 6 就是 01:43 那次正常启动扣掉的 1 次。**
+- 02:21:16 `fastboot reboot`，60 秒内 bootloader 没有回来，`boot_a` 里的新镜像在运行。按上面的规律，这次启动后次数应为 6，下次进 fastboot 时复核。
+- 镜像改名（02:23）：
+  - `out/flash/boot-v4-flash.img`：sha256 `4cb441e019308ab3c0db1ec3b1083e975b5221a1fee8d6606e10099950655f01`，**现在在 `boot_a` 里**。
+  - `out/flash/boot-v4-payload.img`：sha256 `57bd2a2f5cd7657654a681b53f2527737977e5ea9497981ee687b321b51a8d9a`，内存启动用，内核相同。
+  - 上一版留作回退：`boot-v4-flash.prev.img`（`ae0d4179…`）和 `boot-v4-payload.prev.img`（`4abcc897…`），内核是没有关机修复的 `5e03486e…`。
+  - `boot-v4-install.img` 没有重做，里面还是旧内核。它只在重置 Data 时用；要用新内核重置，需要重新生成（`./unixnu build payload … --kernel-arg data-reset=1`，之后再跑一次不带参数的 payload 把 `payload.img` 恢复）。
+- 驱动部分的改动已提交（见 `git log`）。
+- 待办：问清"按电源键不能正常开机"的现象，再做冷开机复测（拔线 → Shut Down → 等彻底断电 → 按住电源键约 3 秒）。
