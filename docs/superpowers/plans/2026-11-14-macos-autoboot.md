@@ -17,7 +17,7 @@
 - 只允许写 `boot_a`；只有按回退表操作时才允许写 `vbmeta_a`。不碰 abl、xbl 等引导链分区。
 - 镜像字节数不超过 `fastboot getvar partition-size:boot_a` 的值（预期 `0xC000000`，即 201326592）。
 - 芯片 ID 和 fastboot 序列号不写进任何文件，文档和脚本里一律写 `<序列号>`，由命令行传入。
-- 不改上游文件。新文件只放在 `local-tools/`、`docs/superpowers/`，进度写进 `HANDOFF.md`。
+- 不改上游文件。新文件只放在 `local-tools/`、`docs/superpowers/`，进度写进 `HANDOFF.md`。（自启动部分守住了；之后另做的关机修复改了 `scripts/build-arm-driver.py` 和内核补丁序列，见 spec 的"修订"。）
 - `adb`、`fastboot` 要关沙箱运行。
 - 提交只在本地分支 `local/sheng-16g-macos` 上做，逐个列出文件，不 push。`data/` 下的照片和录像不提交。
 
@@ -195,3 +195,13 @@ git commit -m "docs: record the sheng macOS bring-up and autoboot result"
 - Task 1 到 Task 4 全部按预期完成：`boot_a` 里是重新打包的镜像，用户确认不接 Mac、按电源键能进到 macOS 登录页。
 - Task 5 Step 1 的 Expected 没有达到，这是测量结果，不是执行失误：`fastboot flash boot_a` 本身会清掉槽位 a 的 successful 标记并把重试次数设为 7，之后每次正常开机扣 1。读数见 `HANDOFF.md` 第 8 节"槽位重试次数"，结论和用户的决定见 spec 的"修订"一节（允许 `fastboot set_active a` 补次数）。长期方案还没有做。
 - 计划之外另做了关机修复（参考仓库的两处补丁，重建内核，02:21 再次刷入 `boot_a`），记录在 `HANDOFF.md` 第 8 节"关机修复"。
+
+### 执行中的偏差和裁决（原记在 git 忽略的执行记录里，这里抄一份）
+
+- 没有另开 git worktree，直接在 `local/sheng-16g-macos` 分支上做：输入（`out/flash` 的镜像、`local-tools`、`HANDOFF.md`）是这个工作区里未跟踪或被忽略的文件，上机步骤要用到它们。
+- Task 1 的测试表与实际不同：
+  - 加了第 8 个测试 `test_refuses_changed_cluster_size`。Step 3 要求拒绝簇大小变化，表里却没有对应的测试。
+  - `test_refuses_when_files_do_not_fit` 用 48 MiB 的输入卷，没有用表里的 96 MiB。96 MiB 的卷簇大小不同，拒绝会来自簇大小检查，测不到"放不下"。
+  - 拒绝类测试断言退出码 1 加原因关键词，没有只断言"非 0"。工具不存在时 Python 也是非 0 退出，宽松的断言在写工具之前就会通过。
+  - Step 2 和 Step 4 的"7 个测试"因此实际是 8 个。代码审查之后又补到 12 个（提交 `550f18e`）：防止删掉输入、残留旧输出，比对整页头部，故障注入测试读回比对。
+- Task 4：spec 的前提"不执行 `set_active` 就能保住 successful 标记"不成立，刷 `boot_a` 本身就会清掉它。当时只做测量、报告给用户，没有自行补救；用户之后允许用 `fastboot set_active a` 补次数。

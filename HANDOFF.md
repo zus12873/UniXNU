@@ -248,7 +248,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - `docs/zh/devices/sheng.md`：sheng 各子系统的实现与证据
 - `../UniXNU-sheng/README.md`：一键打包脚本和 GitHub Actions 构建
 
-## 8. 新需求：开机自启动 macOS 与 iPadOS（2026-11-14 调研，方案待用户确认）
+## 8. 新需求：开机自启动 macOS 与 iPadOS（2026-11-14；自启动和关机已完成并在真机确认，iPadOS 未开始）
 
 用户原话："我现在想开机自启动macos，然后我想再往上刷个ipados"，并指定参考仓库 `https://github.com/CrossDarwin/UniXNU_macOS`（已克隆到 `../UniXNU_macOS`，默认分支 `test_27`，是 UniXNU 主仓库的 fork，与本地 main 的分叉点是 `2bbb39d`，领先 64 个提交）。
 
@@ -260,7 +260,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 
 **自启动 macOS：调研到的事实**
 - 分区大小（ROM 的 `partition_dev_n81a.xml`，上机后要用 `fastboot getvar partition-size:boot_a` 复核）：`boot_a` 192 MiB，`vendor_boot_a` 96 MiB，`recovery_a` 100 MiB，`init_boot_a` 8 MiB。
-- 现在的 v4 启动镜像是 210903040 字节（201.1 MiB），放不进 `boot_a`。payload 是 200 MiB 的 FAT32（`board.toml` macOS 段 `size_mib = 200`），实际用了 180.7 MiB：`kernel.macho` 137.1、`kernel.macho.gpuaddon` 22.7、`scratch-data.img` 20.5、trustcache 0.4。ramdisk 上限约 190.8 MiB，所以把 `size_mib` 改到 188 左右就能放进去。
+- 现在的 v4 启动镜像是 210903040 字节（201.1 MiB），放不进 `boot_a`。payload 是 200 MiB 的 FAT32（`board.toml` macOS 段 `size_mib = 200`），实际用了 180.7 MiB：`kernel.macho` 137.1、`kernel.macho.gpuaddon` 22.7、`scratch-data.img` 20.5、trustcache 0.4。ramdisk 上限约 190.8 MiB，所以把 `size_mib` 改到 188 左右就能放进去。 **更正：这个办法行不通。`payload.py` 要求文件不超过卷的 95%，188 MiB 和 190 MiB 都过不了检查，实际做法见下面"自启动实施记录"（本地工具重新打包成 190 MiB 的卷）。**
 - 设备仓库的 `scripts/build-flash-image.sh` 是维护者的同类做法（payload 176 MiB，刷 `boot_b` 后 `set_active b`），针对的是旧的 session image 流程和 v0 镜像，不能直接用。
 - 原厂 `vbmeta.img`（flags 0）里 `boot`、`dtbo`、`init_boot`、`vendor_boot` 都是 hash descriptor，`boot` 的 `image_size` 是 47599616（45.39 MiB）；`recovery` 和 `vbmeta_system` 是 chain。按 libavb 的行为，从分区正常启动时只会读入 descriptor 记录的长度，我们的镜像会被截断。所以刷 `boot_a` 的同时要把 `vbmeta_a` 刷成关闭校验的版本（`fastboot --disable-verity --disable-verification flash vbmeta_a <ROM>/images/vbmeta.img`），可用原厂 `vbmeta.img` 还原。这一条是按 AVB 公开实现推断的，没有在这台机器上验证。
 - 不要执行 `fastboot set_active`：它会清掉槽位 a 的 successful 标记并把重试次数重置为 7，之后每次开机减 1，减到 0 槽位就被标成不可启动（没有安卓来标记启动成功）。 **更正（01:55）：刷 `boot_a` 本身就会清掉这个标记，见下面"槽位重试次数"。**
@@ -276,7 +276,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 **自启动实施记录（2026-11-14，方案 `docs/superpowers/specs/2026-11-14-macos-autoboot-design.md`，计划 `docs/superpowers/plans/2026-11-14-macos-autoboot.md`）**
 - 用户选了"直接刷 `boot_a`"。提交在本地分支 `local/sheng-16g-macos` 上，不 push。
 - 更正：前面"必须关闭 `vbmeta_a` 校验"的说法不成立。AVB 公开源码 `avb_slot_verify.c` 里，允许校验错误（解锁）时 `load_and_verify_hash_partition` 读入整个分区。现在的做法是先不动 `vbmeta`，`boot_a` 启动失败再试。
-- 官方 `payload.py` 要求文件总量不超过 `size_mib` 的 95%：190 MiB 过不了检查，191 MiB 放不进分区。所以新增本地工具 `local-tools/make-flash-bootimg.py`（测试在 `local-tools/tests/`，`python3 -I -m unittest discover -s local-tools/tests`，8 个全过），从已验证的 `out/flash/boot-v4-payload.img` 重新打包。
+- 官方 `payload.py` 要求文件总量不超过 `size_mib` 的 95%：190 MiB 过不了检查，191 MiB 放不进分区。所以新增本地工具 `local-tools/make-flash-bootimg.py`（测试在 `local-tools/tests/`，`python3 -I -B -m unittest discover -s local-tools/tests`；当时 8 个全过，02:40 按代码审查补强后是 12 个），从已验证的 `out/flash/boot-v4-payload.img` 重新打包。
 - 产物 `out/flash/boot-v4-flash.img`：200417280 字节，sha256 `ae0d4179c7702492dbc916a73f35c851baa6722ad72486ee66d9c9bebaee7e4e`。FAT32 卷 190 MiB，簇 2048 字节，8 个文件，剩余 8.5 MiB。独立核对过：UEFI 部分与源镜像逐字节相同，头部只有 `ramdisk_size` 不同，8 个文件的路径、大小、sha256 与源镜像一致。
 - 上机进度（顺序是只读查询 → `fastboot boot` 新镜像 → 刷 `boot_a` → 冷开机复测 → 槽位复核）：
   - 01:39 只读查询：`product: sheng`，`unlocked: yes`，`current-slot: a`，`partition-size:boot_a: 0xC000000`（201326592，镜像放得下，余 909312 字节），`partition-size:vbmeta_a: 0x20000`。
@@ -297,7 +297,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 设计文档里"全程不执行 `fastboot set_active` 就能保住标记"的前提不成立。**用户 2026-11-14 已允许：重试次数快用完时执行 `fastboot set_active a` 补回次数。** 只限槽位 a，不切到槽位 b；重刷 `boot_a` 也会把次数补满。长期方案做不做仍待用户决定。
 - 长期方案的现状：UEFI 侧做不了。`../uefi-sheng/Platforms/Xiaomi/shengPkg/sheng.dsc` 里 `SHENG_VENDOR_HW = 0`，固件不加载原厂的 UFS 驱动，读写不了内部存储。只能放在内核侧（`ShengUfs` 驱动能访问 UFS），做法是改写 LUN 4 分区表里 `boot_a` 这一项的属性位和两处 CRC，主、备分区表各一份。这个 LUN 上还有 abl 等引导链分区，分区表写坏了可能要 EDL 才能救，所以必须先得到用户同意，并且先用 ROM 里的 `gpt_main4.bin`、`gpt_backup4.bin` 做主机侧测试。
 
-**关机（2026-11-14 调研，未修）**
+**关机（2026-11-14 调研；已修复，见下面"关机修复"）**
 - 现象：在 macOS 里点 Shut Down，平板不断电。用户反馈了两次，两次都是之后手动按键进的 fastboot。
 - 原因：本仓库的 `drivers/ArmDTPlatform/ArmDTPlatform.cpp` 没有重写 `haltRestart`，只有调试用的 `platformStageReset`（PSCI SYSTEM_RESET）。内核走到平台层时，没有任何断电或重启的实现。
 - 参考仓库 `../UniXNU_macOS` 的修法是两处补丁：
@@ -307,7 +307,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 现成的替代办法（没验证过）：UniXNU 菜单有 Restart 和 Power off 两项（`boot_a` 里的 `unixnu.toml`，`action = "reset"` 和 `"shutdown"`；`package/UniXNUPkg/Library/UniXNULib/Boot.c:22,26` 调 `gRT->ResetSystem`）。菜单倒计时 3 秒。按键处理在 `Menu.c:219-232`：`SCAN_UP`、`SCAN_DOWN` 移动，回车、空格、`SCAN_RIGHT`、`SCAN_SUSPEND`（0x0102）确认。它们对应音量键和电源键，是按高通按键驱动的惯例推断的。
 - 排除的原因：设备包 `../UniXNU-sheng/package/BootReset.c` 有"把重启原因写成 bootloader，之后任何重启都进 fastboot"的调试功能，只在启动参数带 `autoreset=<秒>` 时生效。`boot_a` 里的启动参数共 58 个，没有 `autoreset`，相关的只有 `debug=0x14e`、`log=1`、`disable-watchdogd=1`、`exec-log=1`。
 
-**关机修复：进行中（2026-11-14 02:09 开始构建）**
+**关机修复：已完成（02:09 开始构建，02:21 刷入 `boot_a`，用户 02:19 和 02:28 在真机确认）**
 - 本地分支 `local/sheng-16g-macos` 上的改动：
   - 提交 `fcbfc2e`：从参考仓库原样摘取的 `d95eaaf`（`macos-union-shutdown.patch` 和 `patches/xnu/series` 里的一行，排在 `macos-union-one-volume.patch` 后面）。
   - 还没提交，等构建验证：`scripts/data/armdt-platform-psci.patch`（和 fork 逐字节相同）以及 `scripts/build-arm-driver.py` 里的 8 行（fork 提交 `e29de06` 的做法：把固定版本的驱动源码复制到输出目录再打补丁，不改 `drivers/ArmDTPlatform` 本身）。
@@ -381,3 +381,24 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - `locationd` 每次启动都被 `reason 28:261`（PAC 校验失败）杀掉，没有查。
 - 这台机器为什么不接受 v0 头的启动镜像，没有查清。
 - 可以反馈给上游的文档和构建缺口，散落在第 5 节和第 8 节（例如 macOS 第一次启动要带 `data-reset=1`、`payload.py` 的 95% 规则让 190 MiB 的卷做不出来）；用户没有要求提 issue 或 PR。
+
+**代码审查（2026-11-14 02:40）**
+- 独立审查的结论："With fixes"，没有严重问题。已刷进平板的镜像逐文件核对无误，关机补丁的集成也核对无误。
+- 已修（提交 `550f18e`）：`make-flash-bootimg.py` 原来在读输入之前就删除 OUTPUT，所以 SOURCE 和 OUTPUT 写成同一个文件时会删掉输入；现在会拒绝。缺 mtools 时残留旧 OUTPUT 的问题也修了。测试从 8 个补到 12 个。
+- 新发现：这个工具的输出**不能逐字节复现**。mformat 会把当前时间写进卷标的目录项，所以同样的输入每次打包，sha256 都不一样（差 4 个字节）。核对镜像要用文件内容，不能只比 sha256。02:40 用修好的工具重新打包 `boot-v4-payload.img`，和 `boot_a` 里的 `boot-v4-flash.img` 只差这 4 个字节。
+- 运行测试要加 `-B`。`-I` 会让 Python 忽略 `PYTHONDONTWRITEBYTECODE`，不加 `-B` 会在仓库里留下 `__pycache__`。
+
+**代码审查里没修的小问题（2026-11-14，都不影响已刷入的镜像）**
+- `local-tools/make-flash-bootimg.py`：
+  - 几种异常输入会打印 Python traceback，而不是一行原因：SOURCE 不存在、没有 ramdisk 的 v4 镜像、卷标含非 ASCII 字符、OUTPUT 的目录不存在、OUTPUT 是个目录。退出码都不是 0，也不会生成镜像。
+  - 大小不符的拒绝分支里，先删临时文件再读它的大小，会崩成 traceback（仍然不生成镜像）。
+  - 最后写文件失败（比如磁盘满）时，会留下 `OUTPUT.tmp`。
+  - 自检是"用 mtools 取出来再比"，看不到 FAT 属性位、卷之后的多余数据；也没有清理调用者环境里的 `MTOOLS_*` 变量。用 `payload.py` 做的卷不受影响。
+  - 在 `LC_ALL=C` 下会拒绝所有 payload（mtools 把 `EFI` 取成 `EFI_`），报错信息会误指卷有问题。
+  - 输出不能逐字节复现（卷标时间戳），只在上面记了说明，没有改。
+- `scripts/build-arm-driver.py` 的驱动补丁步骤（照搬参考仓库）：
+  - `patch` 没有加 `--fuzz=0`，也不核对补丁前后的 blob。换了驱动版本时可能偏移着打上去。
+  - 补丁失败会在 `build/armdt-platform/` 留下半成品、`.orig` 和 `.rej`，下次构建会覆盖。`components.toml` 记的驱动版本 `417ff95` 和子模块固定的 `e8bd8d5` 不一致，这一点也是从参考仓库继承来的。
+  - 用这个仓库给别的板子构建 `ArmDTPlatform` 也会带上这个补丁。单核设备树里没有 `psci` 节点，那时调试用的 stage reset 会空转，不会复位。
+  - 启动参数 `platform-power-test` 没有写进文档。提交说明写的是"power off and restart"，真机只验证了关机。
+- 其他：`local-tools/make-bootimg-v4.py` 的说明里用法还写着旧名字 `make-v4-test.py`；提交 `c08feb7` 标成 `docs:`，实际还加了三个脚本（不改写已有提交）。
