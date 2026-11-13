@@ -3,7 +3,7 @@
 更新时间：2026-11-14
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。
+当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作（文末"待处理问题"）。
 
 上一阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
 
@@ -360,3 +360,24 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   6. 平板进 fastboot，先内存启动验证：`python3 -I local-tools/boot-sheng.py out/flash/boot-v4-flash.new.img`。
   7. 验证通过后再进 fastboot：`fastboot flash boot_a out/flash/boot-v4-flash.new.img`，`fastboot reboot`。然后把旧镜像改名为 `.prev.img`，新镜像改回正式名字。
   8. 卸载 OS 镜像（`hdiutil detach <目录>`）。
+
+## 9. 待处理问题（按用户要求先记录，之后处理）
+
+**睡眠不工作（用户 2026-11-14 02:31 报告，还没有调查）**
+- 现象（用户原话）："选择系统中的sleep按键和快速单击开机键无法进入睡眠模式"。也就是两条路都不行：在 macOS 里选 Sleep；快速单击电源键。
+- 当时的环境：`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`，内核 `f393f430…`，带关机修复）。开机和 Shut Down 正常。
+- 还不知道的：选 Sleep 之后屏幕有没有变化（完全没反应、黑一下又亮、还是卡住）；单击电源键时系统有没有任何反应；有没有日志。处理时先向用户问清这几点。
+- 线索，都没有验证过：
+  - 上游的设备记录里，sheng 的睡眠和唤醒本来就没有测过：`docs/zh/devices/sheng-4545189wj.md` 第 351-356 行（iPadOS 27 睡眠时关背光"not verified"）、第 531 行（"sleep and wake, idle power and recovery are not tested"）、第 765-796 行（挂起和恢复、外设电源各自的覆盖情况）。`sheng-3364789753.md` 有同样的条目。
+  - `boot_a` 里的启动参数没有和睡眠相关的项（只有一个 `gpu-power=9`）。
+  - 这次的关机修复只给平台驱动加了关机和重启（`haltRestart` 里的 PSCI SYSTEM_OFF、SYSTEM_RESET），没有涉及睡眠。
+- 用户的要求："先落handoff，之后处理"。所以这里只记录，不动代码。
+
+**其他还开着的问题（前面各节有详细记录，这里汇总）**
+- 槽位重试次数每次正常开机扣 1，要接 Mac 补；长期方案（内核侧自动标记启动成功）等用户决定。见第 8 节"槽位重试次数"和"日常使用"。
+- iPadOS / 双系统：等用户说明用途。见第 8 节"iPadOS：调研到的事实"。
+- macOS 下能否给电池充电，没有确认。电压记录：01:39 是 3892 mV，01:55 是 3880 mV，02:19 是 3883 mV（都是 fastboot 里读的）。
+- 插着 USB 线或充电器关机，会不会被充电事件重新拉起，没有验证。
+- `locationd` 每次启动都被 `reason 28:261`（PAC 校验失败）杀掉，没有查。
+- 这台机器为什么不接受 v0 头的启动镜像，没有查清。
+- 可以反馈给上游的文档和构建缺口，散落在第 5 节和第 8 节（例如 macOS 第一次启动要带 `data-reset=1`、`payload.py` 的 95% 规则让 190 MiB 的卷做不出来）；用户没有要求提 issue 或 PR。
