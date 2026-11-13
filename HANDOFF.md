@@ -3,7 +3,9 @@
 更新时间：2026-11-14
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
+当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。
+
+上一阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
 
 上一阶段（2026-11-14 02:00）：**macOS 已经能从 `boot_a` 自启动。** 01:43 把 `out/flash/boot-v4-flash.img` 刷进了 `boot_a`，重启后平板没有用 Mac 的启动命令就进了系统。还有两个问题没解决：① 刷 `boot_a` 清掉了槽位 a 的 successful 标记，现在每次正常开机扣一次重试，01:55 读到还剩 6 次（第 8 节"槽位重试次数"）；② 在 macOS 里点 Shut Down 不会关机，平台层没有断电实现，参考仓库有补丁（第 8 节"关机"）。还没做：冷开机复测（不接 Mac，按电源键开机）。
 
@@ -334,3 +336,27 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - `boot-v4-install.img` 没有重做，里面还是旧内核。它只在重置 Data 时用；要用新内核重置，需要重新生成（`./unixnu build payload … --kernel-arg data-reset=1`，之后再跑一次不带参数的 payload 把 `payload.img` 恢复）。
 - 驱动部分的改动已提交（见 `git log`）。
 - 待办：问清"按电源键不能正常开机"的现象，再做冷开机复测（拔线 → Shut Down → 等彻底断电 → 按住电源键约 3 秒）。
+- **用户 02:28 反馈："开机键生效了，可以正常开关机。"** 冷开机复测通过：不接 Mac，按电源键能从 `boot_a` 进到 macOS；Shut Down 能断电。之前那句"还不能正常关机键开机"指的是刷入新镜像之前的情况，用户没有再描述具体现象。
+
+**日常使用（2026-11-14 起）**
+- 开机：按住电源键约 3 秒。先出现 UniXNU 菜单（倒计时 3 秒），然后自己进 macOS 登录页，不需要 Mac。
+- 关机：在 macOS 里点 Shut Down。插着 USB 线或充电器时，断电后可能被充电事件重新拉起，这一点没有验证过。
+- 回 fastboot：关机状态下按住电源键和音量下键约 10 秒。
+- 重试次数：每次正常开机消耗 1 次，刷完 `boot_a` 后是 7 次。扣到 0 之后平板会停在 fastboot 或原厂 recovery，**在 recovery 里不要选清除数据**。
+  - 读次数：平板进 fastboot，`fastboot getvar slot-retry-count:a`。
+  - 补次数：`fastboot -s <序列号> set_active a`（用户 2026-11-14 已允许，只限槽位 a），或者重刷一次 `boot_a`。
+  - 02:21 刷入后是 7 次；之后 02:21 的重启和用户的冷开机复测各用掉 1 次，按推算还剩 5 次左右，用户如果多开过几次就更少。下次进 fastboot 时读一次为准。
+- `boot_a` 的内容和还原：
+  - 现在：`out/flash/boot-v4-flash.img`，sha256 `4cb441e019308ab3c0db1ec3b1083e975b5221a1fee8d6606e10099950655f01`。
+  - 回到上一版 macOS 镜像（没有关机修复）：`fastboot flash boot_a out/flash/boot-v4-flash.prev.img`。
+  - 还原成原厂：`fastboot flash boot_a out/flash/sheng_global_images_OS3.0.305.0.WNXMIXM_16.0/images/boot.img`（sha256 `0a0d6aa6…`）。只还原这一个分区安卓仍然起不来：`init_boot_a` 已擦除，`vendor_boot_a` 没有 ramdisk，userdata 是 macOS 的。
+  - `vbmeta_a` 没有动过，一直是原厂的。
+- 更新内核或 payload 之后重新刷入的流程（都在 `UniXNU/` 下执行）：
+  1. 接上外置盘，`hdiutil attach /Volumes/12873/UniXNU-build.sparsebundle`。
+  2. 把 OS 镜像只读挂到系统盘上的一个目录：`hdiutil attach -readonly -nobrowse -mountpoint <目录> /Volumes/UniXNUBuild/unixnu-out/ipsw/26C5035r/141-22233-021.dmg`。
+  3. `./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`（改了补丁序列也只用了约 5 分钟）。
+  4. `python3 -I local-tools/make-bootimg-v4.py <output>/boot/boot.img ../uefi-sheng/Resources/Scripts/mkbootimg.py out/flash/boot-v4-payload.new.img <output>/payload/payload.img`
+  5. `python3 -I local-tools/make-flash-bootimg.py out/flash/boot-v4-payload.new.img out/flash/boot-v4-flash.new.img`
+  6. 平板进 fastboot，先内存启动验证：`python3 -I local-tools/boot-sheng.py out/flash/boot-v4-flash.new.img`。
+  7. 验证通过后再进 fastboot：`fastboot flash boot_a out/flash/boot-v4-flash.new.img`，`fastboot reboot`。然后把旧镜像改名为 `.prev.img`，新镜像改回正式名字。
+  8. 卸载 OS 镜像（`hdiutil detach <目录>`）。

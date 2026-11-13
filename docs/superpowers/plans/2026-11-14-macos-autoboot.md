@@ -160,7 +160,7 @@ Run（关沙箱）：`fastboot -s <序列号> reboot`，之后 60 秒内每隔�
 Expected: bootloader 不再响应，用户看到 UniXNU 菜单，随后到登录页。
 其他结果按 spec 的"可能的结果和回退"表处理：回到 fastboot 就先试关闭 `vbmeta_a` 校验；菜单里没有启动项或反复重启就还原 `boot_a`。
 
-- [ ] **Step 4: 冷开机复测**
+- [x] **Step 4: 冷开机复测**
 
 用户长按电源键关机（或在 UniXNU 菜单选 Power off），拔掉数据线，再按电源键开机。
 Expected: 不连 Mac 也能到登录页。
@@ -171,17 +171,17 @@ Expected: 不连 Mac 也能到登录页。
 - Modify: `HANDOFF.md`（当前阶段一行、第 8 节）
 - Modify: `docs/superpowers/plans/2026-11-14-macos-autoboot.md`（勾选完成的步骤）
 
-- [ ] **Step 1: 槽位复核**
+- [x] **Step 1: 槽位复核**
 
 下次平板进 fastboot 时（关沙箱）读取 `slot-successful:a`、`slot-unbootable:a`、`slot-retry-count:a`。
 Expected: 与 Task 3 Step 1 记录的值相同。如果 `slot-retry-count:a` 变小了，说明每次开机都在消耗重试次数，要立刻告诉用户并停止依赖自启动，另找办法。
 这一步需要打断一次正常使用，可以推迟到用户下次因为别的原因进 fastboot 时做；推迟的话在 `HANDOFF.md` 里写明"未复核"。
 
-- [ ] **Step 2: 更新 `HANDOFF.md`**
+- [x] **Step 2: 更新 `HANDOFF.md`**
 
 写明：`boot_a` 现在的内容和 sha256、原厂镜像的还原命令、日常开机和回 fastboot 的方法、更新内核后的重新打包和刷写命令。
 
-- [ ] **Step 3: 提交**
+- [x] **Step 3: 提交**
 
 ```bash
 git add HANDOFF.md local-tools/boot-sheng.py local-tools/make-bootimg-v4.py local-tools/make-vendor-boot-noramdisk.py docs/superpowers/plans/2026-11-14-macos-autoboot.md
@@ -189,3 +189,9 @@ git commit -m "docs: record the sheng macOS bring-up and autoboot result"
 ```
 
 `local-tools/` 里其他已有的脚本如果是产出交付物用的，也在这次提交里逐个列出；提交前先 `git status` 看清楚，并用 `grep` 确认要提交的文件里没有芯片 ID。
+
+## 执行结果（2026-11-14）
+
+- Task 1 到 Task 4 全部按预期完成：`boot_a` 里是重新打包的镜像，用户确认不接 Mac、按电源键能进到 macOS 登录页。
+- Task 5 Step 1 的 Expected 没有达到，这是测量结果，不是执行失误：`fastboot flash boot_a` 本身会清掉槽位 a 的 successful 标记并把重试次数设为 7，之后每次正常开机扣 1。读数见 `HANDOFF.md` 第 8 节"槽位重试次数"，结论和用户的决定见 spec 的"修订"一节（允许 `fastboot set_active a` 补次数）。长期方案还没有做。
+- 计划之外另做了关机修复（参考仓库的两处补丁，重建内核，02:21 再次刷入 `boot_a`），记录在 `HANDOFF.md` 第 8 节"关机修复"。
