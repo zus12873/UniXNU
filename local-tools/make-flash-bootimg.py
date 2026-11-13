@@ -84,8 +84,17 @@ def tree(root):
             for path in sorted(root.rglob('*'))}
 
 
+def same_file(first, second):
+    """True when both paths name one file: the same path, a symbolic link or a hard link."""
+    if first.resolve() == second.resolve():
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
+
+
 def repack(source, output, fat_mib, partition_bytes):
-    output.unlink(missing_ok=True)
     header, kernel, ramdisk, kernel_size = read_source(source)
     image_bytes = PAGE + len(kernel) + fat_mib * MIB
     if image_bytes > partition_bytes:
@@ -140,6 +149,10 @@ def main():
     parser.add_argument('--fat-mib', type=int, default=190)
     parser.add_argument('--partition-bytes', type=lambda text: int(text, 0), default=192 * MIB)
     args = parser.parse_args()
+    if same_file(args.source, args.output):
+        sys.exit(f'make-flash-bootimg: SOURCE and OUTPUT are the same file ({args.output}); give OUTPUT another name')
+    # Before any other check: an OUTPUT left by an earlier run must not survive a refusal and be flashed by mistake.
+    args.output.unlink(missing_ok=True)
     for name in ('mformat', 'mcopy', 'mdir'):
         if not shutil.which(name):
             sys.exit(f'make-flash-bootimg: {name} not found (brew install mtools)')
