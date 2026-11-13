@@ -1,0 +1,304 @@
+# Handoff：小米平板 6S Pro（sheng）构建 macOS 27.3
+
+更新时间：2026-11-14
+目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
+
+当前阶段（2026-11-14 02:00）：**macOS 已经能从 `boot_a` 自启动。** 01:43 把 `out/flash/boot-v4-flash.img` 刷进了 `boot_a`，重启后平板没有用 Mac 的启动命令就进了系统。还有两个问题没解决：① 刷 `boot_a` 清掉了槽位 a 的 successful 标记，现在每次正常开机扣一次重试，01:55 读到还剩 6 次（第 8 节"槽位重试次数"）；② 在 macOS 里点 Shut Down 不会关机，平台层没有断电实现，参考仓库有补丁（第 8 节"关机"）。还没做：冷开机复测（不接 Mac，按电源键开机）。
+
+上一阶段（2026-11-14 01:00）：**macOS 已经启动到登录窗口。** 带校验补丁的新内核 00:48 用"首次安装"镜像启动，用户 00:56 反馈"已经看到锁屏登录页面"，WindowServer 崩溃循环已修复。下一步是用户用制作 seed 时 `--user` 填的账户登录（密码只有用户知道，本文件不记录），再看桌面是否正常。以后每次开机都用日常镜像 `out/flash/boot-v4-payload.img`（sha256 `4abcc8976c9c94a2…`，新内核，不带 `data-reset`）；**`out/flash/boot-v4-install.img` 每启动一次就清空一次 Data，除非要重置，否则不要再用。** 启动命令是 `python3 -I local-tools/boot-sheng.py <镜像> --serial <fastboot 序列号>`（要关沙箱）。注意：外置盘 00:56 前后从 Mac 断开了，下次构建前要先接回并重新挂载，见"第二个问题"末尾。细节见下面"黑屏加鼠标的根因"和"第二个问题"两条。 **01:10 用户提出新需求：开机自启动 macOS，并再装一个 iPadOS；调研结论在第 8 节，方案还没定，等用户回答 iPadOS 的用法后再设计，未经确认不要动平板。**
+
+镜像构建完成时的状态（2026-11-13 21:10）：
+- `userdata/userdata-root.img`：17603493888 字节，19:58 生成。
+- `payload/payload.img`：200 MiB，21:07 生成，内核已包含种子 UUID `CONFIG_XNU_OWNER_DATA_VOLUME_UUID`。
+- `boot/boot.img`：210903040 字节，`ramdisk_bytes` 为 209715200，打包命令是 `./unixnu bootimg --os macos-27 --dtb <output>/tree/build/sheng/sheng.dtb`。单独运行 bootimg 时必须传 `--dtb`，只有 `release` 会自动补上。
+- 这些产物彼此绑定：根卷策略的所有者密钥、种子 UUID 和芯片 ID。改了其中任何一项，都要按 userdata → kernel payload → bootimg 的顺序全部重做。
+
+**已刷入并启动（2026-11-13 约 21:28）**
+- 用户确认已经备份。
+- 执行 `adb reboot bootloader`，进入 fastboot 后确认 `unlocked: yes`，userdata 分区大小 `0x77AD3BB000`。
+- `fastboot flash userdata userdata-root.sparse.img`：22 批全部 OKAY，用时 494 秒。
+- `fastboot reboot bootloader` 之后要等 USB 重新识别再继续，否则会报 `usb_write failed e00002ed`。
+- `fastboot boot boot.img`：`Booting OKAY`。
+- 屏幕上的启动结果要等用户反馈。之后每次开机都要重新执行 `fastboot boot boot.img`；如果卡住，按电源键加音量下键回到 fastboot。
+
+**启动失败排查（2026-11-13 21:30–21:50）**
+- **header v0 启动不了**：bootloader 回复 `Booting OKAY` 之后 0.4 秒就又能响应 `fastboot getvar`，说明在 BootLinux 阶段就失败、退回了 fastboot，屏幕保持黑屏。完整镜像和空 ramdisk 镜像（`--ramdisk none`）结果一样，所以和 200 MiB 的 payload 无关。
+  - 注意：`fastboot devices` 只是枚举 USB，判断 bootloader 是否还在运行要用 `getvar`。
+  - 失败一次之后，再执行 `fastboot boot` 会一直报 `Load Error`，必须先 `fastboot reboot bootloader`。
+  - 槽位 a 正常（successful=yes，retry=6），不是重试次数耗尽。
+- **header v4、空签名区可以启动**：用同一个 kernel blob 重新打包，`signature_size` 设为 0，并去掉签名页（scratchpad 里的 `make-v4-test.py`）。之后 bootloader 不再响应，说明已经跳进固件。屏幕显示 "failed to load system"，随后关机。判断是 UniXNU 内置菜单（`no boot entry found`，10 秒后默认执行 Return to firmware）退回平台启动管理器，平台启动管理器没有可启动项，于是关机。这和 `docs/devices/erhai-xingxing19035.md:797` 记录的现象一致。
+- **推测的根本原因**：平板运行的是安卓 14 国行固件（UKQ1.231003.002），而 UEFI 输入和 DTB 都提取自 board.toml 锁定的 OS3.0.305.0.WNXMIXM（安卓 16 国际版）。ABL 版本不同，v0 镜像的处理方式也就不同（可能是附加 DTB 匹配不上，也可能是根本不支持 v0）。
+- **v4 带 payload 的难点**：v4 的 initrd 由原厂 vendor ramdisk 和我们的 ramdisk 拼接而成，而 `UniXNURamDiskDxe.c` 只在 initrd 开头找 FAT。另外，原厂 vendor_boot 头只给 ramdisk 留了 15 MiB 窗口（见 `docs/guide/boot.md`）。
+- 测试镜像：`UniXNU/out/flash/boot-noramdisk.img`（v0）和 `boot-v4-noramdisk.img`（v4），都在 gitignore 里。
+- **用户录屏确认（`UniXNU/data/mp4/IMG_6352.MOV`，未纳入 git，不要提交）**：用 v4 空 ramdisk 镜像，屏幕依次显示 Project Silicium logo → UniXNU 菜单（`version 0.1.0 | built-in configuration`，`no boot entry found`，`drivers 0 loaded / 0 failed`）→ 倒计时结束后执行 Return to firmware → BDS 报 `Booting Return Status = Not Found`、`USB boot desired, but no USB devices found` → 警告三角图标 → 关机。这说明固件和显示都正常，问题只在 v0 头部上。
+- **决定（2026-11-13 21:50，用户选择）**：把平板升级到项目锁定的 OS3.0.305.0.WNXMIXM 线刷包，与维护者环境保持一致，然后重新刷 userdata，再用标准 v0 boot.img 启动。线刷包下载到 `/Volumes/UniXNUBuild/rom/`，要核对 board.toml `[firmware.image]` 里的 sha256、md5 和字节数。运行前要先通读包里的 `flash_all.sh`，不能用 `flash_all_lock`。
+- **线刷包已下载并校验（22:44）**：从新加坡 OSS 直连单线程只有约 0.4 MB/s，改用 24 路并发分段下载，均速约 2.4 MB/s，用时 52 分钟。下载脚本在 scratchpad 的 `range-download.py`，大小、md5、sha256 全部一致。其他小米 CDN 更慢或返回 403；通过 hk2 服务器中转时，Mac 与 HK 之间只有约 40 KB/s，没有用。解压到 `/Volumes/UniXNUBuild/rom/extract/`，并复制到内置盘 `UniXNU/out/flash/`（gitignore），这样刷机时不依赖外置盘；我们的 `userdata-root.sparse.img` 也一起复制过去了。
+- **刷 OS3.0 之后（23:00–23:25）**：
+  - `flash_all.sh` 刷写 104 项全部 OKAY，进入国际版安卓 16 正常。
+  - 之后重刷 macOS userdata（22 批 OKAY）。
+  - v0 的 boot.img 和 v0 空 ramdisk 镜像，仍然在 0.4 秒内退回 fastboot，所以根因不是固件版本，之前的推测是错的。
+  - v4 加完整 payload 能进入固件，但菜单里没有 `payload:` 行。录屏（`data/mp4/IMG_6355.MOV`）里固件日志显示：`UNIXNURAMDISK: initrd 0xB604B000-0xB7FFEADC rounded to 0x1FB3C00 bytes ... Success`。initrd 只有约 31.7 MB，等于原厂 vendor ramdisk（30996100 字节）加约 2.2 MB（应该是 init_boot 的 ramdisk），boot.img 里的 200 MiB payload 完全没有带进来。说明 GKI 的 ABL 在 v4 模式下，通用 ramdisk 取自 init_boot 分区。
+  - DTB ID 核对：stock vendor_boot 里有 8 个 SoC 基础 DTB（board-id 0）；dtbo 里所有小米 8550 机型都是 board-id `0x10008`。我们 `sheng.dtb` 的 msm-id 是 `0x218 v2`、board-id 是 `0x10008`，和 KALAMAP 一致，没有发现不匹配。
+  - 维护者记录里 macOS 27.3 在 sheng 实机上跑过（run139 等），用的是 `fastboot boot boot.img`（v0），所以差异在设备一侧，现在还不知道具体是什么。
+- **GKI 分区方案打通 payload（23:29–23:40）**：
+  - 改了两个分区（ROM 里有原厂镜像，可还原）：
+    - `fastboot erase init_boot_a`
+    - `fastboot flash vendor_boot_a out/flash/vendor_boot-noramdisk.img`（用 `local-tools/make-vendor-boot-noramdisk.py` 生成：保留原厂 DTB 和 bootconfig，去掉 vendor ramdisk）
+  - 启动镜像：用 `local-tools/make-bootimg-v4.py` 把 v0 boot.img 的 kernel 重新打包成 v4，签名区为空，ramdisk 用 payload.img，输出 `out/flash/boot-v4-payload.img`。
+  - 第一次启动：UniXNU 找到了 payload，但 DxeCore 在清零 `0x8B9D00000..0x8BB300000` 时触发 `Synchronous external abort`。这台机器是 16+512 版本，受保护区域比维护者那台的低。
+  - 处理：把 `../uefi-sheng/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c` 里的 "DRAM bank 1 low" 改为 `0x880000000 + 0x20000000`（到 `0x8A0000000` 为止；改动未提交）。然后执行 `./unixnu build firmware`、`./unixnu bootimg --dtb ...`，再重新生成 v4 镜像。
+  - 第二次启动（录屏 `data/mp4/IMG_6358.MOV`）：
+    - UniXNU 菜单出现 `config: \EFI\UniXNU\unixnu.toml`，启动项是 `Boot`。
+    - 自动启动后，内核日志滚动约 40 秒，随后黑屏并出现鼠标指针，说明 WindowServer 已经起来了。
+    - 但日志结尾大量报 `IOBlockStorageDriver ... executeRequest: request failed to start!` 和 `disk2s1 ... cluster_push() failed with 16`（EBUSY），夹杂 `device is not ready`，用户反馈一直黑屏。
+    - 推测：持久化 Data store 窗口没有打开。依据是 `UniXNU-sheng/drivers/ShengUfs/RootCommands.h:590`：窗口没开时 `hostSyncCache` 返回 NotReady。打开失败的原因（off / no root layout / size / overlaps / window refused）会在更早的日志里打印，录屏读不清。
+    - 下一步可选：①对录屏做 Vision OCR（`local-tools/ocr-frames.swift`，做到一半被用户叫停）；②重新启动后近距离拍摄屏幕左侧的日志；③通过 `log=1` 写在 userdata 末尾 32 MiB 的诊断日志读取（需要 `read-sheng-log.py` 配套的 Linux 镜像，目前还没有构建）。
+- **黑屏加鼠标的根因（2026-11-14，读代码确认，没靠屏幕日志）**：
+  - 现象对应的代码：`UniXNU/drivers/RamBlock/NativeRamBlock.cpp:471-495`。Data 盘是 `isBig`（210 GiB），持久化 store（`direct`）没挂上时，写入一律返回 `kIOReturnNotReady`，也就是屏幕上的 `device is not ready`、`request failed to start`、`cluster_push() failed with 16`。
+  - 为什么没挂上：`PersistOverlay.h:87-110`。store 窗口里没有这份种子的覆盖层，又没有要求重置时，结果是 `Kept`，原样保留、不挂载。`NativeRamBlock.cpp:210-212` 的注释写明，`data-reset=1/2` 是新建 store 的唯一途径。
+  - macOS 没有入口：iPadOS 用菜单项 "Install and boot" 传 `data-reset`；macOS 的 override 把 `payload.install` 去掉了（`board.toml:284`），`docs/porting/macos.md` 也没写第一次启动要带这个参数。这是文档缺口，可以反馈给上游。
+  - 做法：构建一个"首次安装"镜像，只启动一次：`./unixnu build payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr --kernel-arg data-reset=1`。只重建 payload 就行，参数在 payload 步骤合并并封存（`payload.py:114-120`）。再用 `local-tools/make-bootimg-v4.py` 转成 `out/flash/boot-v4-install.img`。
+  - 之后的日常启动用不带 `data-reset` 的 `out/flash/boot-v4-payload.img`，否则每次启动都会清空 Data。
+  - 构建 payload 前要先把 OS 镜像只读挂到系统盘目录（见上面"payload 挂载 OS 镜像"一条）。
+  - 注意：这次构建会把 `<output>/payload/payload.img` 覆盖成带 `data-reset=1` 的版本，之后要重跑一次不带参数的 payload 构建，把它恢复成普通版。
+  - 执行记录（2026-11-14 00:04–00:11）：
+    - payload 构建成功，`payload.json` 的 `kernel_args` 以 `data-reset=1` 开头，payload sha256 `7e22ec74f3370d823461902dfc2d3d903173ddc3493ddb0101546a1dff3b495a`。
+    - `out/flash/boot-v4-install.img`：210903040 字节，sha256 `b52c8e1e5e584d20a25ea7b75f50f49e335f381048864133d95348329f6b1302`。kernel blob 与能启动的 `boot-v4-payload.img` 逐字节一致，ramdisk 等于新的 payload.img。
+    - 它等价于 iPadOS 菜单里的 "Erase Data, skip Hello, boot"：`board.toml:87-91` 的 `[payload.install]` 只做一件事，就是追加 `confirm_args`（`data-reset=1` 或 `2`）。
+    - store 窗口放得下：Data 盘 210 GiB（`runtime/request.json` 的 `data_gib`），userdata 分区 `0x77AD3BB000`（约 478.7 GiB），末尾保留 1024 MiB 给日志（`NativeUfs.cpp` 的 `log-reserve`），根镜像 16.39 GiB，互不重叠。窗口位置是"分区末尾 − 1 GiB − 窗口大小"，所以 `log-reserve` 以后不能改，改了旧 store 会被当成空白。
+    - 00:10 用 `local-tools/boot-sheng.py` 启动：`Booting OKAY`，之后 45 秒 bootloader 没有再响应，说明镜像在运行。
+    - 结果（用户 00:15 的照片，`data/png/IMG_6360–6364.HEIC`，未纳入 git，不要提交）：Data 写入报错消失，说明 store 已建好；但屏幕一直滚日志，进不了桌面。原因见下一条。
+- **第二个问题：WindowServer 崩溃循环，根因是内核 text fixup 与 4K 页校验冲突（2026-11-14 00:18–00:35，已用计算证实）**：
+  - 屏幕日志：`apfs_announce_hash_mismatch ... disk3s1 Data hash mismatch using hash type 1 for 16384 bytes at offset 98435072 in compressed data stream 11400 of inode 11399: expected 035febab…, got 28a001fd6ad8768…`，`decmpfs_pagein_compressed: Verification failed with error 94 ... valid_pages = 3, invalid_pages = 1`，随后 `apfs_pagein ... f_offset 98447360 ... error 94 (WindowServer)`，`exit: pid 904 WindowServer status 0xa reason 2:10`（SIGBUS）。
+  - inode 11399 是 SystemOS 卷的 `/System/Library/dyld/dyld_shared_cache_arm64e.03`（把 `141-22145-021.dmg` 只读挂载后用 `find -inum` 查到）。
+  - 镜像没坏：原始镜像、两份 sparse 镜像展开后的 sha256 都等于 `userdata-root.json` 的记录，三个窗口和三个 `.vroot` 表也都一致。ShengUfs 读窗口时每个 4K 块都按 `.vroot` 表校验（`RootWindowRead.h`），所以介质上的数据也是对的。
+  - 冲突点：macOS profile 的 `board.toml:240` 有 `text_fixups = ["dyld_shared_cache_arm64e.03,5de1134,08060037,1f2003d5"]`（把 QuartzCore 的一条 `tbnz` 改成 NOP，让 WindowServer 输出 8 位 BGRA）。`patches/xnu-12377/native-text-fixup.patch` 在页面通过代码签名校验后，直接改写页缓存里的那一页（文件偏移 `0x5de1000`）。
+  - APFS 的校验块是 16 KiB，本项目内核是 4 KiB 页。`bsd/kern/decmpfs.c` 的 `decmpfs_pagein_compressed` 在同一个 16K 块里只有部分页缺失时，只解压缺失的页，然后对内存里的整块做 `VNOP_VERIFY`。块里已有的那一页带着 fixup，哈希就对不上，返回 EBADMSG。
+  - 证实：取原始文件 `0x5de0000` 起的 16K，sha256 是 `035febab6e1c…`（等于屏幕上的 expected）；把 `0x5de1134` 的 4 字节换成 `1f2003d5` 后是 `28a001fd6ad87685…`（等于屏幕上的 got）。
+  - 这是上游缺陷，是否触发取决于同块的相邻页有没有被回收后重新读入，所以维护者的机器上不一定每次都出现。
+  - 修复：新增设备补丁 `../UniXNU-sheng/patches/xnu-12377/sheng-text-fixup-verified-pagein.patch`，并追加到同目录的 `series`（都未提交）。做法是校验前复制这一块，把 fixup 的字节还原成原值再校验；只在块内有 fixup 且有已存在页时才走这条路。补丁已对 `tree/.cache/xnu-work` 做过 `git apply --check`，两个文件也用构建记录里的编译参数做过语法检查。
+  - 改了补丁序列后，`./unixnu build kernel` 会重新克隆并打全部补丁（144 个，新补丁排最后）。这次 `kernel payload` 一起构建用了十几分钟，00:47 完成：`kernel.macho` sha256 `5e03486e40894e22…`，链接产物里有 `_cs_text_fixup_restore`；payload sha256 `c2f84d7fe958e8c6…`。
+  - 00:48 用新的 `out/flash/boot-v4-install.img` 启动：`Booting OKAY`，45 秒内 bootloader 没有再响应。屏幕结果待用户反馈。
+  - 00:51 普通 payload 重建完成：`payload.json` 的 `kernel_args` 不含 `data-reset`，`kernel_sha256` 是 `5e03486e…`，payload sha256 `16947138daf9d705…`。`out/flash/boot-v4-payload.img` 重新生成：sha256 `4abcc8976c9c94a2628637d3c6f507b595f1e770d1183058933723370c9e8368`，UEFI blob 与 install 镜像逐字节一致，ramdisk 等于 `payload.img`，里面没有 `data-reset=1`。OS 镜像已从 scratchpad 的 `os-mount` 卸载，下次构建 payload 前要重新只读挂载。
+  - **实机结果（00:56，用户反馈）：屏幕出现锁屏登录页面。** 也就是 WindowServer 和 loginwindow 都起来了，哈希不匹配导致的崩溃循环没有再出现，补丁在真机上有效。这次启动带 `data-reset=1`，Data 是全新的。
+  - 输入：按 `docs/zh/porting/macos.md` 第 6 节，触摸屏（`ShengNovatekTouch` + `ShengHidInput`）与显示器配对后当指针用，键盘保护套提供键盘和指针。没有键盘时输不了密码，可以重做 seed 加 `--auto-login`（要同时带 `--volume-uuid <原 UUID>`，否则得重建内核；换 seed 后还要再用一次带 `data-reset=1` 的镜像）。
+  - 外置盘断开（00:56 前后）：Mac 的 USB 扩展坞连同外置盘（PSSD T7）从总线上消失，当时构建盘镜像还挂着但没有构建在跑（最后一次写入是 00:51）。OS 镜像在 00:54 已正常卸载；残留的构建盘镜像设备用 `hdiutil detach disk6 -force` 清掉了。下次构建前：接回外置盘，执行 `hdiutil attach /Volumes/12873/UniXNU-build.sparsebundle`，先用 `diskutil verifyVolume /Volumes/UniXNUBuild` 检查卷，再核对 `kernel/kernel.macho` 的 sha256 是否仍是 `5e03486e40894e225c9fe4e7252661d3e4b0ca9e77369fbc6264b604d0f80699`。开机用的镜像都在内置盘 `out/flash/`，不依赖外置盘。
+  - `locationd` 每次启动都被 `reason 28:261`（PAC 校验失败）杀掉，出现在哈希错误之前，是另一个问题，目前没查。
+- **flash_all.sh 审查结果**：与 lock 版本相比只有最后一行不同（`reboot` 与 `oem lock`）。它会检查防回滚（包内 `anti_version`=1，设备的 `anti` 大于 1 就拒绝刷）。刷写范围是两个槽位的引导链和固件，以及 super/boot/init_boot/vendor_boot/dtbo/vbmeta/recovery/metadata/userdata/misc，最后执行 `set_active a`、`reboot`。
+- 平板已用 adb 连上：型号 24018RPACC，bootloader 已解锁（`ro.boot.flash.locked=0`，verifiedbootstate 为 orange），当前槽位 `_a`。
+- 芯片 ID 用平板 adb 的 `ro.serialno`（8 位十六进制），只写在 `unixnu.local.toml` 的 `unique_chip_id`，本文件不记录它的值。
+- 重启或重新插拔外置盘后，要先执行 `hdiutil attach /Volumes/12873/UniXNU-build.sparsebundle`。
+- `adb` 和 `fastboot` 在沙箱里看不到 USB 设备，也起不了 adb 服务，要关掉沙箱运行。
+
+---
+
+## 1. 仓库布局与版本
+
+三个仓库并排放在 `~/Downloads/Projects/personal_projects/` 下，这是文档约定的相对路径，不要挪动：
+
+| 目录 | 来源 | 版本 | 状态 |
+| --- | --- | --- | --- |
+| `UniXNU/` | github.com/UniXNU/UniXNU | `dff2765` | 干净；20 个 submodule 已初始化；本文件未提交 |
+| `UniXNU-sheng/` | github.com/UniXNU/UniXNU-sheng | `1108068` | `unixnu.lock` 被 fetch 改了（见第 5 节） |
+| `uefi-sheng/` | github.com/UniXNU/uefi-sheng | `66421cb7` | 干净；所有 submodule 已初始化，5.7 GB |
+
+- **Fork（2026-11-13）**：GitHub 账号 `zus12873` 下已 fork 了 UniXNU、UniXNU-sheng、uefi-sheng（默认分支 `sheng`）和 UniXNU-sm8550-common。本地三个仓库的远端：`origin` 是你的 fork，`upstream` 是 UniXNU 官方，`main` 仍然跟踪 `upstream/main`。2026-11-13 已把 UniXNU（落后 12 个提交）和 UniXNU-sheng（落后 9 个）快进到上游最新，submodule 已同步（Adreno740、AdrenoMetal 的指针更新了）；uefi-sheng 本来就是最新的。新提交包括 macOS 原生 APFS 容器存储、`restore macOS root windows`。更新后已重跑 `--check`（2026-11-13，退出码 0，仍是 143 个补丁，锁定的源码都已在缓存里，没有重新下载）。
+- **输出目录在外置盘上（2026-11-13）**：外置 SSD 卷 `12873` 是 exFAT，不支持符号链接，所以在上面建了一个 APFS 稀疏磁盘映像 `/Volumes/12873/UniXNU-build.sparsebundle`（上限 200 GB，按实际写入量占用空间），挂载点是 `/Volumes/UniXNUBuild`。原来的 `out/`（832 MB，20653 个文件，大小逐一核对过）已搬到 `/Volumes/UniXNUBuild/unixnu-out` 并删除了旧目录。`UniXNU/unixnu.local.toml`（已被 git 忽略）里写了 `device`、`uefi`、`out` 三项。**重启或拔盘后要先重新挂载**：`hdiutil attach /Volumes/12873/UniXNU-build.sparsebundle`，否则构建会把输出写回系统盘。`TM-Backup` 是 Time Machine 备份盘、`WININSTALL` 是 FAT32，两个都没有动。
+- 状态文件 `state.json`（已随 out/ 搬到外置盘）已经记住设备仓库 `-D ../UniXNU-sheng` 和 `sheng_macos_defconfig`，后续命令不用再带 `-D`。
+- 输出目录：`/Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/`（下文写 `<output>` 的地方都指它）
+
+## 2. 已完成（都验证过）
+
+**主机工具**
+- Homebrew：llvm 23.1.5、lld 23.1.5、ninja 1.13.2、unifdef 2.12、mtools 4.0.50、dtc 1.8.1、cmake 4.4.4
+- fastboot：`/opt/homebrew/bin/fastboot`
+- Python 3.13：`unixnu` 只用标准库，不需要建虚拟环境
+- Xcode 27.2（27B52）：已经用 `xcode-select` 选中；许可协议和首次启动组件都已完成；iPhoneOS 27.2 和 MacOSX 27.2 两个 SDK 都实际编译过 `arm64e` 目标；mig、iig、ld、libtool、metal、compression_tool 都能找到
+
+**依赖检查**：`cd ../UniXNU-sheng && scripts/package.sh --os macos-27 --check` 退出码 0，最后一行：
+`check done: 143 patches, configuration sheng_macos_defconfig, OS macos-27.3-26C5035r`
+- `out/feeds/` 有 10 个源码：xnu、libplatform、libdispatch、AvailabilityVersions、libpthread、corecrypto-2023、IOStorageFamily、IOHIDFamily，以及 mu_basecore 和它的 submodule
+- `out/ipsw/26C5035r/` 有 kernelcache.decompressed（119 MB）、DeviceTree.k114cap.im4p，以及 Static、System、App 三个 trust cache
+- `out/` 一共 835 MB
+
+**package 和 firmware 已构建完成（2026-11-13，`./unixnu build package firmware --os macos-27`，退出码 0）**
+- `<output>/package/Build/Out/AARCH64-DEBUG/`：UniXNU.efi、UniXNUDxe.efi、UniXNURamDiskDxe.efi 等 6 个 EFI 程序
+- 固件 `uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd`：3145728 字节，正好等于要求的 FD_SIZE 0x300000
+- 固件预检结果：`0 static errors; 0 vendor inputs still missing`；启动镜像要用的设备树已生成在 `<output>/tree/build/sheng/sheng.dtb`
+- 外置盘已用 11 GiB，剩 188 GiB；uefi-sheng 工作区仍然干净
+
+## 3. 还没解决的问题
+
+0. **缺 `ipsw` 命令行工具，目前卡在这里（2026-11-13）**：macOS 27.3 的系统卷 `141-22233-021.dmg.aea` 是 AEA 加密格式，解密前要用 blacktop 的 `ipsw` 工具获取密钥（`/usr/bin/aea` 系统自带，已经有）。系统卷已经完整下载并缓存在 `<out>/ipsw/26C5035r/141-22233-021.dmg.aea`（11.4 GB），不用重下。`brew install blacktop/tap/ipsw` 失败了：Homebrew 要求先把 Command Line Tools 更新到 Xcode 27.0 对应的版本；之后再次尝试被 auto 模式分类器拦下（Unauthorized Access）。需要用户自己安装 `ipsw`。Data 种子、userdata 镜像、内核、payload 和 bootimg 都卡在这一步。**已解决（15:25）**：用户执行了 `brew install ipsw`，装的是 homebrew/core 版本 3.1.745（和 tap 版是同一个工具，两者不能同时安装）。实测 `ipsw fw aea --key <dmg.aea>` 能返回一行 `base64:` 开头的密钥，正是 unixnu 需要的格式。之后重新运行了 `./unixnu build kernel payload --os macos-27`：系统卷已解密成 `<out>/ipsw/26C5035r/141-22233-021.dmg`（14.5 GB），命令按预期停下，打印了制作种子的命令（data_gib 是 210）。种子脚本在 sudo 下会用系统的 Python 3.9.6，实测 `--help` 能正常运行。**下一步由用户在自己的终端运行**（sudo 要交互输入密码）：
+`sudo python3 <output>/tree/scripts/make-macos-data-seed.py <out>/ipsw/26C5035r/141-22233-021.dmg <output>/runtime/data.dbr --gib 210 --skip-setup --user '账户名:密码'`
+同时在后台用 `./unixnu ipsw fetch "Cryptex1,SystemOS" "Cryptex1,AppOS" --os macos-27` 下载 userdata 需要的两个 cryptex 镜像（只下载、不挂载，不影响种子脚本）。
+1. **芯片 ID `UNIXNU_UNIQUE_CHIP_ID`**：平板的平台种子，8 位十六进制，生成 payload 时要用，会写进镜像。只能由用户提供，**不要提交到任何仓库**。文档没写怎么获取。
+2. **Xcode 版本风险**：项目是在 Xcode 26 上开发的，CI 固定用 26.6（`.github/workflows/macos.yml` 第 80 行附近）。CI 配置里记录过，换 Xcode 版本后 clang 不认识警告选项、加上 `-Werror` 导致编译失败的情况。本机的 Xcode 27.2 / clang 21.0.0 能不能编过，要等第一次编译内核才知道。如果因为警告失败：另外装 Xcode 26.6，然后用 `DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer ./unixnu ...` 运行。
+3. **磁盘空间**：目前剩约 95 GB。`build userdata` 要把 IPSW 里完整的 OS、SystemOS、App 磁盘镜像装进去，可能要几十 GB。
+4. **固件步骤可能缺 Python 包**：`uefi-sheng/pip-requirements.txt` 里列了 edk2-pytool 等包。UniXNU 是直接调用 EDK II 的 `build`，大概率用不到。如果真报缺包，用 uv 单独建一个虚拟环境来装，不要装进 conda base 环境。
+
+## 4. 接下来的步骤
+
+**每条命令都要带 `--os macos-27`，漏了就会按 iPadOS 构建。** 以下命令都在 `UniXNU/` 目录下执行。
+
+```sh
+# 0. 上游更新后先重跑依赖检查（拉取新锁定的源码），由用户自己运行
+cd ../UniXNU-sheng && scripts/package.sh --os macos-27 --check && cd ../UniXNU
+
+# 1. 内核 + payload。第一次运行会在编译前停下，打印制作 Data 种子的命令（含 OS 镜像路径、输出路径、data_gib）
+./unixnu build kernel payload --os macos-27
+#    用它打印的路径和大小运行（按 docs/zh/porting/macos.md#account，2026-11-13 上游更新后的写法）：
+#    sudo python3 scripts/make-macos-data-seed.py "<OS image>" "<output>/runtime/data.dbr" --gib "<data_gib>" \
+#      --skip-setup --user '账户名:密码'        # 可选 --auto-login；输出必须是新 seed
+UNIXNU_UNIQUE_CHIP_ID=<8位hex> ./unixnu build kernel payload --os macos-27 --data-ramdisk "<output>/runtime/data.dbr"
+#    后面执行 bootimg 时也要带上同一个 --data-ramdisk
+
+# 2. package 和固件。固件预检会自动下载 board.toml [firmware.image] 里锁定的官方 fastboot 包，只保留需要的文件
+./unixnu build package  --os macos-27
+./unixnu build firmware --os macos-27 --uefi ../uefi-sheng
+
+# 3. userdata 镜像（体积大，先 dry-run 看大小）
+./unixnu build userdata --os macos-27 --dry-run
+./unixnu build userdata --os macos-27
+
+# 4. 启动镜像
+./unixnu bootimg --os macos-27 --data-ramdisk "<output>/runtime/data.dbr"
+```
+
+第 1 到第 4 步中，除了 userdata，其余可以一条命令完成：
+`cd ../UniXNU-sheng && UNIXNU_UNIQUE_CHIP_ID=<hex> scripts/package.sh --os macos-27 --uefi ../uefi-sheng`
+（产物是 boot.img、payload.img、kernel.macho 和 manifest）
+
+**刷入并启动（由用户自己操作）**
+```sh
+fastboot devices
+fastboot flash userdata /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/userdata/userdata-root.img   # 会清空安卓数据
+fastboot reboot bootloader
+fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/boot/boot.img                          # 每次开机都要执行
+```
+- 卡住时：按电源键加音量下键回到 fastboot。
+- 屏幕顶部出现绿带，说明内核之前的阶段都已通过，按 `docs/zh/guide/debugging.md` 的"绿条诊断"排查。
+- 内核参数 `vc-text=1` 会把内核日志显示在屏幕上。
+
+## 5. 踩过的坑和注意事项
+
+- **Claude Code 沙箱**：在沙箱里，写 `.git/config`（例如 `git submodule update`）和写上一级目录都会被拒，只能关掉沙箱运行。自动模式的分类器曾以 "Code from External" 为由拒绝在沙箱外运行 `package.sh`。2026-11-13 起，`UniXNU/.claude/settings.local.json`（已被全局 gitignore 忽略）里加了放行规则：`./unixnu *` 和 `../UniXNU-sheng/scripts/package.sh *` 会自动放行，并自动在沙箱外运行。**前提是命令要在 `UniXNU/` 目录下、按这个写法开头，不能加 `cd`、管道或环境变量前缀**，否则就不匹配规则。所以芯片 ID 要写进 `unixnu.local.toml` 的 `unique_chip_id`，不要写成 `UNIXNU_UNIQUE_CHIP_ID=... ./unixnu`。`sudo` 制作 Data 种子的命令不在放行范围内，由用户自己运行。
+- **lld**：Homebrew 新版本把 lld 拆成了单独的包，只装 llvm 时没有 `ld.lld`。脚本会去 `/opt/homebrew/opt/lld/bin` 找它。
+- **unixnu.lock 被所有 profile 共用**：macOS 的 fetch 新加了 IOHIDFamily，并把 IOStorageFamily 的锁定版本从 `e45fbe30` 改成了 `7edb88fb`。只构建 macOS 不用管；以后要构建 iPadOS，先 `git -C ../UniXNU-sheng checkout unixnu.lock`。
+- **sudo**：制作 Data 种子要用 root 运行，复制时保留文件属主。开着 SIP 的 Mac 上，有 19 个带 restricted 标记的条目会去掉这个标记再复制，这是预期行为。
+- **macOS 根卷策略要在本地生成（2026-11-13）**：
+  - 现象：第一次 `build kernel` 在 `component-ShengUfs` 停下，报错缺 `scripts/policies/macos-27.3-26C5035r/OS/trusted-key.bin`。
+  - 原因：上游 UniXNU-sheng 只提交了每个系统卷的 `verification.json`。它 `.gitignore` 里的 `!policies/**/*.bin` 带斜杠，只锚定仓库根目录，匹配不到 `scripts/policies/`，所以 `.bin` 文件都被忽略了。
+  - 做法：按 `docs/porting/macos.md` 第 208 行，在 `UniXNU/` 下运行：
+    ```
+    python3 scripts/make-root-policies.py --tree <output>/tree --output ../UniXNU-sheng/scripts/policies/macos-27.3-26C5035r \
+      --window OS=<ipsw>/141-22233-021.dmg:84581E99-… --window SystemOS=<ipsw>/141-22145-021.dmg:6678E466-… --window App=<ipsw>/141-22106-021.dmg:F2AEA010-…
+    ```
+    UUID 来自 profile 的 `[root]` 段。要关掉沙箱运行，因为它要写外置盘和上一级目录。
+  - 镜像校验：三个镜像的 SHA-256 都和 profile 一致。SystemOS 是用 `unixnu.ipsw.decrypt_aea` 单独解密出来的。
+  - 产出：策略文件写进设备仓库，每次 tree 步骤都会复制过去。`.bin` 已被 gitignore，`verification.json` 会显示为已修改，不要提交。所有者私钥在 `<output>/tree/build/verified-root-host/keys`，不要提交。
+  - **userdata 必须带上哈希表**：`--object OS.vroot=<output>/tree/build/verified-root-OS/hashes.bin`，SystemOS 和 App 同样各加一个。
+  - 重新生成策略后，kernel、userdata、payload 和 bootimg 都要重做，不能混用不同批次的产物。
+- **输出目录放在仓库外，要补一个符号链接（2026-11-13）**：`UniXNU-sheng/scripts/build-gop-legacy-display-27.py:402` 写死了 `ROOT.parents[4] / 'scripts/build-sheng-source-drivers.py'`，默认输出目录是 `UniXNU/out/` 时，这个路径正好指回 UniXNU 仓库。输出放在 `/Volumes/UniXNUBuild/unixnu-out` 时，它会去找 `/Volumes/UniXNUBuild/scripts`，于是 `archive-20` 失败。处理：建了符号链接 `/Volumes/UniXNUBuild/scripts -> UniXNU/scripts`，代码没改。换磁盘或换输出目录后要重新建这个链接。
+- **上游 SoC 版本锁旧了（2026-11-13）**：`archive-20` 编译 `package/BluetoothProbe.cpp` 时报错 `'Sm8550GeniUart.h' file not found`。
+  - 原因：这个文件是 UniXNU-sheng 的 5b744f6 引入的，它依赖 sm8550-common 在 009512d（11-07）新增的 GENI UART、GCC 和 QUP DMA 文件。但上游 `feeds.toml` 和 `unixnu.lock` 还锁在 a9f45dc（10-31）。
+  - 改动：已把 `../UniXNU-sheng/feeds.toml` 的 sm8550 commit 改成上游 main 的 `2dc650ca76ae38715cd0712e60a44b14fe251745`，然后运行 `./unixnu fetch --os macos-27`，lock 文件会跟着更新。用 GitHub compare 核对过，两版之间只在 `kits/Sm8550Platform` 下新增文件、改了 README，`patches/` 没有改动。
+  - 状态：这个改动没有提交。它属于上游 bug，可以提 PR。
+- **厂商固件要单独提取（2026-11-13）**：`archive-20` 报 `nanosic/MCU_Upgrade.bin: run scripts/extract-files.py --section Keyboard`。preflight 显示的"0 vendor inputs missing"不包括 `proprietary-files.txt` 里的文件。解决方法：在 `../UniXNU-sheng` 下运行 `python3 scripts/extract-files.py`，不带参数时从 `@fetch` 指定的公开镜像下载，并逐个核对 SHA-256。要关掉沙箱运行。下载了三个文件：触摸固件、键盘固件和 VPU 固件，`--check` 全部显示 ok。
+- **Wi-Fi 源码稀疏检出与 git 2.54 不兼容（2026-11-13）**：
+  - 现象：`archive-20` 调用 `build-ath12k-wifi.py`，它执行 `Ath12kWifi/tools/fetch-sources.py` 时报 `fatal: specify directories rather than patterns (no leading slash)`。
+  - 原因：`source-lock.json` 里的路径是带前导 `/`、并且包含单个文件的模式，只有非 cone 模式才能用。git 从 2.37 起，`clone --sparse` 默认用 cone 模式。
+  - 处理：先手动把 `deps/linux` 切到非 cone 模式：`git sparse-checkout set --no-cone <paths>`。`deps/freebsd` 用脚本相同的参数克隆，同样切到非 cone 模式。再运行 `python3 tools/fetch-sources.py`，它会下载 wpa_supplicant，并核对全部锁定版本，`--check` 退出码为 0。这些操作都在构建脚本之外完成，所以不受它 300 秒超时的限制。
+- **payload 挂载 OS 镜像时报 Permission denied（2026-11-13）**：
+  - 现象：`build-boot-runtime.py` 用 `hdiutil attach -readonly -mountpoint <output>/runtime/prepare-*/os-mount` 挂载时失败。
+  - 原因：普通用户不能在一个由用户挂载的磁盘映像卷（`/Volumes/UniXNUBuild`，mount 显示 `noowners, mounted by huanmeng`）里面再挂载别的映像。把挂载点放在系统盘上就能成功；用 root 运行的种子脚本也不受这个限制。
+  - 处理：利用脚本自身的复用逻辑（第 40-49 行，已经只读挂载、并且里面有 `sbin/launchd` 的挂载点会直接复用），先执行 `hdiutil attach -readonly -nobrowse -mountpoint <系统盘上的目录> <ipsw>/141-22233-021.dmg`，再跑 payload。跑完后要 detach。
+- **payload 构建 GPU 运行时需要 glslang（2026-11-13）**：`build-turnip-darwin.py` 用到 `glslangValidator`，`docs/guide/requirements.md` 的工具表里没有列出它。已通过 `brew install glslang` 安装 16.6.0。meson 由脚本自动装进 `<output>/tree/.cache/mesa-venv`，不需要手动安装。
+- **Mesa 需要 bison 3.x（2026-11-13）**：
+  - 现象：Turnip 构建在生成 `ir3_parser.c` 时失败，报 `/usr/bin/bison: invalid option -- W`。Apple 自带的 bison 是 2.3。
+  - 原因：`build-turnip-darwin.py` 会把 `<output>/tree/.cache/mesa-tools/bin` 放到 PATH 最前面，但这个目录只有 `build-adreno-compiler-host.py` 会生成（它编译锁定版本的 bison 3.8.2，并校验 SHA-256）。macOS 流程里的 `build_plugin` 不会调用它。
+  - 处理：手动执行 `python3 <output>/tree/scripts/build-adreno-compiler-host.py`，要关掉沙箱运行，之后再重跑 payload。
+- **GPU 插件需要的主机工具以 CI 为准（2026-11-13）**：`docs/guide/requirements.md` 列得不全，完整清单在 `../UniXNU-sheng/.github/workflows/package.yml:56-63`：`brew install dtc llvm lld cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup blacktop/tap/ipsw`，再加上 `rustup toolchain install 1.98.0 --profile minimal --component rust-src`。本机这次补装了 glslang、shaderc（提供 `glslc`）和 Rust 1.98.0 + rust-src（`build-adreno-metal-bridge.py` 用 `cargo +1.98.0 -Z build-std` 编译 arm64e 版本）。
+- **WCN7850 Wi-Fi 固件需要自己提供（2026-11-13）**：`build-wifi-userspace.py` 要求 `../UniXNU-sheng/firmware/wcn7850/{amss.bin,m3.bin,board-2.bin}` 存在，且与同目录下 `manifest.json` 里记录的大小和 SHA-256 一致；这几个 `.bin` 已被 gitignore。没有 root 时 adb 读不到平板的 vendor 分区。来源：linux-firmware 上游的 `ath12k/WCN7850/hw2.0/`，下载地址形如 `https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/ath12k/WCN7850/hw2.0/<file>`。2026-11-13 下载的版本，三个文件的大小和 SHA-256 都与 manifest 完全一致。
+- **kernel 和 payload 必须用同一条命令构建（2026-11-13）**：单独运行 `build payload` 会报 `Data seed UUID differs from the compiled configuration`。原因在 `scripts/unixnu/runtime.py:111`：只有当同一条命令里也有 `kernel` 时，它才会把种子的卷 UUID 写进 `.config`（`CONFIG_XNU_OWNER_DATA_VOLUME_UUID`），再编译内核。所以要一起运行：`./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。
+- **刷 userdata 要先转成 sparse 镜像（2026-11-13）**：直接执行 `fastboot flash userdata userdata-root.img` 时，Homebrew 的 fastboot 37.0.0 在发送前就报错 `Failed reading from userdata`，设备上什么都没写。原因是分区比镜像大，fastboot 会先读整个 17.6 GB 文件，去复制 AVB footer。项目自带的 `scripts/make-android-sparse.py SRC DST` 已经说明了这个问题：转换后零块写成 FILL（不是 DONT_CARE），会展开回原内容核对 SHA-256，然后刷 `userdata-root.sparse.img`。
+- **userdata 已构建（2026-11-13 19:58）**：`<output>/userdata/userdata-root.img` 大小 17603493888 字节（16.39 GiB），包含 OS、SystemOS、App 三个卷和三个 `.vroot` 表，SHA-256 都与 profile 一致。board.toml 里的 userdata 分区约 232 GiB，对应 256 GB 版本；这台平板的 `/data` 有 479G。不过内核运行时是读 GPT、按分区名查找 userdata 的（`ShengUfs/RootLayout.h` 的 `findRootLayout`），board.toml 的 LBA 只用于主机端检查容量，所以分区更大没有影响。
+- `build kernel` 的引导编译会在链接时失败，日志里出现 `ld: symbol(s) not found` 是正常的（见 `scripts/unixnu/kernel.py:202`），只看最终退出码。
+- xcodebuild 在沙箱里会刷 `DVTFilePathFSEvents: Failed to start fs event stream` 警告，可以忽略。
+- 项目不分发 Apple 二进制文件，所有镜像都要自己构建；IPSW 是按需从 Apple CDN 读取的。
+
+## 6. 对结果的预期（来自维护者记录，未验证）
+
+依据 `docs/zh/devices/sheng.md` 和 `docs/zh/devices/sheng-macos.md`：
+- 官方 sheng 默认构建 iPadOS 27，macOS 27.3 是挂在 `os_overrides` 下的第二个 profile。
+- macOS 27.3 已在实机上确认的：键盘保护套能用，能走完键盘设置助理（2026-11-10）；Wi-Fi 能连上、能拿到 DHCP 地址；颜色正确（`fb-half=2`）；H.264 硬解可用。
+- 还没做到的：GPU Metal 插件没打进 macOS 镜像（`gpu_addon = false`）；蓝牙配对没确认；触控板偶尔会失灵；很多改动标着 "Not yet run on hardware"。
+- 结论：实验性质，不能当日常系统用。
+
+## 7. 参考文档
+
+- `docs/zh/porting/macos.md`：macOS profile 的完整流程（输入、Data 种子、构建、检查点）
+- `docs/zh/building.md`：命令、选项、输出目录
+- `docs/zh/guide/boot.md`：fastboot 刷写、启动菜单、恢复
+- `docs/zh/guide/requirements.md`：主机工具和外部输入
+- `docs/zh/devices/sheng.md`：sheng 各子系统的实现与证据
+- `../UniXNU-sheng/README.md`：一键打包脚本和 GitHub Actions 构建
+
+## 8. 新需求：开机自启动 macOS 与 iPadOS（2026-11-14 调研，方案待用户确认）
+
+用户原话："我现在想开机自启动macos，然后我想再往上刷个ipados"，并指定参考仓库 `https://github.com/CrossDarwin/UniXNU_macOS`（已克隆到 `../UniXNU_macOS`，默认分支 `test_27`，是 UniXNU 主仓库的 fork，与本地 main 的分叉点是 `2bbb39d`，领先 64 个提交）。
+
+**参考仓库里有什么**
+- Actions 打包流程（`docs/zh/guide/sheng-macos-actions.md`）：面向 256 GB 的 sheng；文档写明 `boot.img` 用于临时启动。
+- 实验性的原生 APFS 容器存储后端（`scripts/sheng-apfs/README.md`）：替换现有 userdata 布局，单系统，没有封印和逐块校验。
+- 账户预置支持 `--auto-login`；PSCI 关机与重启补丁（`scripts/data/armdt-platform-psci.patch`、`macos-union-shutdown.patch`）。
+- 没有"刷进 boot 分区自启动"和"双系统并存"的做法。
+
+**自启动 macOS：调研到的事实**
+- 分区大小（ROM 的 `partition_dev_n81a.xml`，上机后要用 `fastboot getvar partition-size:boot_a` 复核）：`boot_a` 192 MiB，`vendor_boot_a` 96 MiB，`recovery_a` 100 MiB，`init_boot_a` 8 MiB。
+- 现在的 v4 启动镜像是 210903040 字节（201.1 MiB），放不进 `boot_a`。payload 是 200 MiB 的 FAT32（`board.toml` macOS 段 `size_mib = 200`），实际用了 180.7 MiB：`kernel.macho` 137.1、`kernel.macho.gpuaddon` 22.7、`scratch-data.img` 20.5、trustcache 0.4。ramdisk 上限约 190.8 MiB，所以把 `size_mib` 改到 188 左右就能放进去。
+- 设备仓库的 `scripts/build-flash-image.sh` 是维护者的同类做法（payload 176 MiB，刷 `boot_b` 后 `set_active b`），针对的是旧的 session image 流程和 v0 镜像，不能直接用。
+- 原厂 `vbmeta.img`（flags 0）里 `boot`、`dtbo`、`init_boot`、`vendor_boot` 都是 hash descriptor，`boot` 的 `image_size` 是 47599616（45.39 MiB）；`recovery` 和 `vbmeta_system` 是 chain。按 libavb 的行为，从分区正常启动时只会读入 descriptor 记录的长度，我们的镜像会被截断。所以刷 `boot_a` 的同时要把 `vbmeta_a` 刷成关闭校验的版本（`fastboot --disable-verity --disable-verification flash vbmeta_a <ROM>/images/vbmeta.img`），可用原厂 `vbmeta.img` 还原。这一条是按 AVB 公开实现推断的，没有在这台机器上验证。
+- 不要执行 `fastboot set_active`：它会清掉槽位 a 的 successful 标记并把重试次数重置为 7，之后每次开机减 1，减到 0 槽位就被标成不可启动（没有安卓来标记启动成功）。 **更正（01:55）：刷 `boot_a` 本身就会清掉这个标记，见下面"槽位重试次数"。**
+- 没验证的点：正常开机路径是否和 `fastboot boot` 一样接受"v4 头 + boot 里带 ramdisk + init_boot 为空"。失败的表现应当是退回 fastboot，和现在一样，可以用 ROM 里的 `boot.img`、`vbmeta.img` 还原。
+- 重建 payload 需要外置盘接回来。
+
+**iPadOS：调研到的事实**
+- `board.toml` 的默认 profile 就是 `ipados-27.0.1-24A446`，上游主要目标；构建需要另下 IPSW、另建内核和 payload、另做 Data 种子。
+- 存储布局按"一台平板一个系统"设计：userdata 开头只有一份 `SHNGROOT` 清单，两个系统的窗口都叫 `OS`、`SystemOS`（`drivers/ShengUfs/RootPublication.h:13-14` 按字面名字查找）；持久化 Data store 的位置从分区末尾倒推（`NativeUfs.cpp:1500-1519`，`log-reserve` 默认 1024 MiB），两个系统的 store 会重叠。
+- macOS 的 payload 一个就占 181 MiB，两个系统的 payload 放不进同一个 192 MiB 的 boot 分区。
+- 所以"两个系统同时留在平板上"需要自己改存储布局和驱动，属于开发工作，结果不确定；"轮流刷"则每次切换都会清掉另一个系统的数据。
+
+**自启动实施记录（2026-11-14，方案 `docs/superpowers/specs/2026-11-14-macos-autoboot-design.md`，计划 `docs/superpowers/plans/2026-11-14-macos-autoboot.md`）**
+- 用户选了"直接刷 `boot_a`"。提交在本地分支 `local/sheng-16g-macos` 上，不 push。
+- 更正：前面"必须关闭 `vbmeta_a` 校验"的说法不成立。AVB 公开源码 `avb_slot_verify.c` 里，允许校验错误（解锁）时 `load_and_verify_hash_partition` 读入整个分区。现在的做法是先不动 `vbmeta`，`boot_a` 启动失败再试。
+- 官方 `payload.py` 要求文件总量不超过 `size_mib` 的 95%：190 MiB 过不了检查，191 MiB 放不进分区。所以新增本地工具 `local-tools/make-flash-bootimg.py`（测试在 `local-tools/tests/`，`python3 -I -m unittest discover -s local-tools/tests`，8 个全过），从已验证的 `out/flash/boot-v4-payload.img` 重新打包。
+- 产物 `out/flash/boot-v4-flash.img`：200417280 字节，sha256 `ae0d4179c7702492dbc916a73f35c851baa6722ad72486ee66d9c9bebaee7e4e`。FAT32 卷 190 MiB，簇 2048 字节，8 个文件，剩余 8.5 MiB。独立核对过：UEFI 部分与源镜像逐字节相同，头部只有 `ramdisk_size` 不同，8 个文件的路径、大小、sha256 与源镜像一致。
+- 上机进度（顺序是只读查询 → `fastboot boot` 新镜像 → 刷 `boot_a` → 冷开机复测 → 槽位复核）：
+  - 01:39 只读查询：`product: sheng`，`unlocked: yes`，`current-slot: a`，`partition-size:boot_a: 0xC000000`（201326592，镜像放得下，余 909312 字节），`partition-size:vbmeta_a: 0x20000`。
+  - 槽位基线（刷入前）：`slot-successful:a: yes`，`slot-unbootable:a: no`，`slot-retry-count:a: 6`；`slot-successful:b: no`，`slot-unbootable:b: no`，`slot-retry-count:b: 7`。槽位 a 的重试次数和 11-13 晚上记录的一样，说明标记为 successful 的槽位开机不扣次数。电池 3892 mV。
+  - 01:39 内存启动 `out/flash/boot-v4-flash.img`：`Booting OKAY`，45 秒内 bootloader 没有再响应，镜像在运行。屏幕结果等用户确认；确认到登录页之后才刷 `boot_a`。
+
+  - 01:41 用户反馈内存启动到了登录页，同时反馈在 macOS 里点 Shut Down 没有关机。
+  - 01:43 刷入：`fastboot flash boot_a out/flash/boot-v4-flash.img`，`Sending 'boot_a' (195720 KB) OKAY [4.488s]`，`Writing 'boot_a' OKAY [0.077s]`。刷完立刻读到 `slot-successful:a: no`（刷入前是 `yes`；重试次数当时没读）。`fastboot reboot` 之后 75 秒内 bootloader 没有回来。
+  - 用户反馈：平板自己进了系统（这次启动没有用 Mac 的启动命令，从 `boot_a` 自启动成立）；在系统里点 Shut Down 仍然没有关机；之后用户手动按键进了 fastboot。
+  - 01:55 槽位读数：`current-slot: a`；`slot-successful:a: no`，`slot-unbootable:a: no`，`slot-retry-count:a: 6`；`slot-successful:b: no`，`slot-unbootable:b: no`，`slot-retry-count:b: 7`；电池 3880 mV；`charger-screen-enabled: 1`。
+  - 还没做：冷开机复测（不接 Mac，按电源键开机）。
+
+**槽位重试次数（2026-11-14 01:55，未解决）**
+- 事实：`fastboot flash boot_a` 清掉了槽位 a 的 successful 标记。刷入前是 `successful: yes`、重试 6；刷入并正常启动一次之后是 `successful: no`、重试 6；用户手动进 fastboot 没有再扣。之前刷 `vendor_boot_a`、擦 `init_boot_a` 都没有动这个标记。
+- 解释（来自我记忆中的高通公开 ABL 源码 QcomModulePkg，本次没有逐行核对；和上面的读数吻合，但刷完当时的次数没读）：刷名字以 `boot` 开头的分区时，`FastbootUpdateAttr` 会清掉 successful 和 unbootable，并把重试次数设为 7；槽位没有 successful 标记时，每次正常开机在 `FindBootableSlot` 里扣 1；`fastboot boot`、按键进 fastboot、进 recovery 不扣。冷开机复测后再读一次，读到 5 就证实了这个解释。
+- 后果：还能正常开机 6 次。扣到 0 之后 ABL 会把槽位 a 标成不可启动并切到槽位 b。ROM 的 `flash_all.sh` 给两个槽位刷的是同一套原厂安卓镜像（`fastboot flash boot_ab …`），而 userdata 现在是 macOS 的，所以槽位 b 起不来，平板会停在 fastboot 或原厂 recovery。**在 recovery 里不要选清除数据。** 这不是变砖：接上 Mac 执行 `fastboot set_active a`，或者重刷一次 `boot_a`，次数就回到 7。
+- 四个仓库里都没有"把槽位标成 successful"的代码。安卓是系统启动完成后自己标记，postmarketOS 用 `qbootctl`。
+- 设计文档里"全程不执行 `fastboot set_active` 就能保住标记"的前提不成立。是否允许用 `set_active a` 补次数、要不要做长期方案，等用户决定；在那之前仍然不执行 `set_active`。
+- 长期方案的现状：UEFI 侧做不了。`../uefi-sheng/Platforms/Xiaomi/shengPkg/sheng.dsc` 里 `SHENG_VENDOR_HW = 0`，固件不加载原厂的 UFS 驱动，读写不了内部存储。只能放在内核侧（`ShengUfs` 驱动能访问 UFS），做法是改写 LUN 4 分区表里 `boot_a` 这一项的属性位和两处 CRC，主、备分区表各一份。这个 LUN 上还有 abl 等引导链分区，分区表写坏了可能要 EDL 才能救，所以必须先得到用户同意，并且先用 ROM 里的 `gpt_main4.bin`、`gpt_backup4.bin` 做主机侧测试。
+
+**关机（2026-11-14 调研，未修）**
+- 现象：在 macOS 里点 Shut Down，平板不断电。用户反馈了两次，两次都是之后手动按键进的 fastboot。
+- 原因：本仓库的 `drivers/ArmDTPlatform/ArmDTPlatform.cpp` 没有重写 `haltRestart`，只有调试用的 `platformStageReset`（PSCI SYSTEM_RESET）。内核走到平台层时，没有任何断电或重启的实现。
+- 参考仓库 `../UniXNU_macOS` 的修法是两处补丁：
+  - `scripts/data/armdt-platform-psci.patch`：给 `ArmDTPlatform` 加 `haltRestart`，关机调 PSCI SYSTEM_OFF（`0x84000008`），重启调 SYSTEM_RESET（`0x84000009`），调用方式（smc 或 hvc）取设备树 `psci` 节点的 `method`。fork 里由 `scripts/build-arm-driver.py:65` 在构建时打上。对本仓库执行 `git apply --check --directory=drivers/ArmDTPlatform` 通过。
+  - `profiles/os/macos-27.3-26C5035r/patches/xnu-12377/macos-union-shutdown.patch`（fork 提交 `d95eaaf`）：关机时保留只读的根卷联合挂载。补丁说明写的是：sheng 上正常的卸载流程会卸掉 SystemOS 上层，PID 1 随后取指出错，内核在复位前 panic。它引用的 `native_union_identity` 在本仓库已有的 `macos-union-one-volume.patch` 里。
+- 要修就得重建内核和 ArmDTPlatform 驱动，再重建 payload、重新打包、先 `fastboot boot` 验证、再刷 `boot_a`。动手前要把外置盘接回并校验。PSCI SYSTEM_OFF 在这台机器上能不能真的断电，没有验证过。
+- 现成的替代办法（没验证过）：UniXNU 菜单有 Restart 和 Power off 两项（`boot_a` 里的 `unixnu.toml`，`action = "reset"` 和 `"shutdown"`；`package/UniXNUPkg/Library/UniXNULib/Boot.c:22,26` 调 `gRT->ResetSystem`）。菜单倒计时 3 秒。按键处理在 `Menu.c:219-232`：`SCAN_UP`、`SCAN_DOWN` 移动，回车、空格、`SCAN_RIGHT`、`SCAN_SUSPEND`（0x0102）确认。它们对应音量键和电源键，是按高通按键驱动的惯例推断的。
+- 排除的原因：设备包 `../UniXNU-sheng/package/BootReset.c` 有"把重启原因写成 bootloader，之后任何重启都进 fastboot"的调试功能，只在启动参数带 `autoreset=<秒>` 时生效。`boot_a` 里的启动参数共 58 个，没有 `autoreset`，相关的只有 `debug=0x14e`、`log=1`、`disable-watchdogd=1`、`exec-log=1`。

@@ -44,7 +44,7 @@
   - 成功时退出码 0，最后一行输出 `OUTPUT: v4, kernel K, ramdisk R, signature 0, N bytes, sha256 H`。
   - 任何拒绝或失败都以非 0 退出码结束，stderr 给出原因，并且 `OUTPUT` 不存在。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 `local-tools/tests/test_make_flash_bootimg.py`，用 `unittest`，把工具当子进程调用。测试自己用 mtools 造小的输入镜像（48 MiB 的 FAT32 卷，卷标 `SHENGESP`，序列号 `53484e47`，文件有 `EFI/UniXNU/unixnu.toml`、`EFI/UniXNU/Payloads/kernel.macho`、`EFI/UniXNU/Payloads/kernel.macho.crypto-hmac.json`，UEFI 部分用 5000 字节的固定内容）。
 
@@ -58,12 +58,12 @@
 | `test_rejects_source_that_is_not_v4` | 头部版本字段为 0 的输入，退出码非 0 |
 | `test_rejects_source_with_signature` | 签名长度字段为 4096 的输入，退出码非 0 |
 
-- [ ] **Step 2: 运行测试，确认失败**
+- [x] **Step 2: 运行测试，确认失败**
 
 Run: `python3 -I -m unittest discover -s local-tools/tests -v`
 Expected: 7 个测试全部 ERROR 或 FAIL，原因是 `local-tools/make-flash-bootimg.py` 不存在。
 
-- [ ] **Step 3: 实现工具**
+- [x] **Step 3: 实现工具**
 
 要点（其余由实现者决定）：
 - v4 头布局：magic 8 字节，`kernel_size` 在偏移 8，`ramdisk_size` 在偏移 12，`header_size` 在偏移 20（必须是 1584），版本在偏移 40，签名长度在偏移 1580；头占一页 4096 字节，后面各段按 4096 对齐。
@@ -73,12 +73,12 @@ Expected: 7 个测试全部 ERROR 或 FAIL，原因是 `local-tools/make-flash-b
 - 输出头部只改 `ramdisk_size`，其余头部字节和 UEFI 部分原样复制。
 - 先写到临时文件，全部检查通过后再改名为 `OUTPUT`。
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run: `python3 -I -m unittest discover -s local-tools/tests -v`
 Expected: `Ran 7 tests`，`OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git switch -c local/sheng-16g-macos
@@ -97,22 +97,22 @@ git commit -m "feat(local-tools): repack the v4 boot image to fit boot_a"
 - Consumes: Task 1 的命令行；`out/flash/boot-v4-payload.img`（sha256 `4abcc8976c9c94a2628637d3c6f507b595f1e770d1183058933723370c9e8368`）。
 - Produces: `out/flash/boot-v4-flash.img` 和它的 sha256，供 Task 3、Task 4 使用。
 
-- [ ] **Step 1: 确认输入镜像没变**
+- [x] **Step 1: 确认输入镜像没变**
 
 Run: `shasum -a 256 out/flash/boot-v4-payload.img`
 Expected: `4abcc8976c9c94a2628637d3c6f507b595f1e770d1183058933723370c9e8368`
 
-- [ ] **Step 2: 打包**
+- [x] **Step 2: 打包**
 
 Run: `python3 -I local-tools/make-flash-bootimg.py out/flash/boot-v4-payload.img out/flash/boot-v4-flash.img`
 Expected: 最后一行是 `out/flash/boot-v4-flash.img: v4, kernel 1180683, ramdisk 199229440, signature 0, 200417280 bytes, sha256 <H>`。如果 190 MiB 放不下文件，工具会失败；那时不要加大卷，停下来报告。
 
-- [ ] **Step 3: 用独立脚本复核**
+- [x] **Step 3: 用独立脚本复核**
 
 不调用工具里的函数，另写一段内联脚本检查：输出长度不超过 201326592；`4096` 到 `4096 + 1183744` 的字节与输入镜像相同；用 `mdir -/ -b` 列出的 8 个文件路径与输入一致；卷的剩余空间大于 4 MiB。
 Expected: 四项都通过。
 
-- [ ] **Step 4: 把 sha256 写进 `HANDOFF.md` 第 8 节**
+- [x] **Step 4: 把 sha256 写进 `HANDOFF.md` 第 8 节**
 
 ### Task 3: 只读查询和内存启动测试
 
@@ -122,17 +122,17 @@ Expected: 四项都通过。
 - Consumes: `out/flash/boot-v4-flash.img`；`local-tools/boot-sheng.py`。
 - Produces: 记录下来的分区大小和槽位状态（Task 5 要对比）；"新镜像能到登录页"的结论。
 
-- [ ] **Step 1: 只读查询**
+- [x] **Step 1: 只读查询**
 
 Run（关沙箱）：对 `product`、`unlocked`、`current-slot`、`partition-size:boot_a`、`slot-successful:a`、`slot-unbootable:a`、`slot-retry-count:a`、`battery-voltage` 逐个执行 `fastboot -s <序列号> getvar <名字>`。
 Expected: `product: sheng`，`unlocked: yes`，`current-slot: a`，`partition-size:boot_a` 不小于 `0xBF22000`（镜像的 200417280 字节）。任何一项不符就停下。把 `slot-successful:a` 和 `slot-retry-count:a` 的值记进 `HANDOFF.md`。
 
-- [ ] **Step 2: 内存启动新镜像**
+- [x] **Step 2: 内存启动新镜像**
 
 Run（关沙箱）：`python3 -I local-tools/boot-sheng.py out/flash/boot-v4-flash.img --serial <序列号> --wait 60`
 Expected: `Booting OKAY`，随后输出 `the bootloader stayed away for 45 s: the image is running`。
 
-- [ ] **Step 3: 用户确认屏幕**
+- [x] **Step 3: 用户确认屏幕**
 
 Expected: 用户看到登录页。看不到就停下，不进入 Task 4，按 systematic-debugging 排查。
 
@@ -144,17 +144,17 @@ Expected: 用户看到登录页。看不到就停下，不进入 Task 4，按 sy
 - Consumes: Task 3 的两个结论（分区放得下、新镜像能到登录页）。
 - Produces: 写入后的 `boot_a`；"不靠 Mac 也能到登录页"的结论。
 
-- [ ] **Step 1: 刷入前再确认一次镜像**
+- [x] **Step 1: 刷入前再确认一次镜像**
 
 Run: `shasum -a 256 out/flash/boot-v4-flash.img`
 Expected: 与 Task 2 记录的值相同。
 
-- [ ] **Step 2: 刷入**
+- [x] **Step 2: 刷入**
 
 Run（关沙箱）：`fastboot -s <序列号> flash boot_a out/flash/boot-v4-flash.img`
 Expected: `Sending` 和 `Writing 'boot_a'` 都是 `OKAY`。出现 `FAILED` 就停下，不重启。
 
-- [ ] **Step 3: 重启并观察**
+- [x] **Step 3: 重启并观察**
 
 Run（关沙箱）：`fastboot -s <序列号> reboot`，之后 60 秒内每隔几秒用 `fastboot getvar product` 探测 bootloader 是否回来。
 Expected: bootloader 不再响应，用户看到 UniXNU 菜单，随后到登录页。
