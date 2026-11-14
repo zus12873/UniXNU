@@ -3,7 +3,7 @@
 更新时间：2026-11-14
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存、内存紧张时卡死（上游的相关 PR 已查，见文末"待处理问题"）。
+当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存（带上游两条内存修复的新镜像 18:07 已内存启动，还没刷 `boot_a`；用户想拉满 16 GB，还没有设计）；macOS 下不充电、不识别 USB 外设（上游已知）。都在文末"待处理问题"。
 
 上一阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
 
@@ -411,6 +411,27 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 18:07 fastboot 读数：槽位 a，`slot-retry-count:a: 4`，`slot-successful:a: no`，`slot-unbootable:a: no`，`unlocked: yes`，电池 4400 mV（02:19 是 3883 mV；这次是插着 USB 线读的，能不能说明 macOS 下在充电还不能下结论）。
   - 18:07:30 内存启动 `boot-v4-flash.new.img`：`Booting OKAY`，45 秒内引导程序没有回来。**还没刷 `boot_a`**，等用户确认能到登录页。
   - 用户确认后要做：平板再进 fastboot，`fastboot flash boot_a out/flash/boot-v4-flash.new.img`，`fastboot reboot`；旧镜像改名 `.prev.img`，新镜像改回正式名字。进系统后用 `sysctl vm.swapusage vm.swapin_iotier_boost vm.swapin_iotier_grants` 看 swap 和 #245 是否生效。
+  - 用户随后反馈"当前macos进系统后…"，说明内存启动的新镜像能进系统。但发来的 `sysctl` 截图是在 Mac 上跑的，不是平板：主机名 `huanmeng-Air`，`hw.memsize` 17179869184（16 GiB），swap 12288M 已用 11285M，两个 `vm.swapin_iotier_*` 是 unknown oid。平板上的 swap 和 #245 状态仍然没有读数。`boot_a` 还没刷新镜像。
+
+**用户想把内存拉满 16 GB（2026-11-14 提出；已查代码，还没有设计，没动代码）**
+- 用户原话："当前内存仍为6gb，我想尝试拉满16gb"。
+- 现有代码做不到的原因，除了前面两处限制，还有第三处：内核收编窗口外内存的补丁只接受窗口**下方**的内存。`window-outside-memory-adoption.patch` 里读取列表的地方写着"Only memory below the span"，条件是 `base < gDramBase || end > gPhysBase` 就跳过。窗口从 `0x880000000` 起 6 GiB，到 `0xA00000000`。16 GiB 机型多出来的内存按高通的惯例在 `0xA00000000` 以上（推测是到 `0xC00000000`，**这台机器没有实测过**），正好在窗口上方。
+- 所以要做三件事：
+  1. 读出这台机器真实的 DRAM 和保留区布局。
+  2. UEFI 内存表按这个布局写（`uefi-sheng` #6 的做法可以借用，它现在只认 8 GiB）。
+  3. 内核能用上窗口以外的内存。可选的路：把窗口挪到 DRAM 顶部，下面的全部走收编（收编区的地址跨度会从 2 GiB 变成约 40 GiB，内核地址空间够不够没算过）；或者改补丁让它也收编窗口上方的内存；或者把窗口本身做大（要改 4 KiB 引导页表）。
+- 读布局的两个办法，都没试过：
+  - 设备仓库有一个只从内存启动的 Linux 日志读取器（`../UniXNU-sheng/package/linux-log/`，主线内核加 busybox，通过 USB 串口给一个 shell，不挂载也不写 UFS）。在里面读 `/proc/device-tree/memory` 和 `/proc/iomem` 就是引导程序给的真实布局。问题：它是 v0 头加附带 DTB 的镜像，这台机器不接受 v0，要另想打包办法。它同时能用 `scripts/read-sheng-log.py` 取回 macOS 内核的启动日志，对查充电、USB、swap 都有用。
+  - 做一个诊断用的 UEFI，把引导程序传来的设备树里的内存范围打到屏幕上，用户录屏，再用 `local-tools/ocr-frames.swift` 识别。
+- 风险：内存表写错，UEFI 会在启动时崩（这台机器在 `0x8B9D00000` 出过一次）；把固件占用但能读的内存交给内核，可能破坏内存里的数据，进而写坏 Data 卷。所以每一步都只从内存启动验证，不刷分区。
+- 上游没有人做成：其他 16 GiB 机型的记录是"Keep 6GiB … do not advertise a flat 16GiB"。
+- 规模上这是多仓库、方向不确定的工作，要先写设计、用户确认后再动手。
+
+**macOS 下充电口不充电、不识别外接 USB 设备（用户 2026-11-14 报告；上游已知，没有修复）**
+- 用户原话："仍存在充电口无法正常充电，无法正常识别外部usb设备"。
+- 充电：上游设备记录 `docs/zh/devices/sheng.md` 第 938 行写着，在这个内核下充电固件报告没有 USB 输入（online 0，6 到 44 mV），而引导程序用同一根线能充电，原因不明。第 523、528 行把 macOS 下的充电问题列为还没在硬件上测量。和本机读数一致：18:07 在 fastboot 里读到 4400 mV，凌晨是 3883 mV，说明关机或 fastboot 状态下能充。
+- USB 外设：同一文件第 761、769 行，主机模式下苹果的 xHCI 驱动能跑、命令能完成，但"enumerating a peripheral is not verified"。第 713 行有启动参数 `usb-host=<秒>`（延时后强制主机模式）和 `usb-back=<秒>`，没试过。
+- 眼下的办法：要充电就关机或进 fastboot 再插线。
 
 **其他还开着的问题（前面各节有详细记录，这里汇总）**
 - 槽位重试次数每次正常开机扣 1，要接 Mac 补；长期方案（内核侧自动标记启动成功）等用户决定。见第 8 节"槽位重试次数"和"日常使用"。
