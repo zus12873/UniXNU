@@ -3,7 +3,7 @@
 更新时间：2026-11-14
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作（文末"待处理问题"）。
+当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存、内存紧张时卡死（上游的相关 PR 已查，见文末"待处理问题"）。
 
 上一阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
 
@@ -389,6 +389,19 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 这次的关机修复只给平台驱动加了关机和重启（`haltRestart` 里的 PSCI SYSTEM_OFF、SYSTEM_RESET），没有涉及睡眠。
   - 参考仓库也没有做睡眠，没有现成补丁可拿：`../UniXNU_macOS/docs/zh/drivers/arm-dt-platform.md:16` 写的是"睡眠和唤醒需要另行接入 CPU 与外设恢复"。
 - 用户的要求："先落handoff，之后处理"。所以这里只记录，不动代码。
+
+**macOS 只看到约 6 GB 内存，内存紧张时卡死（用户 2026-11-14 报告；已查上游，还没改代码）**
+- 现象（用户原话）："物理内存只有6g，没有用满16g，然后没有swap，导致系统因为内存不足卡住了"。
+- 6 GB 的来源有两处限制，都是按 8 GiB 版 sheng 写的：
+  - 内核窗口：`../UniXNU-sheng/board.toml` 第 245-250 行，macOS 的 `owned_memory_size = 0x180000000`（6 GiB），从 `0x880000000` 开始。注释写的是"6 GiB is the most the 4 KiB bootstrap tables map"。窗口外的空闲内存由内核逐页收编（上游 #212，第 254-259 行，`owned_memory_outside_ranges = 8`），维护者那台机器收编了 458 MiB。
+  - UEFI 内存表：`../uefi-sheng/.../MemoryMapLib.c` 第 54-67 行是静态表，DRAM 只写到 `0xA00000000`（bank 1 low 0.5 GiB + bank 1 high 5 GiB，加上低 2 GiB 里的空隙）。这份表取自维护者 8 GiB 机器的 SMEM 表，这台 16 GiB 机器多出来的内存 UEFI 不知道，内核也就拿不到。这台机器真实的 DRAM 布局还没读过。
+- 上游现状（2026-11-14 用 `gh` 查，主仓库合到 #245，设备仓库合到 #95）：
+  - 没有已合并的 16 GiB 支持。其他 16 GiB 机型也停在 6 GiB，见 `docs/.vitepress/device-records/elden-tay0123.toml` 第 130 行（"Keep 6GiB ... do not advertise a flat 16GiB"）。
+  - 待合并：`uefi-sheng` #6（Jelly10086，head `ac0466db`）让 SEC 从 ABL 设备树的 `/memory` 和 `/reserved-memory` 推出内存表。但它只在 `ddr_size == 8`、所有范围都在 `0xA00000000` 以下时生效，其他情况退回静态表，所以对这台 16 GiB 机器不起作用。思路可以借来扩到 16 GiB。
+  - 待合并：`UniXNU-sheng` #96（Jelly10086，head `085f67e1`）把窗口外可收编的范围从 8 个放宽到 64 个。只改 `board.toml` 和 `porting.toml`，不扩大内核窗口。
+- swap：
+  - 本地已有 `macos-vm-volume.patch`（11-10 起在 `series` 第 29 行），它把 `/System/Volumes/VM` 指到 Data 卷的 `/private/var/vm`，修的是"swap 文件 EROFS、压缩器满了以后桌面卡死"。这台机器上 swap 实际有没有生效，还没查（`sysctl vm.swapusage`）。
+  - 上游 11-14 新合、本地还没有的两条：#244 `macos-4k-zone-va-budget.patch`（zone map 从 24 GiB 降到 16 GiB 虚拟地址，给压缩器和共享 I/O 留出地址空间）和 #245 `macos-swapin-io-priority.patch`（换入时临时提高 I/O 优先级；只在 `native-apfs-root` 启动时默认打开，其他情况要加 `vm-swapin-io=1`）。两条的 PR 都写着在 sheng 上 Device Test PASS。本地分支落后上游 `main` 9 个提交，其中 #238 就是已经摘进来的关机补丁。
 
 **其他还开着的问题（前面各节有详细记录，这里汇总）**
 - 槽位重试次数每次正常开机扣 1，要接 Mac 补；长期方案（内核侧自动标记启动成功）等用户决定。见第 8 节"槽位重试次数"和"日常使用"。
