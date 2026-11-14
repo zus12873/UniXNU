@@ -117,6 +117,41 @@ def number(value):
     return int(str(value), 0)
 
 
+def cells(*values):
+    return struct.pack(f'>{len(values)}I', *values)
+
+
+# The least hardware tree the generator takes: one DRAM range and one CPU.
+HARDWARE = ('', [('compatible', b'unixnu,fixture\0'), ('model', b'fixture\0'), ('#address-cells', cells(2)), ('#size-cells', cells(2))], [
+    ('memory@80000000', [('device_type', b'memory\0'), ('reg', cells(0, 0x80000000, 0, 0x80000000))], []),
+    ('cpus', [('#address-cells', cells(1)), ('#size-cells', cells(0)), ('timebase-frequency', cells(19200000))], [
+        ('cpu@0', [('reg', cells(0)), ('compatible', b'arm,armv8\0')], [])]),
+])
+
+
+def flattened(tree):
+    """A version-17 flattened device tree of (name, properties, children) nodes."""
+    strings, offsets = bytearray(), {}
+
+    def text(name):
+        if name not in offsets:
+            offsets[name] = len(strings)
+            strings.extend(name.encode() + b'\0')
+        return offsets[name]
+
+    def walk(name, properties, children):
+        out = struct.pack('>I', 1) + name.encode() + b'\0'
+        out += bytes(-len(out) % 4)
+        for key, value in properties:
+            out += struct.pack('>III', 3, len(value), text(key)) + value + bytes(-len(value) % 4)
+        return out + b''.join(walk(*child) for child in children) + struct.pack('>I', 2)
+
+    structure = walk(*tree) + struct.pack('>I', 9)
+    start = 40 + 16  # the header, then an empty reservation map
+    return (struct.pack('>10I', 0xd00dfeed, start + len(structure) + len(strings), start, start + len(structure), 40, 17, 16, 0,
+                        len(strings), len(structure)) + bytes(16) + structure + bytes(strings))
+
+
 @unittest.skipUnless(MAP.is_file() and BOARD.is_file(), 'needs ../uefi-sheng and ../UniXNU-sheng next to this repository')
 class TopWindowLayout(unittest.TestCase):
     @classmethod
@@ -172,6 +207,23 @@ class TopWindowLayout(unittest.TestCase):
 
     def test_generator_accepts_the_board_options(self):
         self.assertEqual(devicetree.memory_floor(self.adt), [('darwinboot-memory-floor', struct.pack('<Q', 0x980000000))])
+
+    def test_generated_tree_carries_the_floor_and_the_kept_ranges(self):
+        # The generator's whole path from the board's options to /chosen, read back with the tool that checks a built payload.
+        work = Path(self.work.name)
+        (work / 'hardware.dtb').write_bytes(flattened(HARDWARE))
+        (work / 'kernel.macho.adt').write_bytes(devicetree.generate(work / 'hardware.dtb', {'payload': {'adt': self.adt}}))
+        result = subprocess.run([sys.executable, '-I', '-B', str(ROOT / 'local-tools/adt-chosen.py'), str(work / 'kernel.macho.adt')],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), [
+            'darwinboot-memory-size 8 0x180000000',
+            'darwinboot-memory-excluded 1024 64 empty pairs',
+            'darwinboot-memory-floor 8 0x980000000',
+            'darwinboot-loader-inputs 64 4 empty pairs',
+            'darwinboot-memory-outside 256 16 empty pairs',
+            'darwinboot-memory-outside-kept 32 0xd0000000+0x10000 0x80000000+0x800000000',
+        ])
 
     def test_kernel_adopts_the_three_runs_below_the_window(self):
         runs, span = self.adoption(self.free)
