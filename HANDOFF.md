@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 22:24）：**路线一上机中（Task 6），收编后卡住的原因还没找到。带 GPU 驱动页归属表修正的内核 22:08 上机也卡了（刚进桌面就定住），归属表不是原因。下一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m-hi-ownfix.img`（sha256 `4c833b1a…`，收编量还是 512 MiB，换成紧贴窗口下方的 `0x960000000`–`0x980000000`），等用户把平板强制进 fastboot 后从内存启动。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 22:24）：**路线一上机中（Task 6），收编后卡住的原因还没找到。带 GPU 驱动页归属表修正的内核 22:08 上机也卡了（刚进桌面就定住），归属表不是原因。下一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m-hi-ownfix.img`（sha256 `4c833b1a…`，收编量还是 512 MiB，换成紧贴窗口下方的 `0x960000000`–`0x980000000`），22:25:56 已从内存启动，等用户反馈（进桌面后卡不卡、连上 Wi-Fi 后卡不卡、活动监视器的内存读数）。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -636,6 +636,8 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
       - 不卡（并且连上 Wi-Fi 用 5 分钟以上）：H1 成立，H3 排除。下一步收编 `0x8C0000000`–`0x980000000`（3 GiB，预期 9.0 GB），`0x880000000`–`0x8C0000000` 留着不用。
       - 还卡：H1 排除。接着跑两份：关掉收编连 Wi-Fi（`out/flash/boot-v4-payload.topwin-k443-noadopt.img`，分 H3）；收编不变、`dpu-scanout=0`（面板扫启动帧缓冲，panic 信息能看到，也能分出是不是直接扫描输出这条路的问题；这份还没做）。
     - 还没做、之后可能需要的：把 Linux 日志读取器打成这台机器接受的 v4 镜像，读 `log=1` 的持久日志。日志只留一次启动，下一次启动 macOS 就会盖掉 22:08 那次的。
+    - **22:25:56 这份已上机**：平板当时已经在 fastboot（用 `fastboot getvar current-slot` 限时 6 秒探到的）。镜像 sha256 核对一致；槽位 a，`slot-retry-count:a` 是 5（21:53 是 7，两次强制重进 fastboot 各用掉一次），`slot-unbootable:a` 为 no，电池 4113 mV。`Booting OKAY`，45 秒内引导程序没有回来。22:08 那次的持久日志从这一刻起被盖掉了。
+      - 重试次数降到 2 或以下时，按用户以前的许可执行 `fastboot set_active a` 补满（绝不切到 b）。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
