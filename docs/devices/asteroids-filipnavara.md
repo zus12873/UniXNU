@@ -4,9 +4,9 @@
 
 <div v-pre>
 
-Nothing Phone \(3a\) boots iPadOS 27.0.1 \(24A446, the iPad17,3 images\) from its UFS userdata partition to the home screen, with touch, buttons, the GPU add-on \(Turnip and Metal on the Adreno 810\), system apps, icons and the wallpaper \(2026-11-11\); iPadOS 17.7.11 \(21H461\) remains the board's default profile. Shared SM7635 support and board-owned storage, GPU, input and power integration. Wi-Fi \(WCN6750\) is in bring-up on the asteroids-wifi branch. Bring-up runs as numbered staged tests.
+Nothing Phone \(3a\) boots iPadOS 27.0.1 \(24A446, the iPad17,3 images\) from its UFS userdata partition to the home screen, with touch, buttons, the GPU add-on \(Turnip and Metal on the Adreno 810\), system apps, icons and the wallpaper \(2026-11-11\); iPadOS 17.7.11 \(21H461\) remains the board's default profile. Shared SM7635 support and board-owned storage, GPU, input and power integration. Wi-Fi \(WCN6750, Linux ath11k on the WPSS\) joins a WPA2 network, gets an address over DHCP and passes traffic, with interrupts, wifid and Settings \(join from the Wi-Fi page, 2026-11-13\). Bring-up runs as numbered staged tests.
 
-Source record: [porting.toml](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/porting.toml), `1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985`.
+Source record: [porting.toml](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/porting.toml), `3333a8220f817b8ab129dee29bd86171e8578664`.
 
 This page is generated from the device record.
 
@@ -21,7 +21,7 @@ This page is generated from the device record.
 | [Input](#input) | `implemented` |
 | [GPU](#gpu) | `implemented` |
 | [clock](#clock) | `device-verified` |
-| [Network](#network) | `planned` |
+| [Network](#network) | `implemented` |
 | [Audio](#audio) | `implemented` |
 | [Power](#power) | `implemented` |
 | [Image assembly](#packaging) | `implemented` |
@@ -48,6 +48,7 @@ Components: `ArmDTPlatform`, `XnuPrelink`.
 
 ### Development findings
 
+- 2026-11-13 \(irq1\): the iPadOS 27 payload runs with gpu-irq=1 gpu-timeline=1 \(the GPU area\); the other OS payloads keep gpu-irq=0.
 - The Data seed workflow \(.github/workflows/data-seed.yml\) takes an os\_profile input \(2026-11-04\): ipados-17.7.11-21H461 as before, or ios-27.0.1-24A446 with the iPhone17,4 OS volume \(details in the storage area\).
 - Format 2 builds every selected component's kernel recipe, so \[kernel\] archives lists them as component: entries in the format 1 order; build-arm-driver.py skips Adreno740 and VirtioMmioBlock while their configuration switches are off, as format 1 never built them \(T36 run 40297420036\).
 - Format 2 applies the arch, SoC and OS configuration fragments before the defconfig; bootstrap\_defconfig turns off the five options common.config adds, so both passes have their format 1 configuration \(checked with parse\_config: no differences\).
@@ -71,6 +72,7 @@ Components: `ArmDTPlatform`, `XnuPrelink`.
 - Built-in boot arguments \(package/BootWatchdogPolicy.c PE\_builtin\_boot\_args, 2026-11-11\): owner-staged-apps=1 owner-dataprotect=1 disable-jobs=com.apple.cameracaptured sched\_preemption\_disable\_debug\_mode=0 interrupt-masked-debug-mode=0 validation\_disables=0x11040. The generic timer runs at 19.2 MHz, not Apple's 24 MHz: ml-timeout-&lt;name&gt; values are picoseconds, and the interrupt-masked timeout is reloaded from ml-timeout-interrupt-masked-b at the end of bsd\_init, so the sched hygiene checks are turned off instead.
 - Upstream sync \(2026-11-12\): UniXNU main 2b545ea merged into rootstockos/UniXNU asteroids-resync \(Mesa list: upstream's patches first, the A810 ones after; turnip-darwin-first-alloc-failure.patch rebased onto the process-wide GPU address allocator\) and UniXNU/Adreno740 main 54b41b8 into the gen8 fork \(8be2626\). ShengUfs \(eight concurrent UFS commands\) and ArmDTPlatform \(a new RTC design\) were not merged: both conflict with the board's own paths.
 - Repositories \(2026-11-12\): the forks are published under github.com/filipnavara \(UniXNU, UniXNU-asteroids, uefi-asteroids, NativeAdreno, ArmDTPlatform, GopFramebuffer, NativeUfs, AdrenoFirmware\); .gitmodules points at them.
+- 2026-11-13 board.toml, iPadOS 27: wifi=5 \(Wi-Fi on by default\), text\_fixups \(QuartzCore composites in 8-bit BGRA, see display\) and dpu-scanout=2 dpu-linux=1 dpu-flush=1 \(zero-copy scanout through VIG 0, see display\); the GopFramebuffer submodule follows its asteroids-27 branch.
 
 ### Completion criteria
 
@@ -86,7 +88,7 @@ Components: `ArmDTPlatform`, `XnuPrelink`.
 
 ### Evidence
 
-- `source`: [Format 2 board configuration with the SM7635 SoC and 21H461 OS profiles.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/board.toml)
+- `source`: [Format 2 board configuration with the SM7635 SoC and 21H461 OS profiles.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/board.toml)
 
 ## Firmware and boot {#firmware}
 
@@ -126,7 +128,7 @@ Components: `DarwinBoot`.
 
 ### Evidence
 
-- `source`: [\[bootimg\] and \[firmware\] select uefi-asteroids and the payload in the kernel image.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/board.toml)
+- `source`: [\[bootimg\] and \[firmware\] select uefi-asteroids and the payload in the kernel image.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/board.toml)
 
 ## CPU and interrupts {#cpu}
 
@@ -171,7 +173,7 @@ Components: `ArmCpu`.
 
 ### Evidence
 
-- `source`: [EPSS CPU governor with touch boost and frame floor.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/package/CpuFreqProbe.cpp)
+- `source`: [EPSS CPU governor with touch boost and frame floor.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/CpuFreqProbe.cpp)
 
 ## Memory and DMA {#memory}
 
@@ -210,7 +212,7 @@ Components: `ArmCpu`.
 
 ### Evidence
 
-- `source`: [Memory node for the XNU window's DRAM bank.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/dts/asteroids.dts)
+- `source`: [Memory node for the XNU window's DRAM bank.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/dts/asteroids.dts)
 
 ## Storage and root {#storage}
 
@@ -240,6 +242,7 @@ Components: `ShengUfs`, `RamBlock`, `SoftwareAES`, `VirtioMmioBlock`, `VerifiedR
 - T67, T72 and T72 again \(2026-10-29/30\) hung before the root mount: NativeUfs published SystemOS and never saw IOMedia under it \(no block request, "SystemOS volume  not ready" after 30 s\), while the UFS transport kept writing the log and every processor sat idle. bsd\_init's stage markers stopped at bsd\_autoconf, whose late probes had not reached the CPU clock row \(\[clocks\] absent, \[gpu uc\] stage 0, B st=0\); T71 on the same kernel booted. Both stalled together, so a race between the probes and IOKit matching; T73 logs where each thread waits.
 - T75f \(2026-10-30\) hung before the root mount and T73's \[kernel threads\] rows caught it: a lock-order deadlock. The boot thread, in native\_keystore\_probe \(late probe step 1, key events stage 1\), held OSMetaClass's class lock from preModLoad and waited in postModLoad for sKextLock \(OSKext::lookupKextWithIdentifier\); IOConfigThread\_'IOResources' held sKextLock loading a kext \(OSKext::load, OSRuntimeInitializeCPP\) and waited for the class lock in preModLoad; IOConfigThread\_'NativeUfsBlock' waited for sKextLock in IOCatalogue::personalityIsBoot, so the SystemOS disk never got a driver. XNU takes sKextLock first; the board's probes took only the class lock. Intermittent because it needs a kext load during the probe's registration, right after bsd\_autoconf publishes IOBSD. T76: OSKextRegisterBoardClasses \(patches/xnu/zzyg-board-class-registration.patch\) registers board classes under sKextLock, and all eight probes that called preModLoad/postModLoad use it.
 - iPadOS 27 \(2026-11-11\): data\_gib = 88: 90 GiB did not fit beside the 14.7 GiB 27 root image, the 1 GiB log reserve and the 4 MiB guard, and the Data store was refused \(colour bars, no boot\). A seed is only rebuilt with --init-data. SourceStorage reads the "log" partition name. owner-dataprotect=1 is needed for PosterBoard; a Data store made before it keeps no wallpaper until a data-reset boot \(boot-reset.img\).
+- 2026-11-13: drivers/ShengUfs \(our NativeUfs fork\) merged upstream ShengUfs b6fe07b \(877f9e9\): up to eight concurrent UFS commands with Linux ufshcd queueing, completion and DMA, cached store writes \(the Data overlay syncs before its bitmap; the fork's forced-unit-access stand-in is gone\), short completion waits spun through, the window devices reported as solid state, and the verified-root table cache. One boot \(logs/ufs1\): first GPU work and first frames at 52 s instead of 60-72 s; the Data volume checked clean with fsck\_apfs afterwards \(logs/data-ufs1\).
 
 ### Completion criteria
 
@@ -255,7 +258,7 @@ Components: `ShengUfs`, `RamBlock`, `SoftwareAES`, `VirtioMmioBlock`, `VerifiedR
 
 ### Evidence
 
-- `device`: [T29 booted iPadOS 17.7.11 from the UFS root with persistent Data to the first picture.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/board.toml)
+- `device`: [T29 booted iPadOS 17.7.11 from the UFS root with persistent Data to the first picture.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/board.toml)
   Command: <code>fastboot boot local/unixnu-asteroids-t29-boot.img</code>. Revision: `adf900cf453a6b318864913757f588c9f661596f`.
 
 ## Display {#display}
@@ -278,6 +281,7 @@ Components: `GopFramebuffer`.
 
 ### Development findings
 
+- 2026-11-13 \(irq1\): BootLog prints the driver's job times \(\[gpu jobs\], \[gpu long\], \[gpu slow\], from UniXNU-sheng fecc4c2\) and fence waiters \(\[fence wake\]\). The compositor's \(backboardd\) frames take about 10 ms of GPU time at 895 MHz \(34 IBs, 278 KiB\); the long ones 41-58 ms with 60-128 IBs. 2797 of 7276 jobs ran over 8 ms. The GPU itself is the frame-time limit, not queueing.
 - iOS 27 builder \(2026-11-04, not built yet\): scripts/build-native-legacy-display-27.py is sheng's build-gop-legacy-display-27.py \(UniXNU-sheng 965460a\) with the IPSW device's fixtures \(d48ap: legacy-display-24A446-d48.json, hid-device-24A446-d48.json\), IOMobileGraphicsFamily's text range from the fixture \(family\_text, the iPad range moved by its kext offset\) in place of the iPad constant, kits/asteroids, and this board's drivers from the iOS 17 builder \(CPU frequency, panel and brightness, TFA9873 speaker and audio DSP, battery, buttons, FocalTech touch over GENI SPI, GPU power with NativeAdreno's staged classes and the gen8 kits\) compiled with the 27 kernel flags. The HID event driver is compiled against the profile's pinned public IOHIDFamily \(NATIVE\_HID\_SOURCE\_API\) and bound to the original IOHIDDevice by sheng's slot and discriminator rules. Sheng's generated support file stubs boot progress \(none on 27\); our LegacyDisplayStubs.c is weak. The Metal accelerator comes from UniXNU's build-adreno740-accelerator.py \(d48ap plan\). Sheng's two-pass kernel build \(native-slide in cycle27.sh\) is not needed: the builder binds fixed collection addresses and XnuPrelink recomputes the adapter branches.
 - The display area owns only the 24A446 display and HID fixtures and their remap tools by name; scripts/policies \(iOS 27 root policies\) belongs to storage.
 - iOS 27 \(2026-11-04\): scripts/legacy-display-24A446-d48.json and hid-device-24A446-d48.json are sheng's iPad17,3 class fixtures remapped and verified for the iPhone17,4 kernelcache \(details in the configuration area\); the iOS 27 display builder that uses them is not written yet.
@@ -314,6 +318,9 @@ Components: `GopFramebuffer`.
 - T95 \(2026-11-02\): BootLog.c prints \[mic page\] \(native\_mic\_page, audio area\) after \[mic codec\]; BootLogStandins.c gives it a weak stand-in.
 - iPadOS 27 \(2026-11-10\): LegacyDisplayProbe publishes the GOP nub as a plain IOService \(an IOPlatformDevice under IOResources failed PAC in compareName\) and skips interpose\(\) under ptrauth \(its vtable copy hit a PAC-signed pointer in memmove\); AsteroidsBacklight overrides getMetaClass instead of copying a vtable.
 - iPadOS 27 GPU presentation \(2026-11-11\): the display takes frames from the GPU copy \(gpu-addon=1 fb-gpu=1\); native\_legacy\_gpu\_offer must pass the frame's format to native\_gop\_gpu\_offer \(without it the screen stayed black\), and swaps wait for the GPU fence or copy. Zero-copy scanout \(dpu-scanout=2\) is off: it presented no frame on 27. Graphic artifacts remain.
+- 2026-11-13: the board build links only the ath11k Wi-Fi module \(scripts/build-native-legacy-display-27.py: the qcacld selector was removed with the abandoned qcacld path\).
+- 2026-11-13: iPadOS 27 composited in half float \('RGhA', 20184K swap surfaces\) because vmm-present makes MobileGestalt answer IsVirtualDevice, on which QuartzCore's IOMFBDisplay::framebuffer\_pixel\_format keeps RGhA. board.toml's text fixup \(dyld\_shared\_cache\_arm64e.01+0x4061928, tbnz to NOP, as sheng's macOS 27.3\) makes it 8-bit BGRA: 10168K surfaces, mean GPU time per submission 9.9 to 7.8 ms, submissions over 17 ms 26 to 19 %, windows at the GPU clock ceiling 29 to 13 % \(bofix2 against bgra1\); smoother, no new artifacts. Direct scanout \(dpu-scanout=2\) can now take the frames.
+- 2026-11-13: zero-copy scanout on iPadOS 27 \(logs/zc1\). UniXNU's GopFramebuffer \(b0d812d\) hard-codes sheng's pipes \(VIG 0 and 1, flush 0x3\) and boot memory \(0xb8000000, stride 0x2fa0\); drivers/GopFramebuffer asteroids-27 \(6191d8f\) ports the asteroids fork's dpu-flush pipe choice and the GOP's boot memory onto it. With 8-bit frames: 2749 direct flips, 3 surfaces mapped, no map failures, latch 4.9 ms mean and 8.9 ms at most, no GPU copies; GPU submissions 8171 to 3592 and GPU time 64.1 to 44.7 s against the GPU copy \(bgra1\); the screen works.
 
 ### Completion criteria
 
@@ -321,15 +328,16 @@ Components: `GopFramebuffer`.
 
 ### Current limits
 
-- Graphic artifacts on iPadOS 27; zero-copy scanout is off; under 60 frames per second.
+- Graphic artifacts on iPadOS 27; under 60 frames per second.
 
 ### Next action
 
-- Find the source of the iPadOS 27 artifacts and retry dpu-scanout=2.
+- Find the source of the iPadOS 27 artifacts.
+- Measure the frame gaps with zero copy \(\[frames\] rows\) and look at what keeps the GPU busy per frame.
 
 ### Evidence
 
-- `device`: [T34b: GPU copy to the panel, no tearing or stale patches, stable.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/board.toml)
+- `device`: [T34b: GPU copy to the panel, no tearing or stale patches, stable.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/board.toml)
   Command: <code>fastboot boot local/unixnu-asteroids-t34b-boot.img</code>. Revision: `e022e84a9721ea6408ea12665b5a23e9b89fc5f6`.
 
 ## Input {#input}
@@ -378,7 +386,7 @@ Components: `ShengHidInput`, `ShengNovatekTouch`, `QcomGeniSpi`.
 
 ### Evidence
 
-- `device`: [Touch input works on the desktop \(stage 6\).](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/package/AsteroidsTouchProbe.cpp)
+- `device`: [Touch input works on the desktop \(stage 6\).](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/AsteroidsTouchProbe.cpp)
   Command: <code>fastboot boot local/unixnu-asteroids-t34b-boot.img</code>. Revision: `e022e84a9721ea6408ea12665b5a23e9b89fc5f6`.
 
 ## GPU {#gpu}
@@ -401,6 +409,7 @@ Components: `Adreno740`, `AdrenoFirmware`, `AdrenoPM4`, `ArmSmmu4K`, `Sm7635Plat
 
 ### Development findings
 
+- 2026-11-13 \(irq1\): the board's gpuIrq hands RBBM\_INT\_0\_STATUS to native\_adreno\_gpu\_interrupt \(as UniXNU-sheng 0215f34\), so the driver's fence waiters sleep until the completion pass: 7271 interrupts, 6532 sleeps, no deadline misses, no periodic wakes; pauses outside the lock 352765 \(zc1\) -&gt; 6533. The CP stamps read the generation's always-on counter \(Adreno740 816de6a; 0x0980 is another register on gen8\) and the board turns them on with gpu-timeline=1 \(or diag=1\): all 7276 jobs stamped.
 - NativeAdreno's GMU headers \(NativeAdrenoGmuConfig.h, NativeAdrenoGmuPlatform.h\) include ShengGmu.h, so the driver compiles also take kits/Sm7635Platform \(T36 run 40296339052\).
 - The gen8 GMU cold start and command-database parser are the SoC kit Sm7635Platform \(UniXNU-sm7635-common\), as sheng's are Sm8550Platform; the board keeps ShengGmuVotes.c. scripts/check-asteroids-gmu.py passes against the kit.
 - The render server composites on the A810 \(window server ready in 1.9 s instead of 30.8 s\).
@@ -505,6 +514,13 @@ Components: `Adreno740`, `AdrenoFirmware`, `AdrenoPM4`, `ArmSmmu4K`, `Sm7635Plat
 - iPadOS 27 GPU add-on \(2026-11-11\): Turnip \(Mesa with the A810 patches\), the Metal plug-in and the Rust bridge build for arm64e; the host needs bison 3.8.2, glslang \(glslangValidator\), a glslc and the rust-src component. The home screen, system apps and icons render; iconservicesagent runs CoreImage on the CPU \(CI\_ENABLE\_METAL\_GPU=0 through launchd\_job\_environment\), since metal2vulkan does not expose CoreImage's built-in kernels by name. Wallpapers are PNG overlays \(make-wallpaper-overlay.py; HEIC needs a hardware decoder\).
 - Open \(2026-11-11\): one boot without a Data reset showed an early GPU stall \(150 jobs, a 182 s busy run\) after which attaching a process address space failed with an SMMU fault \(ArmSmmu4KFault, operation 11\) and clients were refused. Upstream Adreno740's recovery work \(an access fault no longer fails the other address spaces\) is in the 2026-11-12 sync.
 - Upstream sync \(2026-11-12, fork 8be2626\): GPU recovery per address space, the per-mapping maintenance list \(the board's gpu-import-skip and gpu-import-policy now classify mappings there; gpu-own-maint is gone\), system pages prepared outside the lock \(skipped while the board's reserved BO pool exists\), preemption records \(allocated, not used\), CP counter stamps. Upstream's stall snapshot and timeline stamps still read A7xx register offsets \(diag=1 or gpu-timeline only\). The board stands in for iokit\_physical\_descriptor\_close\_notify, which only UniXNU's macOS kernel has.
+- 2026-11-12 sync \(Adreno740 8be2626, AdrenoMetal 73d582f, metal2vulkan 555b13d, Mesa patches\): about half of the boots then hit a GPU SMMU translation fault \(\[gpu stall\] smmu 80000402 or 402, the address's upper word 0\) or a hang, mostly right after the lock screen was touched, and the UI froze until a reboot.
+- 2026-11-13: the cause was the Darwin Turnip backend: darwin\_bo\_finish zeroed a BO's sparse-array entry after releasing retire-&gt;lock, by when the reap could already have put the handle in the BO cache or released it to the kernel; another thread's allocation then filled the same entry and the late memset wiped it \(iova 0\), so a render pass emitted CP\_INDIRECT\_BUFFER to address 0 + offset. It became likely once AdrenoMetal's encoding thread \(native-metal-encode\) allocated while metal2vulkan's free thread freed. Fixed in UniXNU 1aa69d2 \(patches/mesa/turnip-darwin-bo-finish-clears-under-lock.patch: the entry is zeroed right after taking the lock\); three boots of heavy lock-screen use ran clean \(bofix1..3\).
+- Diagnostics that found it \(UniXNU 2e0a61e, ff77344; the SX/LF part was dropped in e69b2b5 once the fix held, LI stays\): BootLog \[gpu fault\] rows and the A810 stall registers read per pipe \(Adreno740 cde9322\); Turnip notes on the kernel's Turnip report line: LI \(first indirect buffer below 4 GiB, with its BO\), SX \(a secondary changed under a primary's render pass\) and LF \(who zeroed that BO: the destroying or resetting command buffer's level, state and threads, or the stack\).
+- Ruled out on the way, each by a faulting boot: the new Mesa patches alone, Adreno740 alone, AdrenoMetal and metal2vulkan alone, the wallpaper commit b6d2933, and tu-debug=sysmem \(one fault in four runs\). AdrenoMetal's encoding thread switched off \(gEncodeThread=false\) leaves the render server presenting black frames.
+- Upstream's map-failure telemetry read a closed connection's null vm\_ and panicked the kernel \(wifi86\); fixed in Adreno740 84b8b3a.
+- iconservicesagent ran RenderBox on the GPU and aborted in RB::Device::make\_index\_buffer\(\) once per boot; board.toml now puts the whole agent on the CPU \(FORCE\_SOFTWARE\_RENDERER=1, ef1c782\).
+- The kernel sees GPU hangs \(\[gpu recovery\] hangs N\) but never restarts the A810 \(restarts 0\), so any hang freezes the UI until a reboot.
 
 ### Completion criteria
 
@@ -512,15 +528,17 @@ Components: `Adreno740`, `AdrenoFirmware`, `AdrenoPM4`, `ArmSmmu4K`, `Sm7635Plat
 
 ### Current limits
 
-- Graphic artifacts on iPadOS 27. Sm8550Platform is linked as Adreno740's dependency and not used.
+- Graphic artifacts on iPadOS 27 \(a green block behind the lock-screen clock's digits, stray glyphs around the date\). A GPU hang is not recovered \(no A810 restart\). Sm8550Platform is linked as Adreno740's dependency and not used.
 
 ### Next action
 
-- Boot the 2026-11-12 sync \(boot-sync.img, boot-sync-reset.img\) and check the stall and the artifacts.
+- Watch new boots for \[gpu stall\] smmu 80000402 rows and Turnip LI notes.
+- Make the kernel's GPU recovery restart the A810 after a hang.
+- The graphic artifacts.
 
 ### Evidence
 
-- `device`: [GPU compositing and the GPU panel copy run stable.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/package/GpuPowerProbe.cpp)
+- `device`: [GPU compositing and the GPU panel copy run stable.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/GpuPowerProbe.cpp)
   Command: <code>fastboot boot local/unixnu-asteroids-t34b-boot.img</code>. Revision: `e022e84a9721ea6408ea12665b5a23e9b89fc5f6`.
 
 ## clock {#clock}
@@ -553,53 +571,64 @@ Components: `QcomPmicRtc`.
 
 ### Current limits
 
-- No automatic time \(no network or GNSS time source yet\).
+- On iPadOS 27 the kernel has no QcomPmicRtc \(it is linked and matched only in the iPadOS 17 kernel\): network time sets the clock \(wifi90\) but is not kept across a restart.
 
 ### Next action
 
-- Propose the IORTC forwarding and the RTC drivers upstream once stable.
+- Link and start QcomPmicRtc in the iPadOS 27 kernel \(the offset store is ported: patches/xnu-12377/zzzzzzzzzd-board-rtc-offset.patch\); propose the IORTC forwarding and the RTC drivers upstream once stable.
 
 ### Evidence
 
-- `device`: [T39e: the time set in Settings survived a restart; Settings &gt; Date &amp; Time opens.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/board.toml)
+- `device`: [T39e: the time set in Settings survived a restart; Settings &gt; Date &amp; Time opens.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/board.toml)
   Command: <code>fastboot boot local/unixnu-asteroids-t39e-boot.img</code>. Revision: `e4d1092cc3d051617ee88858b153ed2ba0d456fd`.
 
 ## Network {#network}
 
-`planned`
+`implemented`
+
+Components: `Ath11kWifi`.
 
 ### Hardware and dependencies
 
-- The 3a's Wi-Fi and Bluetooth module; not yet identified for a driver.
+- The WCN6750 behind the WPSS \(the vendor's wpss.mdt, regdb and board data from vendor\_b\), its 32 kHz sleep clock on PMK8550 GPIO5, and the network's name and key for test images \(UNIXNU\_WIFI\_JOIN, never committed\).
 
 ### Configuration
 
-- None yet.
+- wifi=5 starts the WPSS \(PAS, SMP2P, GLINK, QRTR\) and the module: Linux ath11k, mac80211 and cfg80211 over drivers/Ath11kWifi's runtime, wpa\_supplicant for WPA2. WifiNet \(sheng's, unchanged\) gives iOS en0 and the Apple80211 requests; the dts exports a wlan node so launchd starts wifid.
+- AsteroidsWifi.cpp enables the sleep clock \(wifi-sleepclk\), attaches the 16 MSI vectors ath11k uses as GIC SPIs \(wifi-irq=0 polls every millisecond instead\) and keeps a 20 ms backstop poll \(wifi-irq-poll\). The radio's address goes to the device tree for MobileGestalt. wifi-idle-ps \(default 1\) lets the firmware use IMPS. wifi-aj=1 \(test images\) joins the network of the Data add-on's join.txt.
 
 ### Procedure
 
-- Identify the module and its bus from the live device tree.
+- Build a join image with UNIXNU\_WIFI\_JOIN and wifi-aj=1, fastboot boot it, pull the log; the wifi-net rows show the join, DHCP, en0 address and packet counts, the wifi: load row the worker's rounds and interrupts per second.
 
 ### Development findings
 
-- No network driver runs; bluetoothd is disabled.
-- Wi-Fi bring-up \(asteroids-wifi branch, 2026-11-12\): the chip is a WCN6750 on the WPSS, driven by a port of Linux ath11k \(drivers/Ath11kWifi\). The WPSS boots through PAS, SMP2P, GLINK and QRTR; QMI completes; HTC, WMI and HTT come up and the radio turns on \(SMMU stream 0x1401 in pass-through, a board-made MAC address, IMPS off\). The firmware asserts 0.5-2 s into the first scan \(whalRxMpduPop, the wal\_monitor stall watchdog or whalRecvDmaLeakRecovery\), while the same firmware scans cleanly under Qualcomm's own driver on the stock kernel. Every host difference seen \(QMI, WMI, HTT, 1441 data-path registers, SMMU, supplies, power votes\) was tested without effect.
+- Settings shows the Wi-Fi row and page, lists networks and joins one, and web pages load \(wifi91, 2026-11-13\): the board writes the radio's address to /chosen/mac-address-wifi0 and /arm-io/wlan local-mac-address \(as sheng 3e679fb\), where MobileGestalt reads WifiAddress and WifiAddressData; without them Settings had no Wi-Fi.
+- The firmware's scan asserts \(whalRxMpduPop, wal\_monitor, whalRecvDmaLeakRecovery\) were the missing WCN sleep clock: UEFI leaves PMK8550 GPIO5 off; with it on, IMPS works and scans complete \(wifi78\).
+- Association and WPA2 work \(wifi79\). Broadcast and multicast frames were dropped as unprotected until ath11k rebuilt their IV from the descriptor's PN words: the WCN6750 stores no IV for decrypted group frames \(wifi87\).
+- wifi87/88: DHCP from iOS's own client \(192.168.1.148\), IPv4/IPv6/ARP traffic both ways \(35k packets in by 280 s in wifi89\). The one remaining mac80211 drop \(0x1000f\) is the AP relaying the station's own broadcasts.
+- Interrupts \(wifi88\): 16 of 32 vectors fit ArmCpu's 24 SPI slots; the worker went from about 1000 to 6-150 rounds per second.
+- wifid \(wifi89/90\): with the wlan node, wifid opens en0's Apple80211 interface; iOS then sets the clock from the network about 3 minutes after boot. Settings' Wi-Fi page works since wifi91.
+- qcacld \(Qualcomm's host driver\) built on an icnss backend but did not fit the kernelcache's code window \(about 2.3 MB over\); it was removed with the other dead ends of the bring-up \(2026-11-13\): the vendor-audit switches \(wifi-wmi-vendor, wifi-dp-vendor, wifi-qmi-vendor, wifi-fse, wifi-ddr\), the translated SMMU window \(wifi-iommu\), the register snapshots against the vendor stack \(wifi-regdump\), the firmware post-mortem reader and the board's DHCP probe. The git history keeps them.
 
 ### Completion criteria
 
 - The device joins a network and passes traffic.
+- Settings shows and controls Wi-Fi, and the status bar shows it.
 
 ### Current limits
 
-- No working network: Wi-Fi scans fail with a firmware assert; Bluetooth is not started.
+- Several Apple80211 requests of wifid are answered 102 \(unsupported\). Bluetooth is not started.
 
 ### Next action
 
-- Port Qualcomm's own host driver \(qcacld\) in place of ath11k, starting with a build-only spike.
+- Boot a regular board image \(wifi=5 is in board.toml's iOS/iPadOS 27 kernel arguments since 2026-11-13\) and check Wi-Fi comes up without the test flags.
+- Answer the Apple80211 requests wifid still gets 102 for; check that a join from Settings survives a reboot \(remembered network\) without wifi-aj; Bluetooth.
 
 ### Evidence
 
-Collect evidence using the next action.
+- `device`: [wifi91 \(2026-11-13\): Settings shows the Wi-Fi row and page, lists networks and joins one; web pages load. Log in logs/wifi91.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/AsteroidsWifi.cpp)
+  Command: <code>fastboot boot images/boot-wifi91.img (buildboot.sh with wifi=5, wifi-aj=1, wifi-idle-ps=1)</code>. Revision: `c6feecc86720dcd4024cfb7a3e6f07f32e60dd46`.
 
 ## Audio {#audio}
 
@@ -679,7 +708,7 @@ Collect evidence using the next action.
 
 ### Evidence
 
-- `host`: [PASS: 207 AudioReach packet checks, including the 3a's primary MI2S port and the 32-bit speaker device format.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/scripts/check-audioreach-host.py)
+- `host`: [PASS: 207 AudioReach packet checks, including the 3a's primary MI2S port and the 32-bit speaker device format.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/scripts/check-audioreach-host.py)
   Command: <code>python3 scripts/check-audioreach-host.py</code>. Revision: `b1621b32a2513ba8e2c4c599d4f4baf602a7369a`.
 - `device`: [T40k-spk-sd1: the boot tone and iOS sounds played through both speakers; \[amps\] showed the boost converters active and \[audio-io\] 8.3 M frames without gaps in 494 s.](https://github.com/rootstockos/UniXNU-asteroids/commit/b1621b32a2513ba8e2c4c599d4f4baf602a7369a)
   Command: <code>fastboot boot with boot args sheng-audio=3 asteroids-audio-i2s=0x200200 sheng-audio-tone-ms=4000</code>. Revision: `49ec1ccb18fd6b7ddd23b25b2c4ae96cd084ad1a`.
@@ -724,7 +753,7 @@ Components: `AppleKeyStoreState`.
 
 ### Evidence
 
-- `device`: [T29: with the stand-in, SpringBoard boots to the first picture.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/package/KeyStoreProbe.cpp)
+- `device`: [T29: with the stand-in, SpringBoard boots to the first picture.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/KeyStoreProbe.cpp)
   Command: <code>fastboot boot local/unixnu-asteroids-t29-boot.img</code>. Revision: `adf900cf453a6b318864913757f588c9f661596f`.
 
 ## Image assembly {#packaging}
@@ -764,7 +793,7 @@ Components: `AppleKeyStoreState`.
 
 ### Evidence
 
-- `source`: [Board patch series after the arch, SoC and OS series.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/patches/xnu/series)
+- `source`: [Board patch series after the arch, SoC and OS series.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/patches/xnu/series)
 
 ## Diagnostics {#diagnostics}
 
@@ -784,6 +813,7 @@ Components: `AppleKeyStoreState`.
 
 ### Development findings
 
+- 2026-11-13 \(irq1\): lite=1 also disables UniXNU-sheng's coreduetd, PerfPowerServices\(Extended\), perfpowermetricd, siriinferenced, siriknowledged, siriactionsd, duetexpertd and modelcatalogd \(the policy buffer is 4096 bytes\). Big-core throttled windows: d1 1623 of 17394 \(zc1\) -&gt; 13 of 18119; no coreduetd or PerfPowerServices lines in msgbuf; first frames at 54 s \(ufs1: 52 s\).
 - iOS 27 \(2026-11-04\): package/BootProcessWorker.c and BootReset.c are sheng's, for the source storage runtime, which on 27 also runs the process capture and the watchdog launch policy \(no BootProgress on 27\); details in the storage area.
 - Never boot a test without on-screen diagnostics: T24b had none and taught nothing.
 - T37 adds sheng's UFS diagnostic log \(BootLog.c, sheng-log=1\) through NativeUfs's log window \(the last 32 MiB of userdata\), with weak stand-ins \(BootLogStandins.c\) for the 104 references to probes this board does not build; scripts/pull-asteroids-log.py copies the window from recovery over adb and decodes it with sheng's read-sheng-log.py --decode. The unified log on Data cannot tell boots apart \(one boot UUID and clock base for every boot\).
@@ -822,6 +852,6 @@ Components: `AppleKeyStoreState`.
 
 ### Evidence
 
-- `source`: [Live page and banner rows.](https://github.com/filipnavara/UniXNU-asteroids/blob/1f0c6f76e2a970bd0dcd205a3a39d5c0e976c985/package/BootProgress.c)
+- `source`: [Live page and banner rows.](https://github.com/filipnavara/UniXNU-asteroids/blob/3333a8220f817b8ab129dee29bd86171e8578664/package/BootProgress.c)
 
 </div>
