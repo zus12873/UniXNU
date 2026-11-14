@@ -5,7 +5,9 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 19:05）：**`boot_a` 里是带实测内存表的镜像，macOS 看到 6.38 GiB。** 19:01 刷入 `out/flash/boot-v4-flash.img`（sha256 `c244f53d…`），刷完重试次数 7，重启后 60 秒内引导程序没有回来（屏幕上的结果还没有用户的确认）。这份镜像的内核带上游 #244、#245 和 `vm-swapin-io=1`。正在做：内存路线一（窗口挪到内存顶部，收编下面的 4 GiB），设计在 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`，等用户确认；用户已定之后做路线二。没解决的：槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖待机久了失效、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
+当前阶段（2026-11-14 20:05）：**内存路线一在 Mac 上的部分做完了，三个新镜像还没有上机。** 平板这边：`boot_a` 里仍是带实测内存表的镜像（`out/flash/boot-v4-flash.img`，sha256 `c244f53d…`，6.38 GiB），从它启动的两次出现过终端卡住和整机卡死，原因没分清；19:21 起平板在跑从内存启动的对照镜像（旧内存表，5.95 GiB），终端正常。已建议用户下次进 fastboot 时把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`，等用户同意。路线一：设计 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`（用户已确认），计划 `docs/superpowers/plans/2026-11-14-memory-top-window.md`，Task 1 到 5 完成，Task 6（上机）等用户在场；镜像和读数见文末"路线一的主机部分"。之后做路线二。没解决的：卡死的原因、槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖和触控板掉线、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
+
+上一阶段（2026-11-14 19:05）：**`boot_a` 里是带实测内存表的镜像，macOS 看到 6.38 GiB。** 19:01 刷入 `out/flash/boot-v4-flash.img`（sha256 `c244f53d…`），刷完重试次数 7，重启后 60 秒内引导程序没有回来（屏幕上的结果还没有用户的确认）。这份镜像的内核带上游 #244、#245 和 `vm-swapin-io=1`。正在做：内存路线一（窗口挪到内存顶部，收编下面的 4 GiB），设计在 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`，等用户确认；用户已定之后做路线二。没解决的：槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖待机久了失效、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
 
 上一阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存（带上游两条内存修复的新镜像 18:07 已内存启动，还没刷 `boot_a`；用户想拉满 16 GB，还没有设计）；macOS 下不充电、不识别 USB 外设（上游已知）。都在文末"待处理问题"。
 
@@ -535,6 +537,28 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 能下的结论：触控板和键盘盖掉线和实测内存表无关（旧内存表也掉，实测内存表之前用户就报过）。卡住和卡死只在"实测内存表 + 从 `boot_a` 启动"的两次里出现；18:41 那次用的是同一份镜像文件，从内存启动没有出问题。样本太少，还分不清是实测内存表的问题、和启动方式有关，还是碰巧。
   - 查过、没有找到机制的：引导程序放 ramdisk 的位置在低端（之前录屏读到过 initrd 结尾在 `0xB7FFEADC`，落在固件内存表保留的 `0xA8000000`–`0xB8000000` 里），不在新列入的内存里；固件自己的分配从内存顶往下取，也不在那里。
   - 下一步的想法（已告诉用户，等用户决定）：`boot_a` 先刷回 `boot-v4-flash.prev.img`；新列入的那 443 MiB 放到路线一里验证。路线一的窗口在顶部，这 443 MiB 在窗口外面，内核用不用它只由板级配置的保留列表决定，所以可以先挡掉它跑一轮、再放开跑一轮，一次只变一件事。
+- **路线一的主机部分（2026-11-14 19:50 到 20:05，都在 Mac 上，没有动平板）**。计划是 `docs/superpowers/plans/2026-11-14-memory-top-window.md`，Task 1 到 5 做完，Task 6（上机）没做。
+  - 改了四处，都只在本地分支提交，没有 push：
+    - 加载器（子模块 `drivers/DarwinBoot`，分支 `local/window-floor`，提交 `bf802ae`、`96cee50`）：`DarwinWindowStart` 多一个下限参数；认识 `/chosen/darwinboot-memory-floor`（8 字节，0 等于没有；有下限却没有排除表的树被拒绝）；有下限时屏幕多打一行 `DARWINBOOT: window floor=… start=…`，找不到窗口时打 `NO WINDOW … HEAD … FLOOR …`。
+    - 生成器（UniXNU `74a17c8`）：板级选项 `owned_memory_floor`，写成 `darwinboot-memory-floor`。
+    - 固件内存表（`../uefi-sheng` 分支 `local/sheng-12g-memory-map`，提交 `20331338`）："DRAM bank 1 high" 列到 `0xB00000000`。
+    - 板级配置（`../UniXNU-sheng` 新分支 `local/sheng-12g-top-window`，提交 `4ff0ecf`，只含 `board.toml`）：下限 `0x980000000`，窗口外的表 16 格，保留列表加 `0x80000000:0x800000000`。
+  - 主机测试：加载器 5 个脚本通过；`python3 -I -B -m unittest discover -s local-tools/tests` 29 个通过。其中 `test_top_window_layout.py` 用固件内存表、板级配置和加载器自己的代码算出：窗口起点 `0x980004000`，内核收编 `0x880000000`–`0x8B9D00000`、`0x8B9F00000`–`0x8BBD00000`、`0x8C0000000`–`0x980000000` 三段，共 `0xFBB00000` 字节（1030912 页）。内核那一步是照补丁写的 Python 版，不是内核本身。
+  - 新工具 `local-tools/adt-chosen.py`：打印 payload 里设备树 `/chosen` 下加载器用的属性，用来在上机前核对。
+  - 构建结果（日常那一套没有动，哈希都核对过）：
+
+    | 文件 | 字节数 | sha256 | 说明 |
+    | --- | --- | --- | --- |
+    | `out/flash/SILICIUM_UEFI.topwin-e168abab.fd` | 3145728 | `e168abab069eca6edd8cf317d064974decb3a31829fc078a21f18b53d245ff90` | 新固件：带下限的加载器，内存表列到 `0xB00000000` |
+    | `<output>/boot/boot-topwin.img` | 210903040 | `85f9dbf8…` | 新固件的 v0 镜像 |
+    | `out/flash/boot-v4-payload.topwin-k443.img` | 210903040 | `3cf2e6480638de189bb35fb018baf45150ded9cc6102115ecb09fa12bb582a09` | 对照：保留列表多一项 `0x8A0000000:0x20000000`，把新列入的 443 MiB 挡在收编之外 |
+    | `out/flash/boot-v4-payload.topwin.img` | 210903040 | `af5cdf8e11e5bc3d95f6e982a20969ff67289fc782af19ca12f776ae3c8c7dd2` | 完整方案 |
+    | `out/flash/boot-v4-flash.topwin.img` | 200417280 | `40fb63bdcad05b97f70b63d9141a46d25ccd33052c2803fe70e20269ff68b649` | 完整方案，190 MiB 卷，放得进 `boot_a`（余 909312 字节） |
+
+  - 这三个 v4 镜像**都没有上机**。它们和日常镜像只差两处：固件，以及 payload 卷里的 `kernel.macho.adt`。设备树里变的只有 `darwinboot-memory-floor`（新增）、`darwinboot-memory-outside`（8 格变 16 格）、`darwinboot-memory-outside-kept` 和随机种子；两个新镜像之间只差保留列表和随机种子。内核、GPU 附加包、信任缓存、Data 种子都和日常镜像逐字节相同。
+  - 做法上的一点偏离：`./unixnu build payload` 每跑一次都会重新生成 `kernel.macho.gpuaddon` 和 `kernel.macho.trustcache`（信任缓存里的 UUID 和一部分代码哈希每次都不同，大小不变；连跑两次、输入相同也不同）。为了上机时只变固件和设备树，两份 payload 没有直接用构建结果，而是在日常 payload 的副本里只替换设备树：
+    `cp <output>/payload/payload.daily-8a36fe56.img <output>/payload/payload.topwin.img`，再 `MTOOLS_SKIP_CHECK=1 TZ=UTC mcopy -D o -Q -m -i <output>/payload/payload.topwin.img <output>/payload/kernel.macho.topwin.adt ::/EFI/UniXNU/Payloads/kernel.macho.adt`。两份设备树留在 `<output>/payload/kernel.macho.topwin.adt` 和 `kernel.macho.topwin-k443.adt`（里面有芯片序列号，不入库）。日常 payload 的备份是 `<output>/payload/payload.daily-8a36fe56.img` 和同名 `.json`，`payload.img` 已放回日常那一份。
+  - 上机时的预期读数（Task 6）：屏幕上 `DARWINBOOT: window floor=0x980000000 start=0x980004000`，`pa=0x980004000`，窗口外的段里有 `0x880000000 + 0x39d00000`、`0x8b9f00000 + 0x1e00000`、`0x8c0000000 + 0xc0000000`。`sudo dmesg | grep "memory outside"`：对照镜像最多 917504 页，完整镜像最多 1030912 页。`hw.memsize` 通过线：对照 9736028160，完整 10200547328。先跑对照的一份，再跑完整的一份，各试用 30 分钟。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
