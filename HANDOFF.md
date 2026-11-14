@@ -461,6 +461,29 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 不能简单地把整张表写全：DarwinBoot 的 `AllocateSpan` 会自动把窗口放到"6 GiB 内可用内存最多"的位置，并列时取最低地址（`MemoryWindow.h` 的 `DarwinWindowStart`），结果是 `0x8C0000000`。这样 `0x880000000`–`0x8BBD00000` 就落到窗口下方，收编区的地址跨度从 2 GiB 变成约 34 GiB。内核给收编区留的虚拟地址是"静态区下方 4 GiB 再往下一个跨度"（`arm_vm_init.c` 的 `arm_vm_outside_va`），这个内核的地址空间很紧，34 GiB 很可能放不下或者挤掉内核自己的分配。
   - 所以要用上那 4 GiB，内核一定要改，三条路：收编补丁支持窗口上方的内存；把窗口从 6 GiB 放大到 10 GiB（`scripts/unixnu/devicetree.py` 允许到 8 GiB，`board.toml` 说 4 KiB 引导页表最多映射 6 GiB，这个上限在哪还没查）；或者把窗口挪到顶部、收编补丁支持多个不相连的跨度。
 
+**内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；18:41 已内存启动，等用户确认）**
+- 改动（`../uefi-sheng` 工作区，未提交）：`MemoryMapLib.c` 的 "DRAM bank 1 low" 从 `0x880000000 + 0x20000000` 改成 `0x880000000 + 0x39D00000`（到 `0x8B9D00000`），新增 "DRAM bank 1 mid" `0x8B9F00000 + 0x01E00000`。"DRAM bank 1 high" 没动，仍到 `0xA00000000`：如果把 `0xA00000000` 以上也列进去，加载器会把窗口挪走（见上一条）。预期多出约 443 MiB，窗口仍从 `0x880000000` 起。
+- 没有改的一处不一致：静态表的 "DRAM gap 0xE671D000" 从 `0xE671D000` 开始，而引导程序的 `/memory` 在这一带从 `0xE7CB0000` 才开始，中间 22.6 MiB 引导程序没有算作内存。这是上游原样，一直这样启动，这次不动，留给 B 步一起处理。另外 `0xD4D00000`–`0xD8000000` 在引导程序那里是 modem 的 no-map 保留区（没有标 disabled），静态表把它当空闲内存，也是上游原样。
+- 构建产物：固件 `SILICIUM_UEFI.fd` sha256 前缀 `9b21a09e`（备份 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd`；构建目录里现在就是这一份，不是验证过的 `36bd589f`）。v0 镜像 `<output>/boot/boot-mem12g.img`（`<output>/boot/boot.img` 没动）。`out/flash/boot-v4-payload.mem12g.img`（sha256 `a9cb0b31…`）和 `out/flash/boot-v4-flash.mem12g.img`（sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`）。payload 卷和 `boot_a` 里的只差卷标时间那 4 个字节。
+- 18:41 fastboot 读数：槽位 a，重试 7（18:18 刷入后没有发生过正常开机），电池 4361 mV。18:41:55 内存启动 `boot-v4-flash.mem12g.img`：`Booting OKAY`，45 秒内引导程序没有回来。**没有刷 `boot_a`。**
+- 等用户确认：能否到登录页；平板上"关于本机"或 `sysctl hw.memsize` 显示的内存有没有变多。确认后的收尾：把 `<output>/boot/boot-mem12g.img` 作为以后打包用的 v0 源镜像（替换 `boot.img`，旧的留备份），刷 `boot_a`，在 `../uefi-sheng` 本地提交这处改动。
+
+**内存 B 步：用上窗口上方的 4 GiB（用户 2026-11-14 要求推进；在查代码，还没有设计）**
+- 6 GiB 上限的出处找到了：`patches/xnu-12377/native-4k-bootstrap-capacity.patch` 把 `osfmk/arm/pmap/pmap.h` 的 `BOOTSTRAP_TABLE_SIZE` 定成 16 页，注释是"Native 4 KiB: two roots plus up to seven L2 pages per 6 GiB mapping"。引导页表要给整个窗口建两份映射（V=P 和内核线性映射），每个 L2 页管 1 GiB：N GiB 的窗口要 `2 + 2 × (N + 1)` 页，6 GiB 是 16 页，10 GiB 是 24 页。`arm_vm_init.c` 里有检查，不够会 panic："BOOTSTRAP_TABLE_SIZE too small for memory config"。
+- 工具侧的上限：`scripts/unixnu/devicetree.py` 第 321 行，`owned_memory_size` 只允许 256 MiB 到 8 GiB。
+- 内核地址空间：这个配置的 `VM_MIN_KERNEL_ADDRESS` 是 `0xffffffe000000000`，`VM_MAX_KERNEL_ADDRESS` 是 `0xfffffffbffffffff`（`osfmk/mach/arm/vm_param.h` 第 267、269 行），总共 112 GiB。窗口的线性映射从 `gVirtBase` 起，窗口每大 1 GiB 就多占 1 GiB。zone map、内核堆各段具体占多少、还剩多少，没算过。收编补丁的说明里提到过在 sheng 上内核堆几段一共只有约 3 GiB 可分，所以地址空间是这件事的主要风险。
+- 已打好补丁的内核源码在 `<output>/tree/.cache/xnu-work/`，查代码看这里。
+
+**开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
+- 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
+- 还不知道的：大约待机多久出现；失效时屏幕触摸是否正常；重新吸附键盘套能不能恢复，还是必须重启；出现时平板有没有接 USB 线。处理时先问清。
+- 线索，都没有验证过：
+  - 上游已知并且没在硬件上测过：`docs/zh/devices/sheng.md` 第 523 行（"…their effect on the reported macOS charging and idle failures is not yet measured on hardware"）和第 528 行（待办："keyboard/touchpad response after extended idle"）。
+  - 同一文件第 496、1084 行描述了键盘服务的恢复逻辑：读失败 100 ms 后重试，保活失败时用 sleep GPIO 唤醒控制器，连续三次失败就释放输入并重新加载固件，重载失败会退避。用户看到的"固件失效"可能就是这条恢复路径没有成功。
+  - 设备仓库的 #93（"fix(keyboard): preserve touchpad precision and recover cover input"，11-12 合并）已经在本地构建里。上游还有一个分支 `fix/keyboard-cover-recovery`（bluseliu50，11-13，23 个文件），和 #93 是什么关系没看。
+  - 设备仓库本地落后上游 3 个提交，是 #95（"fix(input): Retain digitizer properties during concurrent updates"），和输入有关，没合进来。
+- 用户的要求：先记录。
+
 **macOS 下充电口不充电、不识别外接 USB 设备（用户 2026-11-14 报告；上游已知，没有修复）**
 - 用户原话："仍存在充电口无法正常充电，无法正常识别外部usb设备"。
 - 充电：上游设备记录 `docs/zh/devices/sheng.md` 第 938 行写着，在这个内核下充电固件报告没有 USB 输入（online 0，6 到 44 mV），而引导程序用同一根线能充电，原因不明。第 523、528 行把 macOS 下的充电问题列为还没在硬件上测量。和本机读数一致：18:07 在 fastboot 里读到 4400 mV，凌晨是 3883 mV，说明关机或 fastboot 状态下能充。
