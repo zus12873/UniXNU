@@ -5,7 +5,9 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 21:15）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
+当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，屏幕结果等用户反馈。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+
+上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
 上一阶段（2026-11-14 20:05）：**内存路线一在 Mac 上的部分做完了，三个新镜像还没有上机。** 平板这边：`boot_a` 里仍是带实测内存表的镜像（`out/flash/boot-v4-flash.img`，sha256 `c244f53d…`，6.38 GiB），从它启动的两次出现过终端卡住和整机卡死，原因没分清；19:21 起平板在跑从内存启动的对照镜像（旧内存表，5.95 GiB），终端正常。已建议用户下次进 fastboot 时把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`，等用户同意。路线一：设计 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`（用户已确认），计划 `docs/superpowers/plans/2026-11-14-memory-top-window.md`，Task 1 到 5 完成，Task 6（上机）等用户在场；镜像和读数见文末"路线一的主机部分"。之后做路线二。没解决的：卡死的原因、槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖和触控板掉线、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
 
@@ -564,6 +566,10 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 已知限制（最终审阅发现）：GPU 驱动判断导入内存会不会和自己的缓冲区冲突时用一张页表（`drivers/Adreno740/NativeAdrenoMemory.cpp:97-116`），只给窗口里的页和物理地址 4 GiB 以下的页编了号。新布局收编的 `0x880000000`–`0x980000000` 不在表里，本来会被拒绝的冲突映射会被放过。审阅没找到越界或 panic 的路径，也没能确定实际会不会遇到。所以这几份镜像上的画面错乱或 GPU 卡住，不能直接当成内存问题。改它要重建驱动，在设计之外，没有改；写 `boot_a` 之前请用户决定。
   - 回到日常状态：两个兄弟仓库和固件构建目录现在都是路线一的状态：`../uefi-sheng` 在 `local/sheng-12g-memory-map` 的 `20331338`（bank 1 列到 `0xB00000000`），构建目录里的固件是 `e168abab`；`../UniXNU-sheng` 在 `local/sheng-12g-top-window`。要重建日常镜像，两处都要回去：`../uefi-sheng` 回到 `5dfcc572`（或者把 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd` 放回构建目录），`../UniXNU-sheng` 切回 `main`（工作区里没提交的改动会跟过去）。只切回板级配置、固件还是路线一的，窗口会落在 `0x8C0004000`，内核一页也不收编（审阅者按模型算的）。另外 `<output>/runtime/` 里的 GPU 附加包和信任缓存、`<output>/payload/stage` 是路线一那两次 payload 构建留下的，和日常 payload 里的不同；日常的 `payload.img` 已放回。
   - 最终审阅（约 21:00，一个新的审阅者，只读）：没有严重问题，可以只从内存启动做 Task 6。审阅结果、补的测试和推迟的小问题记在计划文档末尾"最终审阅"。
+- **路线一上机（Task 6，2026-11-14 21:11 起）**
+  - 21:11:26 fastboot 只读：槽位 a，`slot-successful:a: no`，`slot-unbootable:a: no`，重试 5，电池 4226 mV。
+  - 21:11:35 `fastboot flash boot_a out/flash/boot-v4-flash.prev.img`（刷前核对 sha256 `40234c20…`）：`Sending 'boot_a' (195720 KB) OKAY [4.508s]`，`Writing 'boot_a' OKAY [0.073s]`；刷完重试 7，当前槽位 a。
+  - 21:11:50 `python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.topwin-k443.img`（刷前核对 sha256 `3cf2e648…`）：`Sending 'boot.img' (205960 KB) OKAY`，`Booting OKAY`，45 秒内引导程序没有回来。屏幕读数、`hw.memsize` 和试用结果等用户反馈。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
