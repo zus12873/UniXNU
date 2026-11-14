@@ -405,8 +405,12 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 第 1 步（用户同意：先带上 #244、#245 缓解卡死，内存仍是 6 GB）的进度：
   - 已做：上游 `main` 合进本地分支（合并提交 `ec761fd`，无冲突；补丁序列末尾多了 `macos-4k-zone-va-budget.patch` 和 `macos-swapin-io-priority.patch`，关机补丁只出现一次）。
   - 已做：`unixnu.local.toml`（不进 git）加了 `kernel_args = ["vm-swapin-io=1"]`。两个仓库里都没有任何地方设置 `native-apfs-root`，所以 #245 不加这个参数就是关的。加上后命令行 877 字节，上限 1000。
-  - 卡住：外置盘（PSSD T7）又从 Mac 上断开了，`/Volumes/12873` 不存在。残留的构建盘镜像设备已用 `hdiutil detach disk6 -force` 清掉。要等用户接回外置盘。
-  - 接回后还要做：`hdiutil attach` 构建盘，`diskutil verifyVolume /Volumes/UniXNUBuild`，核对 `kernel/kernel.macho` 的 sha256 仍是 `f393f430…`；只读挂载 OS 镜像；然后按第 8 节"日常使用"的第 3 到 8 步重建、打包、内存启动验证、刷 `boot_a`。启动后在串口或系统日志里应该能看到 `vm: Demand swap-in transient I/O priority enabled`。
+  - 外置盘（PSSD T7）中途又从 Mac 上断开过，残留的构建盘镜像设备用 `hdiutil detach disk6 -force` 清掉。用户接回后 exFAT 分区 `12873` 过了一会儿才挂上（`diskutil mount disk4s3`）；`diskutil verifyVolume /Volumes/UniXNUBuild` 通过，旧内核 sha256 仍是 `f393f430…`。
+  - 18:06 重建完成：日志里 `macos-4k-zone-va-budget.patch`、`macos-swapin-io-priority.patch`、`macos-union-shutdown.patch`、`macos-vm-volume.patch`、`sheng-text-fixup-verified-pagein.patch` 都打上了，ArmDTPlatform 驱动 18:04 重新打补丁并编译。新内核 `kernel/kernel.macho` sha256 `33d294c83022a67b1ecfe4a8dd46564ca2b66169e11bc21c647e3981f2277b67`，`payload/payload.img` sha256 `8a36fe56…`。启动参数第一项是 `vm-swapin-io=1`。
+  - 18:07 打包：`out/flash/boot-v4-payload.new.img`（sha256 `dd5d2475…`）和 `out/flash/boot-v4-flash.new.img`（sha256 `40234c20756ae087429988f78f638e7b43d8def5872ef729514b401ab3493298`，190 MiB 卷，8 个文件）。核对过：固件部分和头部与 `boot_a` 里的镜像逐字节相同，`unixnu.toml` 里有 `vm-swapin-io=1`，没有 `data-reset`。OS 镜像已卸载。
+  - 18:07 fastboot 读数：槽位 a，`slot-retry-count:a: 4`，`slot-successful:a: no`，`slot-unbootable:a: no`，`unlocked: yes`，电池 4400 mV（02:19 是 3883 mV；这次是插着 USB 线读的，能不能说明 macOS 下在充电还不能下结论）。
+  - 18:07:30 内存启动 `boot-v4-flash.new.img`：`Booting OKAY`，45 秒内引导程序没有回来。**还没刷 `boot_a`**，等用户确认能到登录页。
+  - 用户确认后要做：平板再进 fastboot，`fastboot flash boot_a out/flash/boot-v4-flash.new.img`，`fastboot reboot`；旧镜像改名 `.prev.img`，新镜像改回正式名字。进系统后用 `sysctl vm.swapusage vm.swapin_iotier_boost vm.swapin_iotier_grants` 看 swap 和 #245 是否生效。
 
 **其他还开着的问题（前面各节有详细记录，这里汇总）**
 - 槽位重试次数每次正常开机扣 1，要接 Mac 补；长期方案（内核侧自动标记启动成功）等用户决定。见第 8 节"槽位重试次数"和"日常使用"。
