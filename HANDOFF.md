@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，进了系统，物理内存 9.5 GB，但系统卡住了；下一份是关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，进了系统，物理内存 9.5 GB，但系统卡住了；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img` 6.0 GB、不闪，问题在收编这一侧；怀疑 GPU 驱动的页归属表，改它要重建内核，等用户同意。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -573,6 +573,9 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 结果（用户 2026-11-14 约 21:15 报告）：进了系统，物理内存显示 9.5 GB（活动监视器，对照镜像的通过线是 9.07 GiB，收编生效了），**但是系统卡住了**。用户描述卡住的样子：**屏幕在闪烁，指针和导航栏都在抖动，没有自己恢复**。终端读数没拿到。
   - 读代码得到的推测（没有验证）：这像是画面在新旧两帧之间来回跳，问题在显示或 GPU 这一层，不是内核整个停住了。显示控制器那一路（`GopFramebuffer` 经 `native_ufs_dpu_map` 写 DPU 的页表）直接写物理地址，原来的窗口就在 4 GiB 以上，新地址也都在它能寻址的范围内，看不出问题。可疑的是 GPU 驱动的页归属表（`drivers/Adreno740/NativeAdrenoMemory.cpp:97-116`）：它按"收编的内存都在 4 GiB 以下"写，这在上游的布局里成立，在新布局里不成立。驱动放在收编内存里的缓冲区查不到，导入的内存就被当成独占，跳过冲突检查（`NativeAdrenoVm.cpp:296-311`、`:377`），同一页可能按两种缓存属性映射。关掉收编的那份镜像能分清是不是收编这一侧的问题。
   - 21:25:34 fastboot 读数：槽位 a，重试 7（强制关机后直接进的 fastboot，没有正常开机），电池 4196 mV。从内存启动 `out/flash/boot-v4-payload.topwin-k443-noadopt.img`（核对 sha256 `fa01e8c3…`）：`Booting OKAY`，45 秒内引导程序没有回来。结果等用户反馈。
+  - 结果（用户约 21:30 报告）：进了系统，物理内存 6.0 GB，**没有闪烁**。所以窗口挪到顶部和固件内存表的改动都没有问题，闪烁出在收编这一侧。
+  - 对照三次的结果：日常镜像收编 0.45 GiB，都在 4 GiB 以下，正常；k443 收编 3.5 GiB，都在 4 GiB 以上，闪烁、指针和导航栏抖动；关掉收编，正常。读代码核对过的、对收编的页是完整的：内核的 `pa_valid`、`pa_index`、页面缓存属性改变时对内核映射的更新（补丁里 `pai_to_pa` 两处）、GPU 驱动的缓存维护（`pmap_valid_address` 加 `phystokv`）、显示控制器的页表。唯一按地址区分、在新布局下会出错的，是 GPU 驱动的页归属表（`NativeAdrenoMemory.cpp` 的 `ownedIndex`：只给窗口里的页和 4 GiB 以下的页编号）。这是推测，还没验证。
+  - 改它的代价：`Adreno740` 是编进内核的（板级配置内核 `archives` 里的 `component:Adreno740`），改了要 `./unixnu build kernel payload` 重新构建内核，超出了设计里"内核不动"的约束，要用户同意。打算的改法：页归属表里查不到的页当作"可能是驱动自己的"，这类导入走完整的冲突检查（正确但慢一些的那条路）；先写驱动的主机测试（`drivers/Adreno740/tests/test_system_memory.cpp` 那类）。新镜像仍然只从内存启动。改完还闪，说明推测不对，改动撤回。
   - 按计划 Task 6 Step 6 的"卡住"一行，下一份只关掉收编：`out/flash/boot-v4-payload.topwin-k443-noadopt.img`（210903040 字节，sha256 `fa01e8c3f698a170290ee6175668fb357194fdbd3f167e55ae03f88e9d6996c3`）。做法：复制 `<output>/payload/payload.topwin-k443.img` 为 `payload.topwin-k443-noadopt.img`（sha256 `ba5fabbe…`），只把 `unixnu.toml` 的参数行前面加上 `memory-outside=0`（894 字节，上限 1000），再用 `make-bootimg-v4.py` 和 `boot-topwin.img` 打包。卷里其他文件和 k443 那份逐个相同；内核签名脚本只拒绝 `validation_disables`、`serverperfmode`、`lcks` 三个参数，`memory-outside` 不影响签名，内核文件不用变。整份镜像和 k443 那份相比，镜像头和固件部分相同，只有 payload 卷里 1277 个字节不同。窗口仍在 `0x980004000`，内核不收编，预期 `hw.memsize` 约 5.9 GiB。
   - 两种结果的含义：这份也卡住，原因在窗口挪到顶部（`0xA00000000`–`0xB00000000` 第一次被使用）或固件内存表的改动（A 和这次都列入了那 443 MiB），和收编无关；这份不卡住，原因在收编（收编量是原来的 8 倍，或者 GPU 驱动那条已知限制）。
 
