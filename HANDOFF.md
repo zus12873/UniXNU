@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，进了系统，物理内存 9.5 GB，但系统卡住了；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img` 6.0 GB、不闪，问题在收编这一侧；怀疑 GPU 驱动的页归属表，改它要重建内核，等用户同意。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 21:50）：**路线一上机中（Task 6），收编后闪烁的原因还没找到。** `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -578,6 +578,22 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 改它的代价：`Adreno740` 是编进内核的（板级配置内核 `archives` 里的 `component:Adreno740`），改了要 `./unixnu build kernel payload` 重新构建内核，超出了设计里"内核不动"的约束，要用户同意。打算的改法：页归属表里查不到的页当作"可能是驱动自己的"，这类导入走完整的冲突检查（正确但慢一些的那条路）；先写驱动的主机测试（`drivers/Adreno740/tests/test_system_memory.cpp` 那类）。新镜像仍然只从内存启动。改完还闪，说明推测不对，改动撤回。
   - 按计划 Task 6 Step 6 的"卡住"一行，下一份只关掉收编：`out/flash/boot-v4-payload.topwin-k443-noadopt.img`（210903040 字节，sha256 `fa01e8c3f698a170290ee6175668fb357194fdbd3f167e55ae03f88e9d6996c3`）。做法：复制 `<output>/payload/payload.topwin-k443.img` 为 `payload.topwin-k443-noadopt.img`（sha256 `ba5fabbe…`），只把 `unixnu.toml` 的参数行前面加上 `memory-outside=0`（894 字节，上限 1000），再用 `make-bootimg-v4.py` 和 `boot-topwin.img` 打包。卷里其他文件和 k443 那份逐个相同；内核签名脚本只拒绝 `validation_disables`、`serverperfmode`、`lcks` 三个参数，`memory-outside` 不影响签名，内核文件不用变。整份镜像和 k443 那份相比，镜像头和固件部分相同，只有 payload 卷里 1277 个字节不同。窗口仍在 `0x980004000`，内核不收编，预期 `hw.memsize` 约 5.9 GiB。
   - 两种结果的含义：这份也卡住，原因在窗口挪到顶部（`0xA00000000`–`0xB00000000` 第一次被使用）或固件内存表的改动（A 和这次都列入了那 443 MiB），和收编无关；这份不卡住，原因在收编（收编量是原来的 8 倍，或者 GPU 驱动那条已知限制）。
+  - **21:50 复查（用户问"有没有更优解法"）：页归属表的推测解释不了闪烁，上面"打算的改法"先不做。**
+    - 页归属表只用在两处：`NativeAdrenoVm.cpp:305` 的 `importsOnly` 和 `:327` 的 `exclusivePages`。两处都只决定"要不要做跨缓存类别的冲突检查"。页没有编号时检查变宽松，不会让映射失败，没找到通向画面出错的路径。
+    - 内核驱动（`drivers/`、`../UniXNU-sheng/drivers`、`../UniXNU-sheng/package`）里和 `gPhysBase`、`gPhysSize` 作比较的只有三处：GPU 内存池（`NativeAdrenoPool.cpp:165`）、RamBlock（`NativeRamBlock.cpp:371`、`:705`，只管启动数据）、页归属表。
+    - GPU 内存池在收编时是关的，有两道：内建参数 `gpu-pool=0`（`../UniXNU-sheng/package/BootWatchdogPolicy.c:60`）；`sheng_gpu_pool_probe` 在 `ml_outside_memory_pages` 非 0 时直接返回（`../UniXNU-sheng/package/GpuMemoryPool.cpp`）。所以没有"内核和 GPU 同时用一块内存"的情况。
+    - 上游驱动提交 `14dc2d7`（11-11）已经把缓存维护、写合并属性、采样读取改成问内核这页是不是它管理的（`pmap_valid_address`），不再按地址比较。它只在收编 458 MiB 时上机验证过。上游三个分支之后没有相关修复。
+    - 内存本身没问题：k443 收编的 `0x880000000`–`0x8A0000000` 和 `0x8C0000000`–`0x980000000`，在日常镜像里是窗口内的内存（窗口 `0x880000000`–`0xA00000000`），一直正常。差别只在这些页现在是收编来的。
+    - 内核收编补丁同样可疑：补丁说明里上游的验证是 117264 页（458 MiB）、低端 bank、跨度约 2 GiB；这里是 917504 页，跨度正好 4 GiB（上限）。收编区虚拟地址的位置有 panic 守卫（`arm_vm_init.c`），这次没有 panic，9.5 GB 也显示出来了，所以不是地址放不下。
+    - 物理内存读数是二进制单位：关掉收编 6.0（窗口 6 GiB），k443 是 6.0 + 3.5 = 9.5。
+    - 闪烁那次没有留下证据：持久日志（`log=1`）只保留一次启动，已被关掉收编的那次覆盖；`data/mp4` 里没有闪烁的录屏。下次复现时请用户录一段。
+    - 还不知道的：闪烁是登录后多久开始的；当时指针还能不能跟手（系统活着还是整个停住）。
+  - **下一步：只换 payload 的内存启动，不动内核，不写 `boot_a`。**
+    - 第一份（已做好，还没上机）：`out/flash/boot-v4-payload.topwin-adopt512m.img`，210903040 字节，sha256 `760f642243d98fe7a6bd760f296dc641f4ded2d8a984da794dca7aef0aeb234a`。只收编 `0x880000000`–`0x8A0000000`（131072 页，512 MiB），量和日常镜像收编的 458 MiB 相当，只有"地址在 4 GiB 以上"这一点不同。预期物理内存 6.5，`sudo dmesg | grep "memory outside"` 是 131072 页。
+    - 做法：`<output>/payload/kernel.macho.topwin-k443.adt` 的 `darwinboot-memory-outside-kept` 第三对的长度从 `0x20000000` 改成 `0xe0000000`（挡掉 `0x8A0000000`–`0x980000000`，文件只差 1 个字节），存为 `kernel.macho.topwin-adopt512m.adt`；复制 `payload.topwin-k443.img` 为 `payload.topwin-adopt512m.img`（sha256 `fa877674…`），用 `mcopy` 换掉卷里的 `EFI/UniXNU/Payloads/kernel.macho.adt`；再用 `make-bootimg-v4.py` 和 `boot-topwin.img` 打包。核对：两个卷取出来 `diff -rq` 只有 `kernel.macho.adt` 不同；`adt-chosen.py` 最后一行是 `darwinboot-memory-outside-kept 48 0xd0000000+0x10000 0x80000000+0x800000000 0x8a0000000+0xe0000000`。
+    - 闪烁：问题和地址有关。这时改页归属表才有依据，用精确改法：窗口下方的每一页都编号（表按 `gPhysSize/4096 + gPhysBase/4096` 位分配，约 1.25 MiB），不拖慢，不依赖新的内核符号。先写驱动主机测试，再重建内核，要用户同意。
+    - 不闪烁（试用 15 到 20 分钟，开几个带动画的应用）：问题和收编量或跨度有关，接着二分（下一份收编 `0x900000000`–`0x980000000` 的 2 GiB，预期 8.0）。这条路可能不改内核就得到一个稳定的中间值。
+    - 备选的第二份（还没做）：k443 的参数行加 `dpu-scanout=0`（上游默认值，现在的参数行是 2），看是不是显示直出这条路。不闪的话 9.5 GB 当场可用；代价按文档推断是画面要先拷到固件帧缓冲再显示，没有在代码里核对。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
