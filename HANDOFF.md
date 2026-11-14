@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 22:47）：**路线一上机中（Task 6），还没有能用的结果：收编 3 GiB 的那份（9.0 GB）也闪烁、指针抖动、卡住，和 21:11 那份 9.5 GB 的一样。到现在分出了两个问题，原因都没找到：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编量大（3 GiB 以上）会闪烁，和①那段无关；只收编紧贴窗口的 512 MiB 不闪不卡。用户问"没有重建镜像来进行修复么"：没有，这几份都是只差一个变量的对照，不是修复。下一份已做好：`out/flash/boot-v4-payload.topwin-adopt3g-ownfix-scan0.img`（sha256 `e6427c37…`，和 9.0 GB 那份只差 `dpu-scanout=0`），用来分闪烁出在显示直接扫描输出还是 GPU 渲染，等用户把平板进 fastboot。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 22:47）：**路线一上机中（Task 6），还没有能用的结果：收编 3 GiB 的那份（9.0 GB）也闪烁、指针抖动、卡住，和 21:11 那份 9.5 GB 的一样。到现在分出了两个问题，原因都没找到：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编量大（3 GiB 以上）会闪烁，和①那段无关；只收编紧贴窗口的 512 MiB 不闪不卡。用户问"没有重建镜像来进行修复么"：没有，这几份都是只差一个变量的对照，不是修复。下一份已做好：`out/flash/boot-v4-payload.topwin-adopt3g-ownfix-scan0.img`（sha256 `e6427c37…`，和 9.0 GB 那份只差 `dpu-scanout=0`），用来分闪烁出在显示直接扫描输出还是 GPU 渲染。22:49:32 已从内存启动，等用户反馈（读数、闪不闪、卡不卡；卡住时拍屏幕）。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -663,6 +663,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
       - 不闪：②出在显示直接扫描输出读被收编的页这条路上；同时 9.0 GB 加 `dpu-scanout=0` 就是一个能用的配置（代价是每帧多一次转写）。
       - 还闪：②出在 GPU 渲染这一侧（导入、映射被收编的页），接着查 `NativeAdrenoVm.cpp` 的导入路径。
       - 这个模式下内核 panic 的画面能看到（panic 画在固件帧缓冲上），卡住时请用户拍屏幕。
+      - **22:49:32 已上机**（用户："平板已进fastboot"）：镜像 sha256 核对一致；槽位 a，`slot-retry-count:a` 5，`slot-unbootable:a` 为 no，电池 4058 mV。`Booting OKAY`，45 秒内引导程序没有回来。
     - 设备包里还有现成的诊断手段没用过：启动参数 `boot-progress=1|2` 和 `boot-diag-resume=<秒>`（`../UniXNU-sheng/package/BootProgress.c` 第 88 行：系统停止输出画面超过这么多秒，诊断页接管面板）。现在的参数行里都没有。下一步证据不够时加上。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
