@@ -5,7 +5,9 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存（带上游两条内存修复的新镜像 18:07 已内存启动，还没刷 `boot_a`；用户想拉满 16 GB，还没有设计）；macOS 下不充电、不识别 USB 外设（上游已知）。都在文末"待处理问题"。
+当前阶段（2026-11-14 19:05）：**`boot_a` 里是带实测内存表的镜像，macOS 看到 6.38 GiB。** 19:01 刷入 `out/flash/boot-v4-flash.img`（sha256 `c244f53d…`），刷完重试次数 7，重启后 60 秒内引导程序没有回来（屏幕上的结果还没有用户的确认）。这份镜像的内核带上游 #244、#245 和 `vm-swapin-io=1`。正在做：内存路线一（窗口挪到内存顶部，收编下面的 4 GiB），设计在 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`，等用户确认；用户已定之后做路线二。没解决的：槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖待机久了失效、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
+
+上一阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存（带上游两条内存修复的新镜像 18:07 已内存启动，还没刷 `boot_a`；用户想拉满 16 GB，还没有设计）；macOS 下不充电、不识别 USB 外设（上游已知）。都在文末"待处理问题"。
 
 上一阶段（2026-11-14 02:25）：**`boot_a` 里是带关机修复的新镜像，macOS 里点 Shut Down 能断电（用户 02:19 确认）。** 02:21 刷入 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`），刷完读到重试次数 7，重启后从 `boot_a` 启动。没解决的：① 用户说"现在还不能正常关机键开机"，具体现象还没问清（第 8 节"关机修复"末尾）；② 槽位重试次数每次正常开机扣 1，用户已允许用 `fastboot set_active a` 补（第 8 节"槽位重试次数"）。
 
@@ -365,8 +367,10 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 补次数：`fastboot -s <序列号> set_active a`（用户 2026-11-14 已允许，只限槽位 a），或者重刷一次 `boot_a`。
   - 02:21 刷入后是 7 次；之后 02:21 的重启和用户的冷开机复测各用掉 1 次，按推算还剩 5 次左右，用户如果多开过几次就更少。下次进 fastboot 时读一次为准。
 - `boot_a` 的内容和还原：
-  - 现在：`out/flash/boot-v4-flash.img`，sha256 `4cb441e019308ab3c0db1ec3b1083e975b5221a1fee8d6606e10099950655f01`。
-  - 回到上一版 macOS 镜像（没有关机修复）：`fastboot flash boot_a out/flash/boot-v4-flash.prev.img`。
+  - 现在（2026-11-14 19:01 起）：`out/flash/boot-v4-flash.img`，sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`。实测内存表、上游 #244 和 #245、关机修复都在里面。
+  - 回到上一版：`fastboot flash boot_a out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，18:18 刷过的那份：没有实测内存表，其余相同）。
+  - 更早的两份：`boot-v4-flash.prev2.img`（`4cb441e0…`，有关机修复，没有上游两条内存修复）、`boot-v4-flash.prev3.img`（`ae0d4179…`，没有关机修复）。
+  - 对应的内存启动镜像（200 MiB 卷，不能刷）按同样的顺序叫 `boot-v4-payload.img`（`a9cb0b31…`）、`.prev`（`dd5d2475…`）、`.prev2`（`57bd2a2f…`）、`.prev3`（`4abcc897…`）。
   - 还原成原厂：`fastboot flash boot_a out/flash/sheng_global_images_OS3.0.305.0.WNXMIXM_16.0/images/boot.img`（sha256 `0a0d6aa6…`）。只还原这一个分区安卓仍然起不来：`init_boot_a` 已擦除，`vendor_boot_a` 没有 ramdisk，userdata 是 macOS 的。
   - `vbmeta_a` 没有动过，一直是原厂的。
 - 更新内核或 payload 之后重新刷入的流程（都在 `UniXNU/` 下执行）：
@@ -461,14 +465,21 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 不能简单地把整张表写全：DarwinBoot 的 `AllocateSpan` 会自动把窗口放到"6 GiB 内可用内存最多"的位置，并列时取最低地址（`MemoryWindow.h` 的 `DarwinWindowStart`），结果是 `0x8C0000000`。这样 `0x880000000`–`0x8BBD00000` 就落到窗口下方，收编区的地址跨度从 2 GiB 变成约 34 GiB。内核给收编区留的虚拟地址是"静态区下方 4 GiB 再往下一个跨度"（`arm_vm_init.c` 的 `arm_vm_outside_va`），这个内核的地址空间很紧，34 GiB 很可能放不下或者挤掉内核自己的分配。
   - 所以要用上那 4 GiB，内核一定要改，三条路：收编补丁支持窗口上方的内存；把窗口从 6 GiB 放大到 10 GiB（`scripts/unixnu/devicetree.py` 允许到 8 GiB，`board.toml` 说 4 KiB 引导页表最多映射 6 GiB，这个上限在哪还没查）；或者把窗口挪到顶部、收编补丁支持多个不相连的跨度。
 
-**内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；内存启动验证通过，还没有刷进 `boot_a`）**
+**内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；验证通过，19:01 已刷进 `boot_a`）**
 - 改动（`../uefi-sheng` 工作区，未提交）：`MemoryMapLib.c` 的 "DRAM bank 1 low" 从 `0x880000000 + 0x20000000` 改成 `0x880000000 + 0x39D00000`（到 `0x8B9D00000`），新增 "DRAM bank 1 mid" `0x8B9F00000 + 0x01E00000`。"DRAM bank 1 high" 没动，仍到 `0xA00000000`：如果把 `0xA00000000` 以上也列进去，加载器会把窗口挪走（见上一条）。预期多出约 443 MiB，窗口仍从 `0x880000000` 起。
 - 没有改的一处不一致：静态表的 "DRAM gap 0xE671D000" 从 `0xE671D000` 开始，而引导程序的 `/memory` 在这一带从 `0xE7CB0000` 才开始，中间 22.6 MiB 引导程序没有算作内存。这是上游原样，一直这样启动，这次不动，留给 B 步一起处理。另外 `0xD4D00000`–`0xD8000000` 在引导程序那里是 modem 的 no-map 保留区（没有标 disabled），静态表把它当空闲内存，也是上游原样。
 - 构建产物：固件 `SILICIUM_UEFI.fd` sha256 前缀 `9b21a09e`（备份 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd`；构建目录里现在就是这一份，不是验证过的 `36bd589f`）。v0 镜像 `<output>/boot/boot-mem12g.img`（`<output>/boot/boot.img` 没动）。`out/flash/boot-v4-payload.mem12g.img`（sha256 `a9cb0b31…`）和 `out/flash/boot-v4-flash.mem12g.img`（sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`）。payload 卷和 `boot_a` 里的只差卷标时间那 4 个字节。
 - 18:41 fastboot 读数：槽位 a，重试 7（18:18 刷入后没有发生过正常开机），电池 4361 mV。18:41:55 内存启动 `boot-v4-flash.mem12g.img`：`Booting OKAY`，45 秒内引导程序没有回来。**没有刷 `boot_a`。**
-- 结果（用户 2026-11-14 报告）：进了系统，内存显示从约 6 GB 变成 6.38 GB。用户说附了文件，我这边没有收到，不知道读数来自"关于本机"还是 `sysctl`。swap 和 #245 是否生效仍然没有平板上的读数。
+- 结果（用户 2026-11-14 报告并拍了平板屏幕）：进了系统。平板终端里 `hw.memsize` 是 6848757760（6.38 GiB）；活动监视器显示物理内存 6.38 GB、已用 4.72 GB、联动内存 2.59 GB、已压缩 279.3 MB、已用交换 0，内存压力是绿色。
+- 同一张照片里的其他读数：`vm.swapin_iotier_boost: 1`，说明上游 #245 的补丁在内核里并且开着（`vm-swapin-io=1` 生效）。`vm.swapusage: total = 0.00M`：当时没有内存压力，还没有建交换文件，所以交换能不能用仍然没有验证。`vm.swapin_iotier_grants` 用户敲错了名字，没读到。
 - `../uefi-sheng` 的改动已在本地提交：分支 `local/sheng-12g-memory-map`，提交 `5dfcc572`，没有推送。
-- 还没做：刷 `boot_a`（平板要先进 fastboot；现在 `boot_a` 里还是 18:18 那份，重启后内存会回到约 6 GB）；刷之前把 `<output>/boot/boot-mem12g.img` 换成以后打包用的 v0 源镜像（旧 `boot.img` 留备份），`out/flash/` 里的镜像按 `.prev` 轮换。
+- 刷入（用户 2026-11-14 让平板进了 fastboot 并要求刷）：
+  - 刷前读数：槽位 a，重试 6，`successful: no`，`unbootable: no`，`boot_a` 大小 `0xC000000`，电池 4326 mV。
+  - 19:01:43 `fastboot flash boot_a out/flash/boot-v4-flash.mem12g.img`：`Sending 'boot_a' (195720 KB) OKAY [4.508s]`，`Writing 'boot_a' OKAY [0.071s]`。刷完重试 7。
+  - 19:01:55 `fastboot reboot`，60 秒内引导程序没有回来。屏幕上是否进了登录页、内存是否仍是 6.38 GB，还没有用户的确认。
+- 刷完后的文件名：
+  - `out/flash/` 里 `.mem12g` 的两份改成了正式名字，旧的依次改成 `.prev`、`.prev2`、`.prev3`，没有删任何一份（哈希见第 8 节"日常使用"）。
+  - `<output>/boot/boot.img` 现在就是这份固件的 v0 镜像（sha256 `35f03ec4…`，固件 `9b21a09e…`），用 `./unixnu bootimg` 重新生成并和 `boot-mem12g.img` 逐字节比过，一样；`boot.json` 和它对应，`boot.good.json` 是它的副本（以后带 `-o` 打包后用它还原 `boot.json`）。上一份验证过的留作 `boot.good-36bd589f.img` 和 `boot.good-36bd589f.json`。
 
 **内存 B 步：用上窗口上方的 4 GiB（用户 2026-11-14 要求推进；在查代码，还没有设计）**
 - 6 GiB 上限的出处找到了：`patches/xnu-12377/native-4k-bootstrap-capacity.patch` 把 `osfmk/arm/pmap/pmap.h` 的 `BOOTSTRAP_TABLE_SIZE` 定成 16 页，注释是"Native 4 KiB: two roots plus up to seven L2 pages per 6 GiB mapping"。引导页表要给整个窗口建两份映射（V=P 和内核线性映射），每个 L2 页管 1 GiB：N GiB 的窗口要 `2 + 2 × (N + 1)` 页，6 GiB 是 16 页，10 GiB 是 24 页。`arm_vm_init.c` 里有检查，不够会 panic："BOOTSTRAP_TABLE_SIZE too small for memory config"。
@@ -479,7 +490,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 收编不占这部分地址：收编区的映射地址在静态区下方那 64 GiB 没人用的地址里（收编补丁的 `arm_vm_outside_va`）；各堆的地址划分（KMEM 阶段）在收编（EARLY_BOOT 阶段）之前，收编进来的内存不会让压缩器多占地址。
 - 收编现在的限制（`profiles/os/macos-27.3-26C5035r/patches/xnu-12377/window-outside-memory-adoption.patch`）：只认窗口下方的内存（`end > gPhysBase` 的跳过）；所有内存段合成一个区，这个区超过 4 GiB 就整个放弃；上游机器上实测只收编到 458 MiB，其余被探测拒绝。窗口上方收不了的根源在 VM 层：`vm_resident.c` 里按页号找页的 radix 树只覆盖 `[pmap_first_pnum, vm_pages_first_pnum)`，页号在页数组之后的 `vm_page_find_canonical` 直接返回空。
 - 加载器不用改就会列出窗口上下两边的空闲内存（`MemoryWindow.h` 的 `DarwinOutsideRanges`，留最大的 8 段）。但窗口位置没有选项可以指定：`DarwinWindowStart` 只在内存表每一段的起点上找，取可用内存最多的，一样多取地址低的。加载器的这些函数有主机上能跑的测试（`drivers/DarwinBoot/Test/test-memory-window.py`、`test-memory-outside.py`）。
-- 由此得出的三条路线（2026-11-14 已发给用户，等用户选）：
+- 由此得出的三条路线（2026-11-14 发给用户；用户选了"先路线一再路线二"。路线一的设计在 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`，等用户确认）：
   1. 窗口挪到最高的 6 GiB（`0x980000000`–`0xB00000000`，引导程序给的是一整块），收编它下面的 `0x880000000`–`0x980000000`（正好 4 GiB，卡在收编上限上）。内核不用改；加载器要加一个指定窗口位置的选项；低端那 2 GiB 要用 `owned_memory_outside_reserved` 整段挡掉，否则合成的区超过 4 GiB、收编整个失效，代价是丢掉低端现在收编到的约 0.45 GiB。预计约 9.9 GiB。
   2. 在 1 的基础上让收编支持多个区，把低端的 0.45 GiB 拿回来，预计约 10.4 GiB。要改内核（pmap 的每页表、`pa_valid`/`pa_index`/`pai_to_pa`、映射地址）。
   3. 窗口不动，让内核能收编窗口上方的内存。要改 VM 的 radix 树和页查找，再加多个区，改动最大。
