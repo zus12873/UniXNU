@@ -402,6 +402,11 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - swap：
   - 本地已有 `macos-vm-volume.patch`（11-10 起在 `series` 第 29 行），它把 `/System/Volumes/VM` 指到 Data 卷的 `/private/var/vm`，修的是"swap 文件 EROFS、压缩器满了以后桌面卡死"。这台机器上 swap 实际有没有生效，还没查（`sysctl vm.swapusage`）。
   - 上游 11-14 新合、本地还没有的两条：#244 `macos-4k-zone-va-budget.patch`（zone map 从 24 GiB 降到 16 GiB 虚拟地址，给压缩器和共享 I/O 留出地址空间）和 #245 `macos-swapin-io-priority.patch`（换入时临时提高 I/O 优先级；只在 `native-apfs-root` 启动时默认打开，其他情况要加 `vm-swapin-io=1`）。两条的 PR 都写着在 sheng 上 Device Test PASS。本地分支落后上游 `main` 9 个提交，其中 #238 就是已经摘进来的关机补丁。
+- 第 1 步（用户同意：先带上 #244、#245 缓解卡死，内存仍是 6 GB）的进度：
+  - 已做：上游 `main` 合进本地分支（合并提交 `ec761fd`，无冲突；补丁序列末尾多了 `macos-4k-zone-va-budget.patch` 和 `macos-swapin-io-priority.patch`，关机补丁只出现一次）。
+  - 已做：`unixnu.local.toml`（不进 git）加了 `kernel_args = ["vm-swapin-io=1"]`。两个仓库里都没有任何地方设置 `native-apfs-root`，所以 #245 不加这个参数就是关的。加上后命令行 877 字节，上限 1000。
+  - 卡住：外置盘（PSSD T7）又从 Mac 上断开了，`/Volumes/12873` 不存在。残留的构建盘镜像设备已用 `hdiutil detach disk6 -force` 清掉。要等用户接回外置盘。
+  - 接回后还要做：`hdiutil attach` 构建盘，`diskutil verifyVolume /Volumes/UniXNUBuild`，核对 `kernel/kernel.macho` 的 sha256 仍是 `f393f430…`；只读挂载 OS 镜像；然后按第 8 节"日常使用"的第 3 到 8 步重建、打包、内存启动验证、刷 `boot_a`。启动后在串口或系统日志里应该能看到 `vm: Demand swap-in transient I/O priority enabled`。
 
 **其他还开着的问题（前面各节有详细记录，这里汇总）**
 - 槽位重试次数每次正常开机扣 1，要接 Mac 补；长期方案（内核侧自动标记启动成功）等用户决定。见第 8 节"槽位重试次数"和"日常使用"。
