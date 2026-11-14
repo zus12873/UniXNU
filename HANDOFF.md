@@ -5,7 +5,9 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 20:05）：**内存路线一在 Mac 上的部分做完了，三个新镜像还没有上机。** 平板这边：`boot_a` 里仍是带实测内存表的镜像（`out/flash/boot-v4-flash.img`，sha256 `c244f53d…`，6.38 GiB），从它启动的两次出现过终端卡住和整机卡死，原因没分清；19:21 起平板在跑从内存启动的对照镜像（旧内存表，5.95 GiB），终端正常。已建议用户下次进 fastboot 时把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`，等用户同意。路线一：设计 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`（用户已确认），计划 `docs/superpowers/plans/2026-11-14-memory-top-window.md`，Task 1 到 5 完成，Task 6（上机）等用户在场；镜像和读数见文末"路线一的主机部分"。之后做路线二。没解决的：卡死的原因、槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖和触控板掉线、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
+当前阶段（2026-11-14 21:15）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
+
+上一阶段（2026-11-14 20:05）：**内存路线一在 Mac 上的部分做完了，三个新镜像还没有上机。** 平板这边：`boot_a` 里仍是带实测内存表的镜像（`out/flash/boot-v4-flash.img`，sha256 `c244f53d…`，6.38 GiB），从它启动的两次出现过终端卡住和整机卡死，原因没分清；19:21 起平板在跑从内存启动的对照镜像（旧内存表，5.95 GiB），终端正常。已建议用户下次进 fastboot 时把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`，等用户同意。路线一：设计 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`（用户已确认），计划 `docs/superpowers/plans/2026-11-14-memory-top-window.md`，Task 1 到 5 完成，Task 6（上机）等用户在场；镜像和读数见文末"路线一的主机部分"。之后做路线二。没解决的：卡死的原因、槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖和触控板掉线、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
 
 上一阶段（2026-11-14 19:05）：**`boot_a` 里是带实测内存表的镜像，macOS 看到 6.38 GiB。** 19:01 刷入 `out/flash/boot-v4-flash.img`（sha256 `c244f53d…`），刷完重试次数 7，重启后 60 秒内引导程序没有回来（屏幕上的结果还没有用户的确认）。这份镜像的内核带上游 #244、#245 和 `vm-swapin-io=1`。正在做：内存路线一（窗口挪到内存顶部，收编下面的 4 GiB），设计在 `docs/superpowers/specs/2026-11-14-memory-top-window-design.md`，等用户确认；用户已定之后做路线二。没解决的：槽位重试次数、睡眠、macOS 下不充电和不识别 USB 外设、键盘盖待机久了失效、交换文件能不能用没验证、iPadOS。都在文末"待处理问题"。
 
@@ -470,7 +472,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 **内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；验证通过，19:01 已刷进 `boot_a`）**
 - 改动（`../uefi-sheng` 工作区，未提交）：`MemoryMapLib.c` 的 "DRAM bank 1 low" 从 `0x880000000 + 0x20000000` 改成 `0x880000000 + 0x39D00000`（到 `0x8B9D00000`），新增 "DRAM bank 1 mid" `0x8B9F00000 + 0x01E00000`。"DRAM bank 1 high" 没动，仍到 `0xA00000000`：如果把 `0xA00000000` 以上也列进去，加载器会把窗口挪走（见上一条）。预期多出约 443 MiB，窗口仍从 `0x880000000` 起。
 - 没有改的一处不一致：静态表的 "DRAM gap 0xE671D000" 从 `0xE671D000` 开始，而引导程序的 `/memory` 在这一带从 `0xE7CB0000` 才开始，中间 22.6 MiB 引导程序没有算作内存。这是上游原样，一直这样启动，这次不动，留给 B 步一起处理。另外 `0xD4D00000`–`0xD8000000` 在引导程序那里是 modem 的 no-map 保留区（没有标 disabled），静态表把它当空闲内存，也是上游原样。
-- 构建产物：固件 `SILICIUM_UEFI.fd` sha256 前缀 `9b21a09e`（备份 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd`；构建目录里现在就是这一份，不是验证过的 `36bd589f`）。v0 镜像 `<output>/boot/boot-mem12g.img`（`<output>/boot/boot.img` 没动）。`out/flash/boot-v4-payload.mem12g.img`（sha256 `a9cb0b31…`）和 `out/flash/boot-v4-flash.mem12g.img`（sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`）。payload 卷和 `boot_a` 里的只差卷标时间那 4 个字节。
+- 构建产物：固件 `SILICIUM_UEFI.fd` sha256 前缀 `9b21a09e`（备份 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd`；当时构建目录里就是这一份，不是验证过的 `36bd589f`。19:55 起构建目录里换成了路线一的 `e168abab`，见第 9 节"路线一的主机部分"）。v0 镜像 `<output>/boot/boot-mem12g.img`（`<output>/boot/boot.img` 没动）。`out/flash/boot-v4-payload.mem12g.img`（sha256 `a9cb0b31…`）和 `out/flash/boot-v4-flash.mem12g.img`（sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`）。payload 卷和 `boot_a` 里的只差卷标时间那 4 个字节。
 - 18:41 fastboot 读数：槽位 a，重试 7（18:18 刷入后没有发生过正常开机），电池 4361 mV。18:41:55 内存启动 `boot-v4-flash.mem12g.img`：`Booting OKAY`，45 秒内引导程序没有回来。**没有刷 `boot_a`。**
 - 结果（用户 2026-11-14 报告并拍了平板屏幕）：进了系统。平板终端里 `hw.memsize` 是 6848757760（6.38 GiB）；活动监视器显示物理内存 6.38 GB、已用 4.72 GB、联动内存 2.59 GB、已压缩 279.3 MB、已用交换 0，内存压力是绿色。
 - 同一张照片里的其他读数：`vm.swapin_iotier_boost: 1`，说明上游 #245 的补丁在内核里并且开着（`vm-swapin-io=1` 生效）。`vm.swapusage: total = 0.00M`：当时没有内存压力，还没有建交换文件，所以交换能不能用仍然没有验证。`vm.swapin_iotier_grants` 用户敲错了名字，没读到。
@@ -543,7 +545,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
     - 生成器（UniXNU `74a17c8`）：板级选项 `owned_memory_floor`，写成 `darwinboot-memory-floor`。
     - 固件内存表（`../uefi-sheng` 分支 `local/sheng-12g-memory-map`，提交 `20331338`）："DRAM bank 1 high" 列到 `0xB00000000`。
     - 板级配置（`../UniXNU-sheng` 新分支 `local/sheng-12g-top-window`，提交 `4ff0ecf`，只含 `board.toml`）：下限 `0x980000000`，窗口外的表 16 格，保留列表加 `0x80000000:0x800000000`。
-  - 主机测试：加载器 5 个脚本通过；`python3 -I -B -m unittest discover -s local-tools/tests` 29 个通过。其中 `test_top_window_layout.py` 用固件内存表、板级配置和加载器自己的代码算出：窗口起点 `0x980004000`，内核收编 `0x880000000`–`0x8B9D00000`、`0x8B9F00000`–`0x8BBD00000`、`0x8C0000000`–`0x980000000` 三段，共 `0xFBB00000` 字节（1030912 页）。内核那一步是照补丁写的 Python 版，不是内核本身。
+  - 主机测试：加载器 5 个脚本通过；`python3 -I -B -m unittest discover -s local-tools/tests` 30 个通过（审阅后补了 1 个，`test-adt-window.py` 也多了对 `Boot` 的检查，见下面"最终审阅"）。其中 `test_top_window_layout.py` 用固件内存表、板级配置和加载器自己的代码算出（固件自己的分配按假设放在 bank 1 顶端 256 MiB，这是模型，不是从本机读到的内存表）：窗口起点 `0x980004000`，内核收编 `0x880000000`–`0x8B9D00000`、`0x8B9F00000`–`0x8BBD00000`、`0x8C0000000`–`0x980000000` 三段，共 `0xFBB00000` 字节（1030912 页）。内核那一步是照补丁写的 Python 版，不是内核本身。
   - 新工具 `local-tools/adt-chosen.py`：打印 payload 里设备树 `/chosen` 下加载器用的属性，用来在上机前核对。
   - 构建结果（日常那一套没有动，哈希都核对过）：
 
@@ -558,7 +560,10 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 这三个 v4 镜像**都没有上机**。它们和日常镜像只差两处：固件，以及 payload 卷里的 `kernel.macho.adt`。设备树里变的只有 `darwinboot-memory-floor`（新增）、`darwinboot-memory-outside`（8 格变 16 格）、`darwinboot-memory-outside-kept` 和随机种子；两个新镜像之间只差保留列表和随机种子。内核、GPU 附加包、信任缓存、Data 种子都和日常镜像逐字节相同。
   - 做法上的一点偏离：`./unixnu build payload` 每跑一次都会重新生成 `kernel.macho.gpuaddon` 和 `kernel.macho.trustcache`（信任缓存里的 UUID 和一部分代码哈希每次都不同，大小不变；连跑两次、输入相同也不同）。为了上机时只变固件和设备树，两份 payload 没有直接用构建结果，而是在日常 payload 的副本里只替换设备树：
     `cp <output>/payload/payload.daily-8a36fe56.img <output>/payload/payload.topwin.img`，再 `MTOOLS_SKIP_CHECK=1 TZ=UTC mcopy -D o -Q -m -i <output>/payload/payload.topwin.img <output>/payload/kernel.macho.topwin.adt ::/EFI/UniXNU/Payloads/kernel.macho.adt`。两份设备树留在 `<output>/payload/kernel.macho.topwin.adt` 和 `kernel.macho.topwin-k443.adt`（里面有芯片序列号，不入库）。日常 payload 的备份是 `<output>/payload/payload.daily-8a36fe56.img` 和同名 `.json`，`payload.img` 已放回日常那一份。
-  - 上机时的预期读数（Task 6）：屏幕上 `DARWINBOOT: window floor=0x980000000 start=0x980004000`，`pa=0x980004000`，窗口外的段里有 `0x880000000 + 0x39d00000`、`0x8b9f00000 + 0x1e00000`、`0x8c0000000 + 0xc0000000`。`sudo dmesg | grep "memory outside"`：对照镜像最多 917504 页，完整镜像最多 1030912 页。`hw.memsize` 通过线：对照 9736028160，完整 10200547328。先跑对照的一份，再跑完整的一份，各试用 30 分钟。
+  - 上机时的预期读数（Task 6）：屏幕上 `DARWINBOOT: window floor=0x980000000 start=0x980004000`，`pa=0x980004000`，窗口外的段里有 `0x880000000 + 0x39d00000`、`0x8b9f00000 + 0x1e00000`、`0x8c0000000 + 0xc0000000`。`sudo dmesg | grep "memory outside"`：对照镜像最多 917504 页，完整镜像最多 1030912 页。`hw.memsize` 通过线：对照 9736028160，完整 10200547328。先跑对照的一份，再跑完整的一份，各试用 30 分钟。完整的一份用 `out/flash/boot-v4-payload.topwin.img`：它和对照的一份都是 200 MiB 卷，只差保留列表。`boot-v4-flash.topwin.img`（190 MiB 卷）留到写 `boot_a` 之前再从内存启动一次。窗口起点不是 `0x980004000` 时，内核一页也不收编（`0 pages adopted, 0 refused`），原因要在下限附近找。
+  - 已知限制（最终审阅发现）：GPU 驱动判断导入内存会不会和自己的缓冲区冲突时用一张页表（`drivers/Adreno740/NativeAdrenoMemory.cpp:97-116`），只给窗口里的页和物理地址 4 GiB 以下的页编了号。新布局收编的 `0x880000000`–`0x980000000` 不在表里，本来会被拒绝的冲突映射会被放过。审阅没找到越界或 panic 的路径，也没能确定实际会不会遇到。所以这几份镜像上的画面错乱或 GPU 卡住，不能直接当成内存问题。改它要重建驱动，在设计之外，没有改；写 `boot_a` 之前请用户决定。
+  - 回到日常状态：两个兄弟仓库和固件构建目录现在都是路线一的状态：`../uefi-sheng` 在 `local/sheng-12g-memory-map` 的 `20331338`（bank 1 列到 `0xB00000000`），构建目录里的固件是 `e168abab`；`../UniXNU-sheng` 在 `local/sheng-12g-top-window`。要重建日常镜像，两处都要回去：`../uefi-sheng` 回到 `5dfcc572`（或者把 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd` 放回构建目录），`../UniXNU-sheng` 切回 `main`（工作区里没提交的改动会跟过去）。只切回板级配置、固件还是路线一的，窗口会落在 `0x8C0004000`，内核一页也不收编（审阅者按模型算的）。另外 `<output>/runtime/` 里的 GPU 附加包和信任缓存、`<output>/payload/stage` 是路线一那两次 payload 构建留下的，和日常 payload 里的不同；日常的 `payload.img` 已放回。
+  - 最终审阅（约 21:00，一个新的审阅者，只读）：没有严重问题，可以只从内存启动做 Task 6。审阅结果、补的测试和推迟的小问题记在计划文档末尾"最终审阅"。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。

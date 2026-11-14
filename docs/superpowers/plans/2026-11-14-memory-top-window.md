@@ -55,11 +55,11 @@
   ```
   每个空闲段先裁成 `[max(Start, Floor), End)`，整段在下限以下的跳过；其余规则不变（候选是裁后起点按 `Block` 向上对齐再加 `Offset`；头部必须整个落在一段空闲内存里；按窗口内可用字节数排，相同取低地址）。`Floor` 为 0 时结果与现在完全相同。
 
-- [ ] **Step 1: 在子模块里建分支**
+- [x] **Step 1: 在子模块里建分支**
 
 Run: `git -C drivers/DarwinBoot switch -c local/window-floor`
 
-- [ ] **Step 2: 写失败的测试**
+- [x] **Step 2: 写失败的测试**
 
 改 `Test/test-memory-window.py`：C 包装函数 `start` 在 `window` 后面多一个 `UINT64 floor` 并传给 `DarwinWindowStart`；Python 的 `start(descriptors, offset, head, size, skip=(MAX, 0), floor=0)` 和 `reference_start(descriptors, offset, head, size, floor=0)` 各加一个参数（参考实现里把每段的起点取 `max(start, floor)`，起点不小于终点的段跳过）。在现有 `sheng` 用例之后加：
 
@@ -89,21 +89,21 @@ Run: `git -C drivers/DarwinBoot switch -c local/window-floor`
 
 再加一轮 400 个随机内存表（种子 `20261114`，内存表的生成方式与现有那一轮相同）：每轮随机挑一段，从 {0，该段起点，起点加 `0x1000`，段中间按 4 KiB 取整的一点，该段终点} 里取一个下限；断言 C 实现与 `reference_start(…, floor)` 一致，并且找到的起点不低于下限。最后一行输出改为 `PASS: window start by usable memory, window floor, excluded-range table, table overflow, 800 random maps against the model`。
 
-- [ ] **Step 3: 运行，确认失败**
+- [x] **Step 3: 运行，确认失败**
 
 Run: `python3 -I -B drivers/DarwinBoot/Test/test-memory-window.py`
 Expected: clang 报 `too many arguments to function call`（`DarwinWindowStart` 还没有这个参数），脚本以 `CalledProcessError` 结束。
 
-- [ ] **Step 4: 实现**
+- [x] **Step 4: 实现**
 
 改 `MemoryWindow.h` 的 `DarwinWindowStart`：裁剪放在读出 `Start`、`End` 之后、现有的溢出检查之前，这样溢出检查看到的是裁后的起点。函数上方的注释补一句下限的含义。同时把另外两处调用补上参数：`DarwinBoot.c:623` 传 `0`，`Test/test-memory-outside.py:69` 的 `unused_start` 传 `0`。
 
-- [ ] **Step 5: 运行加载器的全部主机测试**
+- [x] **Step 5: 运行加载器的全部主机测试**
 
 Run: `for t in test-memory-window test-memory-outside test-adt-window test-loader-inputs test-kernel-parser; do python3 -I -B drivers/DarwinBoot/Test/$t.py || echo "FAILED $t"; done`
 Expected: 五行 `PASS: …`，没有 `FAILED`。（`test-packed-ramdisk.py` 在 `-I` 下本来就因为找不到同目录模块而失败，与本计划无关，不在这个列表里。）
 
-- [ ] **Step 6: 提交（子模块内）**
+- [x] **Step 6: 提交（子模块内）**
 
 ```bash
 git -C drivers/DarwinBoot add DarwinBootPkg/Driver/MemoryWindow.h DarwinBootPkg/Driver/DarwinBoot.c Test/test-memory-window.py Test/test-memory-outside.py
@@ -127,7 +127,7 @@ git -C drivers/DarwinBoot commit -m "feat(boot): a floor for the start of the wi
   - `AllocateSpan (KERNEL *Kernel, UINT64 WindowSize, UINT64 WindowFloor, UINT64 HeadSize, EFI_PHYSICAL_ADDRESS *Address)`：把下限传给 `DarwinWindowStart`。找不到窗口时屏幕上的那一行改成 `NO WINDOW %lx HEAD %lx FLOOR %lx`。
   - 下限非零时，和 `DARWINBOOT: ARM64 …` 那一行一起多打印一行：`DARWINBOOT: window floor=0x%lx start=0x%lx`。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 改 `Test/test-adt-window.py`：C 入口 `parse` 多一个输出参数 `UINT64 *floor`（初值 0），返回 `AdtNode (…) && at == size && AdtWindowConsistent (*floor, *excluded)`；`parse_all` 返回六个值，最后一个是下限；`parse` 仍取前四个。设 `floor = ('darwinboot-memory-floor', struct.pack('<Q', 0x980000000))`，加这些用例：
 
@@ -145,23 +145,23 @@ git -C drivers/DarwinBoot commit -m "feat(boot): a floor for the start of the wi
 
 最后一行输出改为以 `PASS: window size, floor, excluded-range table and loader input record of /chosen` 开头，拒绝用例的计数跟着加。
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `python3 -I -B drivers/DarwinBoot/Test/test-adt-window.py`
 Expected: clang 报 `AdtNode` 的参数个数不符或 `AdtWindowConsistent` 未声明，脚本以 `CalledProcessError` 结束。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 按 Interfaces 改 `DarwinBoot.c`。`Load` 里新增局部变量 `WindowFloor`，初值 0。README 的新段落写清楚：属性名、8 字节、0 等于没有、只在有排除表时有效、屏幕上多出的那一行，并注明还没有上机。
 
 `DarwinBoot.c` 整体只在固件构建时编译（Task 5 Step 3）；主机测试只编译 `AdtNode` 到 `ValidTrustCaches` 之间的那一段。
 
-- [ ] **Step 4: 运行加载器的全部主机测试**
+- [x] **Step 4: 运行加载器的全部主机测试**
 
 Run: 同 Task 1 Step 5。
 Expected: 五行 `PASS: …`，没有 `FAILED`。
 
-- [ ] **Step 5: 提交（子模块内）**
+- [x] **Step 5: 提交（子模块内）**
 
 ```bash
 git -C drivers/DarwinBoot add DarwinBootPkg/Driver/DarwinBoot.c Test/test-adt-window.py README.md
@@ -185,7 +185,7 @@ git -C drivers/DarwinBoot commit -m "feat(boot): /chosen/darwinboot-memory-floor
   - 其余情况抛 `unixnu.util.Error`，消息以 `Owned memory floor` 开头：值是布尔或不是数字；为 0；为负；不小于 `2**64`；不是 `0x200000` 的倍数；`options` 里没有 `owned_memory_size`；没有 `owned_memory_excluded_ranges`。
 - `generate()`：`chosen += memory_floor(options)`，放在 `darwinboot-memory-excluded` 之后、`darwinboot-loader-inputs` 之前。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 `local-tools/tests/test_devicetree_floor.py`，用 `unittest`；开头 `sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))`，然后 `from unixnu import devicetree` 和 `from unixnu.util import Error`。基准选项 `BASE = {'owned_memory_size': '0x180000000', 'owned_memory_excluded_ranges': 64}`。
 
@@ -198,19 +198,19 @@ git -C drivers/DarwinBoot commit -m "feat(boot): /chosen/darwinboot-memory-floor
 | `test_refuses_non_number` | `'top'`、`True` 抛 `Error` |
 | `test_requires_size_and_excluded_table` | 去掉 `owned_memory_size`，或去掉 `owned_memory_excluded_ranges`，抛 `Error` |
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `python3 -I -B -m unittest discover -s local-tools/tests -v`
 Expected: 新的 6 个测试 ERROR，原因是 `devicetree` 没有 `memory_floor`；原有 12 个通过。
 
-- [ ] **Step 3: 实现 `memory_floor` 并在 `generate()` 里调用，补两份配置文档各一行**
+- [x] **Step 3: 实现 `memory_floor` 并在 `generate()` 里调用，补两份配置文档各一行**
 
-- [ ] **Step 4: 运行，确认通过**
+- [x] **Step 4: 运行，确认通过**
 
 Run: `python3 -I -B -m unittest discover -s local-tools/tests -v`
 Expected: `Ran 18 tests`，`OK`。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add scripts/unixnu/devicetree.py docs/reference/configuration.md docs/zh/reference/configuration.md local-tools/tests/test_devicetree_floor.py drivers/DarwinBoot
@@ -265,7 +265,7 @@ def adopted(pairs, kept, phys_base, dram_base=0x80000000, twig=0x200000, limit=1
     return (table, (low, high)) if low < high <= low + (4 << 30) else ([], None)
 ```
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 常量：内核在 2 MiB 块里的偏移 `0x4000`，头部按 `0x11000000` 估，窗口外的段按 `0x10000` 对齐、不小于 `0x100000`（与 `DarwinBoot.c` 调用 `DarwinOutsideRanges` 的参数一致）。板级选项用 `tomllib` 从 `../UniXNU-sheng/board.toml` 的 `os_overrides."macos-27.3-26C5035r".payload.adt` 读；下限用 `adt.get('owned_memory_floor', '0')`，这样改配置之前测试是失败而不是报错。`窗口` 指 `DarwinWindowStart` 在 `memory_map(firmware_free())` 上按板级的窗口大小和下限算出的起点；`窗口外的表` 指 `DarwinOutsideRanges` 按板级的 `owned_memory_outside_ranges` 算出的各段。
 
@@ -282,16 +282,16 @@ def adopted(pairs, kept, phys_base, dram_base=0x80000000, twig=0x200000, limit=1
 
 兄弟仓库不在时整个测试类跳过（`skipUnless`）；在这台 Mac 上运行时输出里不能有 `skipped`。
 
-- [ ] **Step 2: 运行，确认失败**
+- [x] **Step 2: 运行，确认失败**
 
 Run: `python3 -I -B -m unittest discover -s local-tools/tests -v`
 Expected: 新的 8 个测试全部 FAIL（不是 ERROR），原有 18 个通过。
 
-- [ ] **Step 3: 改固件内存表**
+- [x] **Step 3: 改固件内存表**
 
 `MemoryMapLib.c`："DRAM bank 1 high" 从 `0x8C0000000, 0x140000000` 改成 `0x8C0000000, 0x240000000`；上面两行注释改成说明依据（引导程序的 `/memory` 节点，2026-11-14 读出）和 `0xA00000000` 以上还没有上机验证过。其余行不动。
 
-- [ ] **Step 4: 改板级配置**
+- [x] **Step 4: 改板级配置**
 
 `board.toml` 的那一段：
 - 新增 `"owned_memory_floor" = "0x980000000"`。
@@ -299,12 +299,12 @@ Expected: 新的 8 个测试全部 FAIL（不是 ERROR），原有 18 个通过�
 - `"owned_memory_outside_reserved"` 改成 `["0xd0000000:0x10000", "0x80000000:0x800000000"]`。
 - 这一段里两处注释跟着改写：窗口是 bank 1 顶部的 6 GiB（`0x980000000`–`0xB00000000`）；内核收编的是窗口下方 `0x880000000`–`0x980000000` 的三段；`0x880000000` 以下全部保留，原因是合成的区不能超过 4 GiB；这组值只对 12 GiB 机型成立。
 
-- [ ] **Step 5: 运行，确认通过**
+- [x] **Step 5: 运行，确认通过**
 
 Run: `python3 -I -B -m unittest discover -s local-tools/tests -v`
 Expected: `Ran 26 tests`，`OK`，没有 `skipped`。
 
-- [ ] **Step 6: 提交（三个仓库）**
+- [x] **Step 6: 提交（三个仓库）**
 
 ```bash
 git -C ../uefi-sheng add Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c
@@ -334,7 +334,7 @@ git commit -m "test: the top-window layout of the 12 GiB sheng unit"
 
 带 `k443` 的那份 payload 是对照用的：保留列表多一项 `0x8A0000000:0x20000000`，把 2026-11-14 实测内存表新列入的 443 MiB 挡在收编之外。19:01 之后两次卡死的原因还没分清，上机时先跑这一份，再跑完整的一份，一次只变一件事。
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 `local-tools/tests/test_adt_chosen.py`，用 `unixnu.devicetree.node` 造树，把工具当子进程调用。
 
@@ -344,7 +344,7 @@ git commit -m "test: the top-window layout of the 12 GiB sheng unit"
 | `test_refuses_truncated_tree` | 同一棵树去掉最后 5 个字节：退出码非 0，stderr 以 `adt-chosen: ` 开头 |
 | `test_refuses_tree_without_chosen` | 只有根节点的树：退出码非 0，stderr 以 `adt-chosen: ` 开头 |
 
-- [ ] **Step 2: 运行确认失败，实现工具，再运行确认通过，提交**
+- [x] **Step 2: 运行确认失败，实现工具，再运行确认通过，提交**
 
 Run: `python3 -I -B -m unittest discover -s local-tools/tests -v`
 Expected: 实现前新的 3 个测试 FAIL（工具不存在；两个拒绝用例因为断言了 stderr 的前缀，也会失败）；实现后 `Ran 29 tests`，`OK`。
@@ -354,7 +354,7 @@ git add local-tools/adt-chosen.py local-tools/tests/test_adt_chosen.py
 git commit -m "tools: print the loader's properties of a device tree's /chosen"
 ```
 
-- [ ] **Step 3: 构建固件**
+- [x] **Step 3: 构建固件**
 
 先确认外置盘挂着（`ls <output>/kernel/kernel.macho`），并核对日常文件的哈希：`shasum -a 256 <output>/payload/payload.img <output>/boot/boot.img`，前 8 位应是 `8a36fe56` 和 `35f03ec4`。不是就停下来查，不往下做。
 
@@ -362,7 +362,7 @@ Run: `./unixnu build firmware --os macos-27 --uefi ../uefi-sheng`
 
 核对：`../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/AARCH64/DarwinBoot.efi` 里能找到 UTF-16LE 的 `DARWINBOOT: window floor=`。把 `../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd` 复制成 `out/flash/SILICIUM_UEFI.topwin-<sha256 前 8 位>.fd`。
 
-- [ ] **Step 4: 构建两份 payload**
+- [x] **Step 4: 构建两份 payload**
 
 准备：`cp <output>/payload/payload.img <output>/payload/payload.daily-8a36fe56.img`，`payload.json` 同样备份；把 OS 镜像只读挂到系统盘上的一个临时目录：`hdiutil attach -readonly -nobrowse -mountpoint "$TMPDIR/os-mount" /Volumes/UniXNUBuild/unixnu-out/ipsw/26C5035r/141-22233-021.dmg`。
 
@@ -380,7 +380,7 @@ Run: `./unixnu build payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/u
 
 收尾：把日常的 payload 放回去（`cp <output>/payload/payload.daily-8a36fe56.img <output>/payload/payload.img`，`payload.json` 同样），核对哈希前 8 位仍是 `8a36fe56`；`hdiutil detach "$TMPDIR/os-mount"`。
 
-- [ ] **Step 5: 打包**
+- [x] **Step 5: 打包**
 
 ```bash
 ./unixnu bootimg --os macos-27 --dtb /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/sheng/sheng.dtb -o /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/boot/boot-topwin.img
@@ -392,7 +392,7 @@ python3 -I local-tools/make-flash-bootimg.py out/flash/boot-v4-payload.topwin.im
 
 Expected: `<output>/boot/boot.img` 的哈希前 8 位仍是 `35f03ec4`；两个 `boot-v4-payload.topwin*.img` 各 210903040 字节；`boot-v4-flash.topwin.img` 不超过 201326592 字节；三个文件的最后一行输出都是 `…: v4, kernel K, ramdisk R, signature 0, N bytes, sha256 H`，三者的 `K` 相同。日常的 `out/flash/boot-v4-flash.img`、`boot-v4-payload.img` 和各个 `.prev*` 的哈希与 `HANDOFF.md` 第 8 节一致。
 
-- [ ] **Step 6: 记录并提交**
+- [x] **Step 6: 记录并提交**
 
 `HANDOFF.md` 记下：三个新镜像和固件备份的文件名、字节数、sha256；它们都还没有上机；日常文件没有动。
 
@@ -409,9 +409,11 @@ git commit -m "docs: record the top-window images"
 - Modify: `HANDOFF.md`、`docs/superpowers/specs/2026-11-14-memory-top-window-design.md`（状态行）
 
 **Interfaces:**
-- Consumes: Task 5 的 `out/flash/boot-v4-payload.topwin-k443.img` 和 `out/flash/boot-v4-flash.topwin.img`。
+- Consumes: Task 5 的 `out/flash/boot-v4-payload.topwin-k443.img` 和 `out/flash/boot-v4-payload.topwin.img`（两者只差保留列表和随机种子）。`out/flash/boot-v4-flash.topwin.img` 只在写 `boot_a` 之前用（Step 6）。
 
 两次内存启动，先对照的一份，再完整的一份。每次都请用户录屏并拍终端。
+
+已知限制（最终审阅发现，2026-11-14）：GPU 驱动用一张页表判断导入的内存会不会和驱动自己的缓冲区冲突（`drivers/Adreno740/NativeAdrenoMemory.cpp:97-116`），这张表只给窗口里的页和物理地址 4 GiB 以下的页编了号。新布局收编的 `0x880000000`–`0x980000000` 不在表里，驱动放在那里的缓冲区查不到，本来会被拒绝的冲突映射会被放过。审阅没有找到越界或 panic 的路径，也没能确定实际会不会遇到。所以这两份镜像上出现的画面错乱或 GPU 卡住，不能直接当成内存的问题。写 `boot_a` 之前要决定改不改驱动（Step 6）。
 
 - [ ] **Step 1: 只读查询**
 
@@ -442,19 +444,21 @@ Expected: `Booting OKAY`，之后 45 秒 bootloader 没有再响应。
 
 键盘用不了、读不到 `dmesg` 时：收编量按 `hw.memsize` 减去屏幕上的 `usable` 估。
 
+`start=` 不是 `0x980004000` 时，说明固件在下限处占了内存，窗口被推高了。这时窗口下面那几段加起来超过 4 GiB，内核一页也不收编，`dmesg` 显示 `memory outside the span: 0 pages adopted, 0 refused`。原因要到下限附近找，不在 `0x880000000` 以下。
+
 - [ ] **Step 4: 试用 30 分钟**
 
 多开几个应用，看有没有卡住、卡死、重启。结束时再读一次 `sysctl hw.memsize vm.swapusage`。
 
 - [ ] **Step 5: 完整的一份**
 
-对照的一份通过后，再用 `out/flash/boot-v4-flash.topwin.img` 重复 Step 2 到 Step 4。
+对照的一份通过后，再用 `out/flash/boot-v4-payload.topwin.img` 重复 Step 2 到 Step 4。用它而不用 `boot-v4-flash.topwin.img`，是因为它和对照的一份是同样的 200 MiB 卷，两次之间只差保留列表，一次只变一件事。
 
 - [ ] **Step 6: 按结果决定下一步**
 
 | 对照的一份 | 完整的一份 | 结论和下一步 |
 | --- | --- | --- |
-| 稳定 | 稳定 | 路线一可用。问用户是否把 `boot-v4-flash.topwin.img` 刷进 `boot_a` |
+| 稳定 | 稳定 | 路线一可用。写 `boot_a` 之前：先请用户决定 GPU 驱动那一条（上面的"已知限制"）；再从内存启动一次 `boot-v4-flash.topwin.img`（写进 `boot_a` 的就是它，190 MiB 卷），重复 Step 2 到 Step 4；然后问用户是否刷入 |
 | 稳定 | 卡住或卡死 | 新列入的 443 MiB 有问题。把那一项保留写进 `board.toml`，重新出刷机用的镜像，约 9.5 GiB |
 | 卡住或卡死 | 不做 | 问题在路线一本身，或者和内存无关。按设计文档"失败时怎么办"处理：用 `memory-outside=0` 再启动一次，分清是窗口换位置还是收编 |
 | 起不来 | 不做 | 看录屏停在哪一层，按设计文档"失败时怎么办"处理 |
@@ -464,3 +468,44 @@ Expected: `Booting OKAY`，之后 45 秒 bootloader 没有再响应。
 - [ ] **Step 7: 记录**
 
 把每次启动的时间、镜像、屏幕读数、`hw.memsize`、试用结果写进 `HANDOFF.md` 第 9 节，更新设计文档的状态行，提交。刷 `boot_a` 要用户明确同意后另做：按 `HANDOFF.md` 第 8 节的办法把现有镜像轮换成 `.prev`，再 `fastboot flash boot_a`。
+
+## 执行结果（Task 1 到 5，2026-11-14）
+
+- Task 1 到 Task 5 完成，都在 Mac 上做，没有动平板。所有提交都在本地分支上，没有 push：
+  - 子模块 `drivers/DarwinBoot`（分支 `local/window-floor`）：`bf802ae`、`96cee50`，以及审阅后补测试的提交。
+  - UniXNU：`74a17c8`、`39daf83`、`c8697e9`、`f6f3414`，以及审阅后的提交。
+  - `../uefi-sheng`：`20331338`。
+  - `../UniXNU-sheng`：`4ff0ecf`。
+- 镜像、哈希和上机时的预期读数见 `HANDOFF.md` 第 9 节"路线一的主机部分"。Task 6 还没做。
+
+### 执行中的偏差和裁决（原记在 git 忽略的执行记录里，这里抄一份）
+
+- 没有另开 git worktree，直接在 `local/sheng-16g-macos` 上做，因为 `./unixnu`、`unixnu.local.toml` 和两个兄弟仓库都按这个路径找。代价是两个兄弟仓库和固件构建目录现在停在路线一的状态。怎样回到日常状态写在 HANDOFF 里。
+- 执行方式是我定的：交接时用户没有选，我按"本会话内逐任务做"执行。理由是设计已确认，Task 1 到 5 只在 Mac 上做、可以回退，Task 6 要等用户。用户的全局说明在能用子代理时优先"每个任务一个子代理，加两段审阅"；这次只在最后做了一次整体审阅。审阅找到的第 2 条（衔接处没有测试）正是逐任务审阅会查的那类问题。
+- Task 1：计划里的"先失败"是编译错误（参数还不存在），不是断言失败。所以另外把裁剪那一行删掉跑了一次，下限的断言确实失败（`AssertionError`），然后恢复。
+- Task 2：计划说"前五个结果和没有下限时相同"。这只在下限排在排除表后面时成立，因为排除表的偏移就是它在树里的位置。所以测试在这种顺序下比较全部五个结果；另外两种顺序下，只检查偏移仍然指向排除表。
+- Task 5：`./unixnu build payload` 每跑一次都会重新生成 GPU 附加包和信任缓存，输入相同、连跑两次也不一样。所以"只有设备树不同"对构建出来的 payload 不成立。两份新 payload 都是日常 payload 的副本，只用 `mcopy` 换了 `kernel.macho.adt`，逐个文件核对过。审阅确认加载器和构建里没有任何东西（哈希、大小、清单）把设备树和卷里的其他文件绑在一起。
+- Task 5：OS 镜像挂在会话的临时目录下，而不是 `$TMPDIR`，因为沙箱内外的 `$TMPDIR` 不一样。这对产物没有影响。
+
+### 最终审阅（2026-11-14 约 21:00）
+
+一个新的审阅者读了四个仓库的全部改动，重跑了测试，做了 35 处变异，并解码了构建出的设备树。结论是没有严重问题，可以只从内存启动做 Task 6，但写 `boot_a` 之前要先处理第 1 条。
+
+- 重要 1：GPU 驱动的页表不覆盖 4 GiB 以上的收编内存，见上面 Task 6 的"已知限制"。这次没有改。原因有两个：改驱动不在已确认的设计里（设计只改四处）；而且要重新生成 GPU 附加包，测试镜像和日常镜像之间就会多一个变量。写 `boot_a` 之前请用户决定。
+- 重要 2：从 `board.toml` 到窗口的几处衔接没有自动测试；还有一个测试通过的原因不对（`test-adt-window.py` 的包装函数自己调用了 `AdtWindowConsistent`）。为此补了两个测试，都先用变异看到失败、恢复后再看到通过：
+  - `test_top_window_layout.py` 的 `test_generated_tree_carries_the_floor_and_the_kept_ranges`：用板级配置的真实选项走一遍 `generate()`，再用 `adt-chosen.py` 读回 `/chosen`。去掉 `chosen += memory_floor(options)`，或者把保留区间写成"大小在前、起点在后"，测试都会失败。
+  - `test-adt-window.py` 末尾从源码检查 `Boot`：解析之后马上拒绝"有下限、没有排除表"的树；`AllocateSpan` 收到下限，并交给 `DarwinWindowStart`。删掉那一行检查，或者在 `Boot` 或 `AllocateSpan` 里传 0，测试都会失败。
+  - 没有加"分配之后起点低于下限就拒绝"的检查：那要改 `DarwinBoot.c`，再重新构建固件和三份镜像。审阅者已经逐处读过现在的代码，是对的；上机时屏幕上的 `start=` 一行也会直接显示起点。留到上机之后再说。
+- 第 4、7、8 条是审阅者标的小问题，我按实际影响改成要处理，已改：
+  - 第 4 条：HANDOFF 里关于固件构建目录的旧说法改正了，并写明怎样回到日常状态。
+  - 第 7 条：Task 6 第 5 步改用 `boot-v4-payload.topwin.img`，一次只变一件事。
+  - 第 8 条：HANDOFF 里的预期读数注明是按模型算的。
+  - 另外，第 3 条里讲怎样诊断的那句话写进了 Task 6 Step 3。
+- 推迟的小问题：
+  - 第 3 条的另一半：下限处只要有一个固件页，收编就整个关掉，这个后果没有测试（加载器那一侧有测试）。
+  - `floor=MAX` 的断言偏弱：把溢出检查挪到裁剪前面也能通过。补一个低地址的空闲段就能测出来。
+  - 窗口外那张表的格数（16）和窗口大小（6 GiB）都没有测试钉住。
+  - 设计文档第 126 行还写着 `vm.outside_memory`，这个 sysctl 不存在。
+  - 两份配置文档把 `owned_memory_floor` 的类型写成字符串，其实整数也接受。
+  - 第一个 `/chosen` 没有下限时，第二个 `/chosen` 里的下限会被接受。不过生成器不会写两个 `chosen`，`adt-chosen.py` 也拒绝这种树。
+  - `owned_memory_floor` 拼错时，既不生成属性也不报错。这个文件里的选项都是这样。
