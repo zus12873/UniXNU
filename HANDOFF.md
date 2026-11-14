@@ -426,6 +426,14 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 - 风险：内存表写错，UEFI 会在启动时崩（这台机器在 `0x8B9D00000` 出过一次）；把固件占用但能读的内存交给内核，可能破坏内存里的数据，进而写坏 Data 卷。所以每一步都只从内存启动验证，不刷分区。
 - 上游没有人做成：其他 16 GiB 机型的记录是"Keep 6GiB … do not advertise a flat 16GiB"。
 - 规模上这是多仓库、方向不确定的工作，要先写设计、用户确认后再动手。
+- 第 0 步，读真实内存布局（用户 18:15 同意"可以，开始吧"；只读，不写分区）：
+  - 18:18 先把带上游两条内存修复的新镜像刷进了 `boot_a`：`out/flash/boot-v4-flash.img`，sha256 `40234c20756ae087429988f78f638e7b43d8def5872ef729514b401ab3493298`，刷完重试次数 7。上一版改名 `boot-v4-flash.prev.img`（`4cb441e0…`，有关机修复、没有内存修复），再上一版是 `boot-v4-flash.prev2.img`（`ae0d4179…`）。payload 镜像同样顺延（`boot-v4-payload.img` 是 `dd5d2475…`）。
+  - `fastboot getvar all` 不报内存信息。Linux 日志读取器没有试：材料本地没有，而且是 v0 镜像。
+  - 改用诊断固件：`local-tools/diag/abl-memory-dump.patch` 给 `UniXNURamDiskDxe.c` 加一段输出，把引导程序设备树里的 `/memory`、保留块和 `/reserved-memory` 逐行打到屏幕日志上（每 10 行停 5 秒，每行带校验值）。`local-tools/diag/read-abl-memory.py` 读识别出来的文字，校验值不对的行丢弃。补丁只在构建诊断镜像时打上，不合进任何分支。
+  - 诊断镜像：`out/flash/boot-v4-diag-ablmem.img`，sha256 `14c4e2e16b1451e206c9f2a96a3b918e1436665fb34ac62c8c3e5980c7653672`。payload 和日常镜像逐字节相同，只有固件不同；打完输出后照常进 macOS。只用 `local-tools/boot-sheng.py` 从内存启动，不刷。
+  - 构建诊断镜像的做法：`git apply local-tools/diag/abl-memory-dump.patch`，`./unixnu build firmware --os macos-27 --uefi ../uefi-sheng`，`./unixnu bootimg --os macos-27 --dtb <output>/tree/build/sheng/sheng.dtb -o <output>/boot/boot-diag.img`（一定要带 `-o`，否则覆盖 `<output>/boot/boot.img`；`boot.json` 仍会被改写，事后用 `boot.good.json` 还原），再用 `make-bootimg-v4.py` 打成 v4。然后 `git checkout` 还原驱动。
+  - 固件构建不能逐字节复现：还原驱动后重建，`SILICIUM_UEFI.fd` 是 `d187f851…`，不是真机验证过的 `36bd589f…`，原因没查。验证过的那份备份在 `out/flash/SILICIUM_UEFI.good-36bd589f.fd`，已拷回 `../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/`。`<output>/boot/boot.img`（`26d709b2…`）没被动过，日常打包仍然用它。
+  - 下一步：用户开始录屏后，内存启动诊断镜像；录像放 `data/mp4/`，用 `local-tools/ocr-frames.swift` 抽帧识别，再跑 `read-abl-memory.py`。
 
 **macOS 下充电口不充电、不识别外接 USB 设备（用户 2026-11-14 报告；上游已知，没有修复）**
 - 用户原话："仍存在充电口无法正常充电，无法正常识别外部usb设备"。
