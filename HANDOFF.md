@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 23:05）：**路线一上机中（Task 6），还没有能用的结果，靠只换参数的对照已经分不下去了。** 已知：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编 3 GiB 以上（读数 9.0、9.5 GB）图形就坏：`dpu-scanout=2` 时闪烁、指针抖动、卡住，`dpu-scanout=0` 时刚进桌面黑一下然后画面定住（22:50 那份）；只收编紧贴窗口的 512 MiB（6.5 GB）正常。两个问题的原因都没找到。**下一步需要用户同意重建一个诊断用内核（只从内存启动）**：打开设备包自带的屏幕诊断页，并加一个"收编但不改上报的内存总量"的开关，用来分清②是"被收编的页被图形用到"还是"上报的内存总量变大"引起的。用户还没答复。`boot_a` 没有动，正常开机是原来的 6 GB 日常系统。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 23:04）：**路线一上机中（Task 6），还没有能用的结果。用户 23:02 同意重建诊断内核（"同意重建诊断内核，平板在fastboot"），23:04 起后台在构建；主机上有临时改动没还原，见文末"23:04 诊断内核"一条。** 已知：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编 3 GiB 以上（读数 9.0、9.5 GB）图形就坏：`dpu-scanout=2` 时闪烁、指针抖动、卡住，`dpu-scanout=0` 时刚进桌面黑一下然后画面定住；只收编紧贴窗口的 512 MiB（6.5 GB）正常。两个问题的原因都没找到。这次诊断内核只加了一个启动参数 `memory-outside-report=<MiB>`（照样收编，但上报的内存总量最多只增加这么多），用来分清②是"被收编的页被图形用到"还是"上报的内存总量变大"引起的。屏幕诊断页这次没有加进去（原因见同一条）。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -676,6 +676,15 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
       - 在 `sheng_macos_defconfig` 里临时加 `CONFIG_XNU_BOOT_PROGRESS=y`，让诊断页可用（页面内容见 `../UniXNU-sheng/package/BootProgress.c` 第 400 行起：panic 日志开头、显示的 SWAP 和 COPY 计数、内存、GPU 状态行）。配上 `dpu-scanout=0 boot-progress=2 boot-diag-resume=10`，画面停 10 秒后诊断页接管面板，请用户拍照。macOS 配置下这个层能不能编过没试过。
       - 在收编补丁的 `ml_adopt_outside_memory` 里加一个启动参数（默认行为不变），值为 0 时照样收编，但不增加 `max_mem`、`sane_size` 等上报的总量。带这个参数收编 3 GiB：不坏就是 H-SIZE，还坏就是 H-GPU。
       - 不重建内核的替代办法：在 8 GiB 两侧各收编一次（比如读数 7.9 和 8.1 GB），看界限是不是正好在 8 GiB。要两次上机，结论没有上面的开关干净。
+    - **23:04 诊断内核（用户 23:02 同意："同意重建诊断内核，平板在fastboot"）**
+      - 改动一处：`profiles/os/macos-27.3-26C5035r/patches/xnu-12377/window-outside-memory-adoption.patch` 的 `ml_adopt_outside_memory` 里加启动参数 `memory-outside-report=<MiB>`。不带这个参数时行为和原来一样；带上时页照样全部收编，但 `max_mem`、`max_mem_actual`、`mem_actual`、`sane_size`、`machine_info.max_mem` 最多只增加这么多 MiB（0 就是完全不增加，系统显示 6 GB）。补丁的行数头从 `+2278,94` 改成 `+2278,99`。验证：在 scratchpad 里克隆内核源码，按 `<output>/xnu-patches.list` 的顺序 147 个补丁全部打上（`applied 147 of 147`）。
+      - **屏幕诊断页这次没有加**：它不是一个配置开关就能打开的。`CONFIG_XNU_BOOT_PROGRESS` 之外还要在 `board.toml` 的内核归档列表里加 `build-boot-progress.py`（基础配置和 iPadOS 26 有，iPadOS 27 和 macOS 的列表里上游已经去掉），这个脚本还会再编一份 `BootWatchdogPolicy.c`，并且依赖旧构建流程留下的编译记录（`build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/…/startup.o.json`）。在 macOS 配置下能不能编过、会不会重复定义，都要另花时间试，所以先不做。
+      - **主机上的临时状态（构建完要还原）**：
+        - `../UniXNU-sheng/board.toml` 第 267 行临时加了第三对 `"0x880000000:0x40000000"`（收编 3 GiB 的保留列表），没有提交，构建完用 `git -C ../UniXNU-sheng checkout board.toml` 还原。
+        - OS 镜像只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`），构建完要 `hdiutil detach`。
+        - 构建会覆盖 `<output>/kernel/kernel.macho` 和 `<output>/payload/payload.img`。日常的备份还在：`<output>/kernel/kernel.macho.daily-33d294c8`（以及同后缀的 `kernel.json`、`kernel.map.json`）和 `<output>/payload/payload.daily-8a36fe56.img`，23:03 核对过 sha256 和当时的现用文件一致。构建完把新内核另存为 `kernel.macho.diag-<sha 前 8 位>`，再把日常的复制回去。
+        - 补丁改了内容，构建会重新克隆内核源码并全量重编，比上次的 4.5 分钟长。
+      - 构建完要做的两份镜像（都只从内存启动）：收编 3 GiB、`dpu-scanout=2`、`memory-outside-report=0`（预期显示 6.0 GB；不闪就是总量引起的，还闪就是被收编的页引起的）；如果不闪，再用同一个内核试 `memory-outside-report=1900`（显示约 7.9 GB）和更大的值找界限。
     - 设备包里还有现成的诊断手段没用过：启动参数 `boot-progress=1|2` 和 `boot-diag-resume=<秒>`（`../UniXNU-sheng/package/BootProgress.c` 第 88 行：系统停止输出画面超过这么多秒，诊断页接管面板）。现在的参数行里都没有。下一步证据不够时加上。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
