@@ -3,8 +3,9 @@
 
     read-abl-memory.py TEXT [TEXT ...]
 
-Each TEXT is the recognised text of one frame of a screen recording (local-tools/ocr-frames.swift writes them). The
-firmware prints one line per range:
+Each TEXT holds recognised text of frames of a screen recording, as local-tools/ocr-frames.swift writes it: plain lines,
+or with --boxes the pieces of text with their place in the frame ("<frame> TAB <top> TAB <left> TAB <height> TAB <text>"),
+which are put together again here into the lines of the console. The firmware prints one line per range:
 
     ABLMEM <node> <base> <size> <flags> <check>      a range of a /memory node
     ABLMAP <index> <base> <size> <check>             an entry of the device tree's memory reservation block
@@ -13,18 +14,46 @@ firmware prints one line per range:
 
 base and size are 10 hexadecimal digits; flags are n (no-map), d (disabled), r (reusable) or '-' in each place; check
 is DumpCheck() of the patch over base and size. A line is kept only when its check value matches, so a misread digit
-drops the line instead of giving a wrong range. Lines seen in several frames are counted once. Prints the ranges in
-address order and, for /memory, their total.
+drops the line instead of giving a wrong range. Spaces that the recognition puts inside a number are ignored, and the
+flags are read as the letters found between size and check. Lines seen in several frames are counted once. Prints the
+ranges in address order and, for /memory, their total.
 """
 import re
 import sys
 from pathlib import Path
 
 HEX = '[0-9a-fA-F]'
-RANGE = re.compile(rf'(ABLMEM|ABLRSV)\s+(\S+)\s+({HEX}{{10}})\s+({HEX}{{10}})\s+([-ndr]{{3}})\s+({HEX}{{4}})\b')
-MAP = re.compile(rf'(ABLMAP)\s+(\d+)\s+({HEX}{{10}})\s+({HEX}{{10}})\s+({HEX}{{4}})\b')
-DYNAMIC = re.compile(rf'ABLRSV\s+(\S+)\s+dyn\s+({HEX}{{10}})\s+([-ndr]{{3}})')
+# After the node name: base, size, anything that is not a hexadecimal digit (the flags) and the check value.
+RANGE = re.compile(rf'(ABLMEM|ABLRSV|ABLMAP)\s+(\S+)\s+({HEX}{{10}})({HEX}{{10}})([^0-9a-fA-F]*?)({HEX}{{4}})$')
+DYNAMIC = re.compile(rf'ABLRSV\s+(\S+)\s+dyn\s*({HEX}{{10}})(.*)$')
 OTHER = re.compile(r'ABL(?:MEM \S+ ddr_size .*|MEM total .*|END .*)')
+PIECE = re.compile(r'([^\t]+)\t([0-9.]+)\t([0-9.]+)\t([0-9.]+)\t(.*)')
+
+
+def console_lines(text):
+    """The lines of TEXT; pieces written by ocr-frames.swift --boxes are joined, left to right, into console lines."""
+    frames, plain = {}, []
+    for line in text.splitlines():
+        match = PIECE.fullmatch(line)
+        if match:
+            frame, top, left, height, piece = match.groups()
+            frames.setdefault(frame, []).append((float(top) + float(height) / 2, float(left), float(height), piece))
+        else:
+            plain.append(line)
+    for pieces in frames.values():
+        rows = []
+        for middle, left, height, piece in sorted(pieces):
+            # A piece belongs to the row whose middle is within half a line of its own.
+            if rows and abs(middle - rows[-1][0]) < 0.5 * min(height, rows[-1][1]):
+                rows[-1][2].append((left, piece))
+            else:
+                rows.append([middle, height, [(left, piece)]])
+        plain.extend(' '.join(piece for _, piece in sorted(row[2])) for row in rows)
+    return plain
+
+
+def flags_of(text):
+    return ''.join(letter if letter in text else '-' for letter in 'ndr')
 
 
 def check(base, size):
@@ -41,20 +70,21 @@ def main():
         sys.exit(__doc__)
     ranges, dynamic, other, rejected = {}, {}, {}, set()
     for name in sys.argv[1:]:
-        for line in Path(name).read_text(errors='replace').splitlines():
-            match = RANGE.search(line) or MAP.search(line)
+        for line in console_lines(Path(name).read_text(errors='replace')):
+            head = re.search(r'ABL(?:MEM|RSV|MAP)\s+\S+\s+', line)
+            # Without the spaces that recognition puts inside or between the numbers.
+            packed = line[head.start():head.end()] + line[head.end():].replace(' ', '') if head else line
+            match = RANGE.search(packed)
             if match:
-                groups = match.groups()
-                tag, node, base, size = groups[0], groups[1], int(groups[2], 16), int(groups[3], 16)
-                flags = groups[4] if tag != 'ABLMAP' else '---'
-                if check(base, size) == int(groups[-1], 16):
-                    ranges.setdefault((tag, base, size), (node, flags))
+                tag, node, base, size = match.group(1), match.group(2), int(match.group(3), 16), int(match.group(4), 16)
+                if check(base, size) == int(match.group(6), 16):
+                    ranges.setdefault((tag, base, size), (node, flags_of(match.group(5))))
                 else:
                     rejected.add(match.group(0))
                 continue
-            match = DYNAMIC.search(line)
+            match = DYNAMIC.search(packed)
             if match:
-                dynamic.setdefault(match.group(1), (int(match.group(2), 16), match.group(3)))
+                dynamic.setdefault(match.group(1), (int(match.group(2), 16), flags_of(match.group(3))))
                 continue
             match = OTHER.search(line)
             if match:

@@ -1,6 +1,8 @@
 # Handoff：小米平板 6S Pro（sheng）构建 macOS 27.3
 
 更新时间：2026-11-14
+**内存更正（2026-11-14 实测）：这台平板是 12 GiB 内存，不是之前一直写的 16 GiB，见文末"用户想把内存拉满"一条。本文件其他地方的"16 GiB"都指这台机器。**
+
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
 当前阶段（2026-11-14 02:29）：**自启动和关机都已在真机上确认。** 用户反馈"开机键生效了，可以正常开关机"：按电源键能自己进到 macOS，在 macOS 里点 Shut Down 能断电。`boot_a` 里是 `out/flash/boot-v4-flash.img`（sha256 `4cb441e0…`）。唯一没解决的是槽位重试次数：每次正常开机扣 1 次，扣完要接 Mac 补（第 8 节"槽位重试次数"和"日常使用"）。还没开始的：iPadOS / 双系统（等用户说明用途）。新报告、还没处理的：睡眠不工作；只看到约 6 GB 内存（带上游两条内存修复的新镜像 18:07 已内存启动，还没刷 `boot_a`；用户想拉满 16 GB，还没有设计）；macOS 下不充电、不识别 USB 外设（上游已知）。都在文末"待处理问题"。
@@ -433,7 +435,31 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 诊断镜像：`out/flash/boot-v4-diag-ablmem.img`，sha256 `14c4e2e16b1451e206c9f2a96a3b918e1436665fb34ac62c8c3e5980c7653672`。payload 和日常镜像逐字节相同，只有固件不同；打完输出后照常进 macOS。只用 `local-tools/boot-sheng.py` 从内存启动，不刷。
   - 构建诊断镜像的做法：`git apply local-tools/diag/abl-memory-dump.patch`，`./unixnu build firmware --os macos-27 --uefi ../uefi-sheng`，`./unixnu bootimg --os macos-27 --dtb <output>/tree/build/sheng/sheng.dtb -o <output>/boot/boot-diag.img`（一定要带 `-o`，否则覆盖 `<output>/boot/boot.img`；`boot.json` 仍会被改写，事后用 `boot.good.json` 还原），再用 `make-bootimg-v4.py` 打成 v4。然后 `git checkout` 还原驱动。
   - 固件构建不能逐字节复现：还原驱动后重建，`SILICIUM_UEFI.fd` 是 `d187f851…`，不是真机验证过的 `36bd589f…`，原因没查。验证过的那份备份在 `out/flash/SILICIUM_UEFI.good-36bd589f.fd`，已拷回 `../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/`。`<output>/boot/boot.img`（`26d709b2…`）没被动过，日常打包仍然用它。
-  - 下一步：用户开始录屏后，内存启动诊断镜像；录像放 `data/mp4/`，用 `local-tools/ocr-frames.swift` 抽帧识别，再跑 `read-abl-memory.py`。
+  - 18:25 内存启动诊断镜像，用户录屏 `data/mp4/IMG_6389.MOV`（74 秒，不进 git）。输出在屏幕上清晰可读。
+  - 读数的做法：`ffmpeg -i data/mp4/IMG_6389.MOV -vf "fps=2,crop=1800:2000:470:90,scale=iw*2:ih*2:flags=lanczos" <目录>/c%04d.png`（整帧识别读不出小字，要裁到文字区域并放大两倍），`swift local-tools/ocr-frames.swift --boxes <目录>/c*.png > boxes.tsv`（要关沙箱），`python3 -I -B local-tools/diag/read-abl-memory.py boxes.tsv`。
+- **实测结果：这台平板是 12 GiB 内存，不是 16 GiB。** 引导程序设备树里 `ddr_size` 是 `0xC`（55 帧读到同一个值）。`/memory` 一共 9 段，每段的校验值都对，加起来 `0x2EBAA0000`（11.682 GiB），和固件自己打印的 `ABLMEM total 02EBAA0000` 一致（66 帧）：
+
+  | 起 | 止 | 大小 |
+  | --- | --- | --- |
+  | `0x080000000` | `0x080E00000` | 14 MiB（就是 hypervisor 保留区，no-map） |
+  | `0x0811D0000` | `0x0D8000000` | 1390.19 MiB |
+  | `0x0D8140000` | `0x0D8160000` | 0.12 MiB |
+  | `0x0D8800000` | `0x0D8800000` | 0（长度为 0 的一项） |
+  | `0x0E7CB0000` | `0x100000000` | 387.31 MiB |
+  | `0x880000000` | `0x8B9D00000` | 925 MiB |
+  | `0x8B9F00000` | `0x8BBD00000` | 30 MiB |
+  | `0x8C0000000` | `0x980000000` | 3072 MiB |
+  | `0x980000000` | `0xB00000000` | 6144 MiB |
+
+  - DRAM 顶端是 `0xB00000000`。第二个 bank 是 `0x880000000` 到 `0xB00000000` 共 10 GiB，中间有两个引导程序不给的洞：`0x8B9D00000`–`0x8B9F00000`（2 MiB）和 `0x8BBD00000`–`0x8C0000000`（67 MiB）。之前 UEFI 在 `0x8B9D00000` 崩溃，正是第一个洞的起点。
+  - `/reserved-memory` 读到 32 个有固定地址的保留区（校验通过），全部在低 4 GiB 里，bank 1 里没有固定保留区。没有固定地址的保留区（CMA、各种 heap）不带校验值，名字有识别错误，只作参考。保留块（`ABLMAP`）一项也没读到，是没有还是没识别出来没有确认。固件报 `ABLEND lines 75`。
+  - 屏幕上还有 uefi-sheng 自带的 `ShengBootMemoryDxe` 的输出：`SHENGMEM: DT has 8 memory ranges and 35 reserved ranges`，并加回了三段低地址内存共 `0x7000000` 字节。也就是说上游固件里已经有一个读这棵设备树的驱动。
+- 这对"拉满内存"的含义（都是读代码得出的，没有上机验证）：
+  - 目标从 16 GiB 变成约 11.7 GiB。现在是 6 GiB 窗口（`0x880000000`–`0xA00000000`，其中 UEFI 表只列了 0.5 GiB + 5 GiB）加低 bank 收编的几百 MiB。
+  - 窗口内白白没用上的：`0x8A0000000`–`0x8B9D00000`（413 MiB）和 `0x8B9F00000`–`0x8BBD00000`（30 MiB）。只改 UEFI 静态表就能拿回来，不用动内核。
+  - 窗口上方的 4 GiB（`0xA00000000`–`0xB00000000`）现有内核用不上：收编补丁只收窗口下方的内存。
+  - 不能简单地把整张表写全：DarwinBoot 的 `AllocateSpan` 会自动把窗口放到"6 GiB 内可用内存最多"的位置，并列时取最低地址（`MemoryWindow.h` 的 `DarwinWindowStart`），结果是 `0x8C0000000`。这样 `0x880000000`–`0x8BBD00000` 就落到窗口下方，收编区的地址跨度从 2 GiB 变成约 34 GiB。内核给收编区留的虚拟地址是"静态区下方 4 GiB 再往下一个跨度"（`arm_vm_init.c` 的 `arm_vm_outside_va`），这个内核的地址空间很紧，34 GiB 很可能放不下或者挤掉内核自己的分配。
+  - 所以要用上那 4 GiB，内核一定要改，三条路：收编补丁支持窗口上方的内存；把窗口从 6 GiB 放大到 10 GiB（`scripts/unixnu/devicetree.py` 允许到 8 GiB，`board.toml` 说 4 KiB 引导页表最多映射 6 GiB，这个上限在哪还没查）；或者把窗口挪到顶部、收编补丁支持多个不相连的跨度。
 
 **macOS 下充电口不充电、不识别外接 USB 设备（用户 2026-11-14 报告；上游已知，没有修复）**
 - 用户原话："仍存在充电口无法正常充电，无法正常识别外部usb设备"。
