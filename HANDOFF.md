@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，屏幕结果等用户反馈。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 21:12）：**路线一开始上机（Task 6）。** 21:11 按用户同意把 `boot_a` 刷回 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，卡死之前一直用的那份），刷完重试 7；21:11:56 从内存启动对照镜像 `out/flash/boot-v4-payload.topwin-k443.img`，`Booting OKAY`，45 秒内引导程序没有回来，进了系统，物理内存 9.5 GB，但系统卡住了；下一份是关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -570,6 +570,9 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 21:11:26 fastboot 只读：槽位 a，`slot-successful:a: no`，`slot-unbootable:a: no`，重试 5，电池 4226 mV。
   - 21:11:35 `fastboot flash boot_a out/flash/boot-v4-flash.prev.img`（刷前核对 sha256 `40234c20…`）：`Sending 'boot_a' (195720 KB) OKAY [4.508s]`，`Writing 'boot_a' OKAY [0.073s]`；刷完重试 7，当前槽位 a。
   - 21:11:50 `python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.topwin-k443.img`（刷前核对 sha256 `3cf2e648…`）：`Sending 'boot.img' (205960 KB) OKAY`，`Booting OKAY`，45 秒内引导程序没有回来。屏幕读数、`hw.memsize` 和试用结果等用户反馈。
+  - 结果（用户 2026-11-14 约 21:15 报告）：进了系统，物理内存显示 9.5 GB（活动监视器，对照镜像的通过线是 9.07 GiB，收编生效了），**但是系统卡住了**。卡住的样子（指针和触屏有没有反应、时钟走不走、多久之后、会不会恢复）已经问用户，还没有回答。终端读数没拿到。
+  - 按计划 Task 6 Step 6 的"卡住"一行，下一份只关掉收编：`out/flash/boot-v4-payload.topwin-k443-noadopt.img`（210903040 字节，sha256 `fa01e8c3f698a170290ee6175668fb357194fdbd3f167e55ae03f88e9d6996c3`）。做法：复制 `<output>/payload/payload.topwin-k443.img` 为 `payload.topwin-k443-noadopt.img`（sha256 `ba5fabbe…`），只把 `unixnu.toml` 的参数行前面加上 `memory-outside=0`（894 字节，上限 1000），再用 `make-bootimg-v4.py` 和 `boot-topwin.img` 打包。卷里其他文件和 k443 那份逐个相同；内核签名脚本只拒绝 `validation_disables`、`serverperfmode`、`lcks` 三个参数，`memory-outside` 不影响签名，内核文件不用变。整份镜像和 k443 那份相比，镜像头和固件部分相同，只有 payload 卷里 1277 个字节不同。窗口仍在 `0x980004000`，内核不收编，预期 `hw.memsize` 约 5.9 GiB。
+  - 两种结果的含义：这份也卡住，原因在窗口挪到顶部（`0xA00000000`–`0xB00000000` 第一次被使用）或固件内存表的改动（A 和这次都列入了那 443 MiB），和收编无关；这份不卡住，原因在收编（收编量是原来的 8 倍，或者 GPU 驱动那条已知限制）。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
