@@ -1,7 +1,7 @@
 # sheng：内存路线一，窗口挪到顶部并收编下面的 4 GiB
 
 日期：2026-11-14
-状态：等用户确认
+状态：等用户确认（独立审阅已做过一轮，结论已并入本文）
 范围：只做路线一。路线二（把低端内存也收编回来）等路线一跑稳后另写设计。
 
 ## 目的
@@ -35,13 +35,17 @@
   - 所有段合成一个区，按 2 MiB 对齐后超过 4 GiB 就整个放弃，等于 4 GiB 可以。
   - 一页被探测拒绝，这一段剩下的部分全部放弃。
   - 映射地址取在静态区下方没人用的地址里，不占各个堆的地址。
-  - 结果在 `sysctl vm.outside_memory` 和启动日志 `memory outside the span: N pages adopted, M refused`。
+  - 结果只有内核启动日志里的一行：`memory outside the span: N pages adopted, M refused`（`sudo dmesg` 能看到）。补丁说明里写的 `sysctl vm.outside_memory` 实际没有实现。
+  - 窗口下方那一块合成的区正好 4 GiB，没有余量。`0x880000000` 以下只要还有一段没被挡掉，区就超过 4 GiB，收编整个关掉，而且不报错。
 - 加载器（`drivers/DarwinBoot/DarwinBootPkg/Driver/MemoryWindow.h`）：
   - `DarwinWindowStart` 只把内存表里每个空闲段的起点（按 2 MiB 对齐，再加内核在 2 MiB 块里的偏移）当候选，取窗口内可用内存最多的，一样多取地址低的。没有指定位置的办法。
   - `DarwinOutsideRanges` 已经会列出窗口上下两边的空闲段，表满了留最大的。
   - 这两个函数有主机上能跑的测试：`drivers/DarwinBoot/Test/test-memory-window.py`、`test-memory-outside.py`，现在都通过。
+  - 选窗口的这条路径（`AllocateSpan`）只在设备树里有排除表（`owned_memory_excluded_ranges`）时才走。
+  - `drivers/DarwinBoot` 是 UniXNU 的一个 git 子模块，有自己的仓库。
 - 生成器（`scripts/unixnu/devicetree.py`）把板级选项写成 `/chosen` 下的属性：`owned_memory_size` → `darwinboot-memory-size`，`owned_memory_outside_ranges` → `darwinboot-memory-outside`，`owned_memory_outside_reserved` → `darwinboot-memory-outside-kept`。
 - 板级配置在 `../UniXNU-sheng/board.toml` 的 `os_overrides."macos-27.3-26C5035r".payload.adt`：窗口 `0x180000000`，窗口外表 8 格，保留 `0xd0000000:0x10000`（音频驱动的固定缓冲区）。
+- 固件里的 `ShengBootMemoryDxe`（`../uefi-sheng`）只补 4 GiB 以下、内存表没列的内存，最多 1 GiB；4 GiB 以上它不碰。所以顶部那 4 GiB 只由内存表决定。
 - 把窗口直接加大行不通：窗口每大 1 GiB，静态区和压缩器各多占 1 GiB 内核地址；10 GiB 窗口会把上游 #244 腾出的地址用光。这是读代码得出的，没有上机试。
 
 ## 考虑过的做法
@@ -67,17 +71,17 @@
 
 - 新的可选属性 `/chosen/darwinboot-memory-floor`，一个 64 位值，表示窗口起点不得低于这个地址。没有这个属性或值为 0 时，行为和现在完全一样。
 - `DarwinWindowStart` 加一个下限参数：每个空闲段先裁到下限以上，再按原规则算候选。这样下限落在一个大空闲段中间时，下限本身也成为候选。
-- `AllocateSpan` 把读到的下限传进去；解析设备树的地方认识这个属性，长度必须是 8 字节。
+- `AllocateSpan` 把读到的下限传进去；解析设备树的地方（`AdtNode`）认识这个属性，长度必须是 8 字节。`AdtNode` 多一个参数，`Test/test-adt-window.py` 要跟着改。
 - 屏幕上打印一行选中的窗口起点和下限，录屏时能看到。
 
 ### 3. 生成器（`scripts/unixnu/devicetree.py`）
 
-新板级选项 `owned_memory_floor`：必须非零、是 2 MiB 的整数倍，且同时设了 `owned_memory_size`；写成 `darwinboot-memory-floor`。不设就不产生这个属性。
+新板级选项 `owned_memory_floor`：必须非零、是 2 MiB 的整数倍，且同时设了 `owned_memory_size` 和 `owned_memory_excluded_ranges`（没有排除表时加载器不走选窗口的路径，下限不起作用）；写成 `darwinboot-memory-floor`。不设就不产生这个属性。
 
 ### 4. 板级配置（`../UniXNU-sheng/board.toml`，只改 macOS 27.3 这一段）
 
 - `owned_memory_floor = "0x980000000"`：窗口变成 `0x980000000`–`0xB00000000`。
-- `owned_memory_outside_reserved` 增加 `"0x80000000:0x80000000"`：把低端整段挡在收编之外。原有的 `0xd0000000:0x10000` 保留。
+- `owned_memory_outside_reserved` 增加 `"0x80000000:0x800000000"`：把 `0x880000000` 以下的内存全部挡在收编之外，不只是低端那 2 GiB，这样不会有漏网的一段把收编整个关掉。原有的 `0xd0000000:0x10000` 保留。
 - `owned_memory_outside_ranges` 从 8 改成 16（内核的表是 16 格）：低端的段虽然被挡掉，仍会占加载器表里的格子，格子多一些可以保证窗口下方的三段都列进去。
 
 ### 预期结果
@@ -92,13 +96,15 @@
 
 1. **主机测试**。先写会失败的测试，再改代码：
    - 加载器：给出这台机器的实测布局和下限 `0x980000000`，窗口起点应是 `0x980000000` 加内核偏移；窗口外的表里应有窗口下方的三段；下限为 0 时结果和现在一样；随机内存表对照参考实现。
+   - 同一份实测布局再过一遍内核的算法（用 Python 照补丁写一遍）：去掉保留范围后，剩下的段合成的区应正好是 `0x880000000`–`0x980000000`。
    - 生成器：选项合法时产生属性，非法值报错，不设时没有属性。
    - 加载器原有的两个测试继续通过。
 2. **构建**：固件、内核和 payload、v4 镜像。固件、v0 镜像、v4 镜像都另起文件名，不覆盖日常那一套。
 3. **内存启动**（平板进 fastboot，`local-tools/boot-sheng.py`）。请用户录屏。看：
    - 屏幕上加载器打印的窗口起点和窗口外的段。
    - 能否到登录页。
-   - 平板终端里 `sysctl hw.memsize vm.outside_memory kern.boot_payload_memory`。
+   - 平板终端里 `sysctl hw.memsize kern.boot_payload_memory` 和 `sudo dmesg | grep "memory outside"`。
+   - 键盘用不了、读不到 `dmesg` 时：收编量 = `hw.memsize` 减去加载器在屏幕上打印的窗口可用内存；内核那一行也可以从开机录屏里读。
 4. **试用 30 分钟**：多开几个应用，看有没有卡死、重启。结束时再读一次 `sysctl hw.memsize vm.swapusage`。
 5. **刷入 `boot_a`**：要用户明确同意后才做。刷前把现在的镜像按 `.prev` 轮换，留作回退。
 
@@ -108,6 +114,7 @@
 - 起不来时按录屏判断停在哪一层：
   - 固件阶段就停：多半是内存表列到 `0xB00000000` 有问题。退一步，只改内存表、不设下限，单独验证固件。
   - 加载器报找不到窗口，或窗口不在预期位置：看打印的起点，回主机用同样的内存表复现。
+  - 能进系统但 `hw.memsize` 只有 6 GiB 上下：收编被整个关掉了。看加载器打印的窗口外各段，找出 `0x880000000` 以下没被挡掉的那一段。
   - 内核启动后停住或 panic：看 `memory outside the span` 那一行和 panic 内容。可以用内核参数 `memory-outside=0` 关掉收编再启动一次，分清是窗口换位置的问题还是收编的问题。
 - 同一个问题试三次还不行，就停下来和用户商量，不继续堆改动。
 
@@ -125,4 +132,4 @@
 - 测试用例的具体写法和数量。
 - 屏幕打印那一行的措辞。
 - 新镜像和固件备份的文件名。
-- 各仓库本地提交的拆分方式。三个仓库都只做本地提交，不推送。
+- 各仓库本地提交的拆分方式。涉及四个仓库：UniXNU、子模块 `drivers/DarwinBoot`、`../UniXNU-sheng`、`../uefi-sheng`。都只在本地分支上提交，不推送；子模块提交后在 UniXNU 里更新它的指向。
