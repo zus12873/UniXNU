@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-15 00:14）：**路线一上机中（Task 6）。问题②的原因不知道，而且同一份镜像每次开机的表现不一样。** `out/flash/boot-v4-payload.topwin-adopt3g-diag-report0.img`（收编 3 GiB，上报 6.0 GB）上了三次机：23:11 放了约半小时没人报闪；23:42 不闪，但"终端"时而未响应、应用卡顿加载；00:05 用户报"没进系统就在闪屏幕了"。所以"上报的内存总量大才闪"不成立（这份上报的是 6.0 GB），"已用内存到 5 GB、被收编的页开始被用到才闪"也解释不了还没进系统就闪。之前靠换镜像对比得出的两个结论（23:57 的和 00:05 的）都不能用。能确定的只有：不收编（21:25，6.0 GB）25 分钟正常；只收编紧贴窗口的 512 MiB（22:25，6.5 GB）十多分钟正常；收编 3 GiB 的各份，有时正常有时闪。**下一步不再靠猜：要拿到系统内部的证据。** 用户没有拍短片，要求重试：00:13 同一份镜像第四次从内存启动，在等结果（请用户这次一出现闪就拍短片放到 `data/mp4/`，并说明是在哪个阶段开始闪的）；主机这边在看能不能让设备包的日志读取工具（`../UniXNU-sheng/scripts/read-sheng-log.py` 加 `package/linux-log` 的 Linux 镜像）在这台只认 v4 镜像的机器上用。别人仓库里"做到 8 GB"的做法见文末"00:00 上游的做法"一条。①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住，原因没找到。补丁里加参数的改动还没提交。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-15 00:20）：**路线一上机中（Task 6）。问题②的原因不知道，而且同一份镜像每次开机的表现不一样。** `out/flash/boot-v4-payload.topwin-adopt3g-diag-report0.img`（收编 3 GiB，上报 6.0 GB）上了三次机：23:11 放了约半小时没人报闪；23:42 不闪，但"终端"时而未响应、应用卡顿加载；00:05 用户报"没进系统就在闪屏幕了"。所以"上报的内存总量大才闪"不成立（这份上报的是 6.0 GB），"已用内存到 5 GB、被收编的页开始被用到才闪"也解释不了还没进系统就闪。之前靠换镜像对比得出的两个结论（23:57 的和 00:05 的）都不能用。能确定的只有：不收编（21:25，6.0 GB）25 分钟正常；只收编紧贴窗口的 512 MiB（22:25，6.5 GB）十多分钟正常；收编 3 GiB 的各份，有时正常有时闪。**下一步不再靠猜：要拿到系统内部的证据。** 用户没有拍短片，要求重试：00:13 同一份镜像第四次从内存启动，用户报"正常启动没闪"（四次里三次不闪、一次闪），正在请用户多开应用把已用内存推过 5.5 GB，在等结果；日志读取工具（`../UniXNU-sheng/scripts/read-sheng-log.py` 加 `package/linux-log` 的 Linux 镜像）在这台只认 v4 镜像的机器上不能直接用，原因和可走的路见文末"00:20 日志读取工具"一条，还没动手。别人仓库里"做到 8 GB"的做法见文末"00:00 上游的做法"一条。①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住，原因没找到。补丁里加参数的改动还没提交。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -742,6 +742,16 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
       - 00:05 那次没有短片，也没有说明是在哪个阶段开始闪的。
       - 00:11 读数：槽 a，`slot-retry-count:a` 5，`slot-unbootable:a` no，电池 3947 mV；镜像 sha256 核对为 `414f2ddb…`。00:13 `boot-sheng.py` 启动，bootloader 45 秒没回来，镜像在运行。
       - 这次算第四个样本：只用来数"同一份镜像闪几次、不闪几次"，不从单次结果下结论。
+    - **00:16 用户（00:13 那次，`report0` 第四次）："正常启动没闪"**
+      - 同一份镜像到现在四次：23:11 没人报闪、23:42 不闪、00:05 没进系统就闪、00:13 不闪。已请用户接着加压（已用内存过 5.5 GB），出问题时记数字、先拍短片。
+    - **00:20 日志读取工具：为什么本机用不了，有哪几条路（只读了代码，没有动手）**
+      - 它是什么：`../UniXNU-sheng/package/linux-log/build-linux-log-boot.py` 把 `ianchb/sm8550-mainline` 发布的 `boot_sheng_singleboot.img`（头版本 v0，内核后面附着设备树）原样取出内核，加一个 busybox 的 initramfs（`package/linux-log/init`），打成 v0 镜像；`fastboot boot` 它之后，init 只读用户数据分区最后 8192 个 4096 字节块（32 MiB 的日志窗口）到内存，在 USB 串口上开一个 shell，`scripts/read-sheng-log.py` 从 Mac 上取走并解码，然后让平板回 fastboot。分区不挂载、不写。
+      - 为什么本机不行：本机的 bootloader 不启动 v0 镜像；改成 v4 后，bootloader 不再去内核后面找附着的设备树，而是用 `vendor_boot` 分区里的（小米原厂的）设备树，主线内核配不上它。`local-tools/make-bootimg-v4.py` 能把固件镜像改成 v4，是因为固件不依赖 bootloader 给的设备树；Linux 内核依赖。
+      - 可走的路（都没试过）：
+        - 让固件来启动这个 Linux（把内核、initramfs、设备树放进载荷，由固件加载）。要先确认固件或加载器有没有启动 Linux 的入口（构建脚本里提到的 `linux-ref`），工作量不小。
+        - 不用 Linux：在平板的 macOS 里开"终端"，用 `sudo dmesg` 和 `sysctl vm.outside_memory` 看内核消息，拍照。只能看当次开机、且系统还能操作时的内容；`sudo` 认不认登录密码还没试过。
+        - 打开远程登录后经网络取日志。之前卡在系统设置的授权框不认密码；`sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist` 没试过。
+      - 读取镜像的输入（发布包里的内核镜像、busybox、`linux-xiaomi-sheng.deb` 里的模块）本机都没有下载过，`out/sheng/inputs/` 不存在。
     - 设备包里还有现成的诊断手段没用过：启动参数 `boot-progress=1|2` 和 `boot-diag-resume=<秒>`（`../UniXNU-sheng/package/BootProgress.c` 第 88 行：系统停止输出画面超过这么多秒，诊断页接管面板）。现在的参数行里都没有。下一步证据不够时加上。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
