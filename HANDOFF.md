@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 22:01）：**路线一上机中（Task 6），收编后卡住的原因还没找到；内核正在后台重建（带 GPU 驱动页归属表的修正），主机上有临时状态，见文末"22:01 主机上的临时状态"。** 21:53 只收编 512 MiB 的那份也出了问题：6.50 GB，连 Wi-Fi 时画面定住。下一份要跑的是关掉收编的对照（`boot-v4-payload.topwin-k443-noadopt.img`），做同样的动作连 Wi-Fi，等用户把平板进 fastboot。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 22:09）：**路线一上机中（Task 6），收编后卡住的原因还没找到。带 GPU 驱动页归属表修正的内核已重建（用户同意），22:08 从内存启动了带修正的 512 MiB 镜像 `out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`，等用户反馈连 Wi-Fi 卡不卡。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -606,12 +606,20 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
     - 驱动子模块 `drivers/Adreno740` 本地分支 `local/owned-map-below-window`，提交 `462dd74`：`NativeAdrenoMemory.cpp` 的页归属表给内核范围下方的每一页都编号（原来只编到 4 GiB），表按 `gPhysSize/4096 + gPhysBase/4096` 位分配。新测试 `tests/test_owned_below_window.cpp`：内核范围放在 `0x980000000` 起 6 GiB，检查窗口里、4 GiB 以上收编区、4 GiB 以下、范围下方两端的缓冲区，以及释放。
     - 先看到失败再改：改之前新测试停在 `line 39: owned(0x8C0000000)…`，改之后通过；驱动原有的 `test_system_memory`、`test_memory` 仍通过（带 ASan 和 UBSan）。
     - 驱动仓库没有主机测试的运行脚本。本仓库加了 `local-tools/tests/test_adreno_owned_map.py`（提交 `81072de`），编译方法照 `../UniXNU-sheng/scripts/check-native-adreno-memory.py`：把源码包含的内核头文件都做成一行 `#include "XnuMemoryFixture.h"`。`python3 -I -B -m unittest discover -s local-tools/tests` 现在是 32 个通过。
-  - **22:01 主机上的临时状态（内核重建期间；做完要还原）**
+  - **22:01 主机上的临时状态（内核重建期间；22:08 已全部还原，见下一条"22:08 重建完成"）**
     - 后台在跑 `./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`（22:00 开始，以前用时 5 到十几分钟）。构建目录 `<output>/tree/drivers/Adreno740` 是指向本仓库子模块的符号链接，所以用的是带修正的工作区。
     - `../UniXNU-sheng/board.toml` 第 267 行临时加了 `"0x8A0000000:0x20000000"`（k443 的保留列表），**没有提交，构建完用 `git -C ../UniXNU-sheng checkout board.toml` 还原**。
     - 日常内核备份在 `<output>/kernel/kernel.macho.daily-33d294c8`（sha256 `33d294c83022a67b1ecfe4a8dd46564ca2b66169e11bc21c647e3981f2277b67`），`kernel.json`、`kernel.map.json` 同样带 `.daily-33d294c8` 后缀。日常 payload 备份是原来的 `<output>/payload/payload.daily-8a36fe56.img` 和 `.json`。**构建完 `<output>/kernel/kernel.macho` 和 `<output>/payload/payload.img` 就不是日常的了**，回到日常状态要把这几个备份复制回去。
     - OS 镜像只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`），构建完要 `hdiutil detach`。
     - 构建完要做的：核对新 payload 和 k443 那份只有 `kernel.macho`、`kernel.macho.adt`（以及随内核变的文件）不同；复制成 `payload.topwin-k443-ownfix.img`；用改保留列表第三对的办法做 `payload.topwin-adopt512m-ownfix.img`；各打成 `out/flash/boot-v4-payload.…-ownfix.img`。只从内存启动。
+  - **22:08 重建完成，带修正的 512 MiB 镜像已上机**
+    - 用户 22:03 前后回答："6g的时候没有出现类似问题，只是时间久了，键盘壳会掉"。所以问题跟着"收编 4 GiB 以上的内存"走，512 MiB 就够触发；对照启动先不跑。没确认的一点：用户说的 6 GB 主要是旧布局的日常镜像，新布局关掉收编后有没有连过 Wi-Fi 不确定。带修正的镜像如果还卡，要补跑这次对照。
+    - 构建 22:00 到 22:04:30，退出码 0。新内核 `<output>/kernel/kernel.macho.ownfix-311d37e3`（sha256 `311d37e3ec94237383f2a87315afc4b9a5f2e119fe29e2db27dae296714f45ac`），`libAdreno740.a` 22:03:39 重新生成（3340128 字节，原来 3340168）。
+    - 新 payload 和 k443 那份逐个文件比较，不同的有五个：`kernel.macho`、`kernel.macho.adt`、`kernel.macho.crypto-hmac.json`、`kernel.macho.gpuaddon`、`kernel.macho.trustcache`。参数行（`unixnu.toml`）相同。
+    - **多出来的一个变量**：`build kernel payload` 的 runtime 步骤会重新构建 Metal 插件（`scripts/build-boot-runtime.py` 的 `build_plugin`），`<output>/runtime/gpuaddon.bin` 22:02:51 重新生成。插件源码没变（`drivers/AdrenoMetal` 在 `73d582f`，工作区干净），但产物不能逐字节复现：addon 前 10.6 MB 逐块不同，信任缓存差 75 个字节。所以带修正的镜像和原来的相比，除了内核还换了一份同源重编的插件。如果带修正的镜像不卡，这一点要留意；还卡就无关。
+    - 镜像（都只从内存启动）：`out/flash/boot-v4-payload.topwin-k443-ownfix.img`（sha256 `f11489e492148f353f8a98904cd287e1b696b1eacc7e3dbf80da0c7ba753ba45`，收编 3.5 GiB）；`out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`（sha256 `5aee5598b2e79c48d9e11808614f585fbd106cca6e27b2b08b6ee10e70f1cd3a`，收编 512 MiB，做法同前：新设备树保留列表第三对的长度改成 `0xe0000000`，和 k443-ownfix 的卷只差 `kernel.macho.adt`）。payload 在 `<output>/payload/payload.topwin-k443-ownfix.img`、`payload.topwin-adopt512m-ownfix.img`。
+    - 主机已还原：`../UniXNU-sheng/board.toml` 已 `git checkout`（差异为空）；`<output>/kernel/kernel.macho` 回到 `33d294c8…`，`<output>/payload/payload.img` 回到 `8a36fe56…`；OS 镜像已卸载。`<output>/tree/build`、`<output>/runtime`、`<output>/payload/stage` 里是这次构建的中间产物。
+    - 22:08:03 从内存启动 `out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`：fastboot 应答槽位 a、电池 4125 mV，`Booting OKAY`，45 秒内引导程序没有回来。请用户做同样的动作（打开 Wi-Fi 菜单连同一个已知网络），结果等用户反馈。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
