@@ -461,18 +461,29 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 不能简单地把整张表写全：DarwinBoot 的 `AllocateSpan` 会自动把窗口放到"6 GiB 内可用内存最多"的位置，并列时取最低地址（`MemoryWindow.h` 的 `DarwinWindowStart`），结果是 `0x8C0000000`。这样 `0x880000000`–`0x8BBD00000` 就落到窗口下方，收编区的地址跨度从 2 GiB 变成约 34 GiB。内核给收编区留的虚拟地址是"静态区下方 4 GiB 再往下一个跨度"（`arm_vm_init.c` 的 `arm_vm_outside_va`），这个内核的地址空间很紧，34 GiB 很可能放不下或者挤掉内核自己的分配。
   - 所以要用上那 4 GiB，内核一定要改，三条路：收编补丁支持窗口上方的内存；把窗口从 6 GiB 放大到 10 GiB（`scripts/unixnu/devicetree.py` 允许到 8 GiB，`board.toml` 说 4 KiB 引导页表最多映射 6 GiB，这个上限在哪还没查）；或者把窗口挪到顶部、收编补丁支持多个不相连的跨度。
 
-**内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；18:41 已内存启动，等用户确认）**
+**内存 A 步：UEFI 内存表按实测布局改（用户 2026-11-14 选 A；内存启动验证通过，还没有刷进 `boot_a`）**
 - 改动（`../uefi-sheng` 工作区，未提交）：`MemoryMapLib.c` 的 "DRAM bank 1 low" 从 `0x880000000 + 0x20000000` 改成 `0x880000000 + 0x39D00000`（到 `0x8B9D00000`），新增 "DRAM bank 1 mid" `0x8B9F00000 + 0x01E00000`。"DRAM bank 1 high" 没动，仍到 `0xA00000000`：如果把 `0xA00000000` 以上也列进去，加载器会把窗口挪走（见上一条）。预期多出约 443 MiB，窗口仍从 `0x880000000` 起。
 - 没有改的一处不一致：静态表的 "DRAM gap 0xE671D000" 从 `0xE671D000` 开始，而引导程序的 `/memory` 在这一带从 `0xE7CB0000` 才开始，中间 22.6 MiB 引导程序没有算作内存。这是上游原样，一直这样启动，这次不动，留给 B 步一起处理。另外 `0xD4D00000`–`0xD8000000` 在引导程序那里是 modem 的 no-map 保留区（没有标 disabled），静态表把它当空闲内存，也是上游原样。
 - 构建产物：固件 `SILICIUM_UEFI.fd` sha256 前缀 `9b21a09e`（备份 `out/flash/SILICIUM_UEFI.mem12g-9b21a09e.fd`；构建目录里现在就是这一份，不是验证过的 `36bd589f`）。v0 镜像 `<output>/boot/boot-mem12g.img`（`<output>/boot/boot.img` 没动）。`out/flash/boot-v4-payload.mem12g.img`（sha256 `a9cb0b31…`）和 `out/flash/boot-v4-flash.mem12g.img`（sha256 `c244f53d501c2031fa69dacec595e539f7a694b0db8385539ac37703fa187a44`）。payload 卷和 `boot_a` 里的只差卷标时间那 4 个字节。
 - 18:41 fastboot 读数：槽位 a，重试 7（18:18 刷入后没有发生过正常开机），电池 4361 mV。18:41:55 内存启动 `boot-v4-flash.mem12g.img`：`Booting OKAY`，45 秒内引导程序没有回来。**没有刷 `boot_a`。**
-- 等用户确认：能否到登录页；平板上"关于本机"或 `sysctl hw.memsize` 显示的内存有没有变多。确认后的收尾：把 `<output>/boot/boot-mem12g.img` 作为以后打包用的 v0 源镜像（替换 `boot.img`，旧的留备份），刷 `boot_a`，在 `../uefi-sheng` 本地提交这处改动。
+- 结果（用户 2026-11-14 报告）：进了系统，内存显示从约 6 GB 变成 6.38 GB。用户说附了文件，我这边没有收到，不知道读数来自"关于本机"还是 `sysctl`。swap 和 #245 是否生效仍然没有平板上的读数。
+- `../uefi-sheng` 的改动已在本地提交：分支 `local/sheng-12g-memory-map`，提交 `5dfcc572`，没有推送。
+- 还没做：刷 `boot_a`（平板要先进 fastboot；现在 `boot_a` 里还是 18:18 那份，重启后内存会回到约 6 GB）；刷之前把 `<output>/boot/boot-mem12g.img` 换成以后打包用的 v0 源镜像（旧 `boot.img` 留备份），`out/flash/` 里的镜像按 `.prev` 轮换。
 
 **内存 B 步：用上窗口上方的 4 GiB（用户 2026-11-14 要求推进；在查代码，还没有设计）**
 - 6 GiB 上限的出处找到了：`patches/xnu-12377/native-4k-bootstrap-capacity.patch` 把 `osfmk/arm/pmap/pmap.h` 的 `BOOTSTRAP_TABLE_SIZE` 定成 16 页，注释是"Native 4 KiB: two roots plus up to seven L2 pages per 6 GiB mapping"。引导页表要给整个窗口建两份映射（V=P 和内核线性映射），每个 L2 页管 1 GiB：N GiB 的窗口要 `2 + 2 × (N + 1)` 页，6 GiB 是 16 页，10 GiB 是 24 页。`arm_vm_init.c` 里有检查，不够会 panic："BOOTSTRAP_TABLE_SIZE too small for memory config"。
 - 工具侧的上限：`scripts/unixnu/devicetree.py` 第 321 行，`owned_memory_size` 只允许 256 MiB 到 8 GiB。
 - 内核地址空间：这个配置的 `VM_MIN_KERNEL_ADDRESS` 是 `0xffffffe000000000`，`VM_MAX_KERNEL_ADDRESS` 是 `0xfffffffbffffffff`（`osfmk/mach/arm/vm_param.h` 第 267、269 行），总共 112 GiB。窗口的线性映射从 `gVirtBase` 起，窗口每大 1 GiB 就多占 1 GiB。zone map、内核堆各段具体占多少、还剩多少，没算过。收编补丁的说明里提到过在 sheng 上内核堆几段一共只有约 3 GiB 可分，所以地址空间是这件事的主要风险。
 - 已打好补丁的内核源码在 `<output>/tree/.cache/xnu-work/`，查代码看这里。
+- 加大窗口不划算（查代码得出，没有上机试）：窗口每大 1 GiB，内核地址空间要付两份。一份是静态区（`arm_vm_init.c` 第 2254 行，`static_memory_end = physmap_base + mem_size + …`），一份是压缩器的预留（`vm_compressor.c` 第 865–870 行，这个布局下 `compressor_pool_size = max_mem`）。10 GiB 窗口比现在多占约 8 GiB，正好是上游 #244 把 zone map 从 24 GiB 减到 16 GiB 腾出来的量，各个堆又会回到 #244 之前只有约 3 GiB 可分的状态。
+- 收编不占这部分地址：收编区的映射地址在静态区下方那 64 GiB 没人用的地址里（收编补丁的 `arm_vm_outside_va`）；各堆的地址划分（KMEM 阶段）在收编（EARLY_BOOT 阶段）之前，收编进来的内存不会让压缩器多占地址。
+- 收编现在的限制（`profiles/os/macos-27.3-26C5035r/patches/xnu-12377/window-outside-memory-adoption.patch`）：只认窗口下方的内存（`end > gPhysBase` 的跳过）；所有内存段合成一个区，这个区超过 4 GiB 就整个放弃；上游机器上实测只收编到 458 MiB，其余被探测拒绝。窗口上方收不了的根源在 VM 层：`vm_resident.c` 里按页号找页的 radix 树只覆盖 `[pmap_first_pnum, vm_pages_first_pnum)`，页号在页数组之后的 `vm_page_find_canonical` 直接返回空。
+- 加载器不用改就会列出窗口上下两边的空闲内存（`MemoryWindow.h` 的 `DarwinOutsideRanges`，留最大的 8 段）。但窗口位置没有选项可以指定：`DarwinWindowStart` 只在内存表每一段的起点上找，取可用内存最多的，一样多取地址低的。加载器的这些函数有主机上能跑的测试（`drivers/DarwinBoot/Test/test-memory-window.py`、`test-memory-outside.py`）。
+- 由此得出的三条路线（2026-11-14 已发给用户，等用户选）：
+  1. 窗口挪到最高的 6 GiB（`0x980000000`–`0xB00000000`，引导程序给的是一整块），收编它下面的 `0x880000000`–`0x980000000`（正好 4 GiB，卡在收编上限上）。内核不用改；加载器要加一个指定窗口位置的选项；低端那 2 GiB 要用 `owned_memory_outside_reserved` 整段挡掉，否则合成的区超过 4 GiB、收编整个失效，代价是丢掉低端现在收编到的约 0.45 GiB。预计约 9.9 GiB。
+  2. 在 1 的基础上让收编支持多个区，把低端的 0.45 GiB 拿回来，预计约 10.4 GiB。要改内核（pmap 的每页表、`pa_valid`/`pa_index`/`pai_to_pa`、映射地址）。
+  3. 窗口不动，让内核能收编窗口上方的内存。要改 VM 的 radix 树和页查找，再加多个区，改动最大。
+- 上限：引导程序给的总量是 11.68 GiB，低端 2 GiB 里固件自己占了很多，实际能拿到的大约 10.4 GiB 上下，到不了 12。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
