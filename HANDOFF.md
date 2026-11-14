@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 23:04）：**路线一上机中（Task 6），还没有能用的结果。用户 23:02 同意重建诊断内核（"同意重建诊断内核，平板在fastboot"），23:04 起后台在构建；主机上有临时改动没还原，见文末"23:04 诊断内核"一条。** 已知：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编 3 GiB 以上（读数 9.0、9.5 GB）图形就坏：`dpu-scanout=2` 时闪烁、指针抖动、卡住，`dpu-scanout=0` 时刚进桌面黑一下然后画面定住；只收编紧贴窗口的 512 MiB（6.5 GB）正常。两个问题的原因都没找到。这次诊断内核只加了一个启动参数 `memory-outside-report=<MiB>`（照样收编，但上报的内存总量最多只增加这么多），用来分清②是"被收编的页被图形用到"还是"上报的内存总量变大"引起的。屏幕诊断页这次没有加进去（原因见同一条）。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 23:12）：**路线一上机中（Task 6），还没有能用的结果。诊断内核已编好，23:11 从内存启动了第一份诊断镜像 `out/flash/boot-v4-payload.topwin-adopt3g-diag-report0.img`（收编 3 GiB，`memory-outside-report=0`），在等用户报结果；主机上的临时改动都已还原。** 已知：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编 3 GiB 以上（读数 9.0、9.5 GB）图形就坏：`dpu-scanout=2` 时闪烁、指针抖动、卡住，`dpu-scanout=0` 时刚进桌面黑一下然后画面定住；只收编紧贴窗口的 512 MiB（6.5 GB）正常。两个问题的原因都没找到。诊断内核只加了一个启动参数 `memory-outside-report=<MiB>`（照样收编，但上报的内存总量最多只增加这么多），用来分清②是"被收编的页被图形用到"还是"上报的内存总量变大"引起的。屏幕诊断页没有加进去（原因见文末"23:04 诊断内核"一条）。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -685,6 +685,17 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
         - 构建会覆盖 `<output>/kernel/kernel.macho` 和 `<output>/payload/payload.img`。日常的备份还在：`<output>/kernel/kernel.macho.daily-33d294c8`（以及同后缀的 `kernel.json`、`kernel.map.json`）和 `<output>/payload/payload.daily-8a36fe56.img`，23:03 核对过 sha256 和当时的现用文件一致。构建完把新内核另存为 `kernel.macho.diag-<sha 前 8 位>`，再把日常的复制回去。
         - 补丁改了内容，构建会重新克隆内核源码并全量重编，比上次的 4.5 分钟长。
       - 构建完要做的两份镜像（都只从内存启动）：收编 3 GiB、`dpu-scanout=2`、`memory-outside-report=0`（预期显示 6.0 GB；不闪就是总量引起的，还闪就是被收编的页引起的）；如果不闪，再用同一个内核试 `memory-outside-report=1900`（显示约 7.9 GB）和更大的值找界限。
+    - **23:07 诊断内核编好，23:11 第一份诊断镜像上机**
+      - 构建 23:04 开始、23:07 结束，退出码 0。新内核 `<output>/kernel/kernel.macho.diag-980a9895`（sha256 `980a98953b8a621527d8f1d8f2ad047e851dd6103837fc8bba588419d6c4f624`，同后缀还有 `kernel.json`、`kernel.map.json`）；内核里能搜到字符串 `memory-outside-report`。
+      - 新载荷和 22:39 那份（`payload.topwin-adopt3g-ownfix.img`）逐个文件比过 sha256：`kernel.macho.vroot`、`scratch-data.img`、`unixnu.toml` 相同；`kernel.macho`、`kernel.macho.crypto-hmac.json`、`kernel.macho.gpuaddon`、`kernel.macho.trustcache` 不同（内核变了，GPU 附加件每次构建都会重编且不可复现）；设备树只有 `random-seed` 那 256 字节不同，保留列表读出来是 `0xd0000000:0x10000`、`0x80000000:0x800000000`、`0x880000000:0x40000000`（收编 `0x8C0000000`–`0x980000000`）。
+      - 两份镜像，都用 `<output>/boot/boot-topwin.img` 打成 v4，只从内存启动：
+        - `out/flash/boot-v4-payload.topwin-adopt3g-diag-report0.img`，sha256 `414f2ddb32ed3b1c5e6ebc93a5afde6e653c3ec5743887136466f6aa535d4f21`：启动参数在原样后面加 `memory-outside-report=0`（`dpu-scanout=2` 不变）。载荷 `<output>/payload/payload.topwin-adopt3g-diag-report0.img`。
+        - `out/flash/boot-v4-payload.topwin-adopt3g-diag.img`，sha256 `e63b1849850aa72dacf78642d6a305b60040237934b70af0868c10800e1f1ac7`：同一个内核、不带这个参数，是对照（预期和 22:39 那份一样显示 9.0 GB 并且闪）。载荷 `<output>/payload/payload.topwin-adopt3g-diag.img`。
+      - 主机已还原（23:09）：`<output>/kernel/kernel.macho` 回到 `33d294c8…`，`<output>/payload/payload.img` 回到 `8a36fe56…`，`../UniXNU-sheng/board.toml` 已 `git checkout`（第 267 行回到两对），OS 镜像已卸载。补丁的改动还留在工作区、没有提交，等结果出来再决定提交还是撤掉。
+      - 23:10 上机前读数：槽 a，`slot-retry-count:a` 5，`slot-unbootable:a` no，电池 4044 mV。23:11 `python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.topwin-adopt3g-diag-report0.img`，bootloader 45 秒没回来，镜像在运行。
+      - 怎么读结果：活动监视器的物理内存应当是 6.0 GB（如果显示 9.0 GB，说明参数没生效，这次不算数）。
+        - 显示 6.0 GB 且不闪不卡：②跟上报的内存总量有关。先跑对照镜像确认它还会闪（排除"重编一次就好了"），再用 report0 这份的载荷只改参数值（例如 1024、1900、2100、3072，分别显示约 7.0、7.9、8.1、9.0 GB）找界限，不用重编内核。
+        - 显示 6.0 GB 但仍然闪或卡：②跟被收编的页本身有关，下一步在 GPU 导入路径上加记录。
     - 设备包里还有现成的诊断手段没用过：启动参数 `boot-progress=1|2` 和 `boot-diag-resume=<秒>`（`../UniXNU-sheng/package/BootProgress.c` 第 88 行：系统停止输出画面超过这么多秒，诊断页接管面板）。现在的参数行里都没有。下一步证据不够时加上。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
