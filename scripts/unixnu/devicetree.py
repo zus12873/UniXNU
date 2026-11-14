@@ -287,6 +287,27 @@ def platform_node(name, table):
     return node(name, properties, children)
 
 
+def memory_floor(options):
+    """The /chosen property for payload.adt owned_memory_floor: the lowest address DarwinBoot may start the window at.
+
+    For a board whose kernel adopts memory below the window: with the window at the top of a DRAM bank the memory under it
+    lies below the kernel's page array, where the kernel can take it page by page. The loader honours a floor only when it
+    selects the window itself, which it does with the excluded-range table, so the option needs that table and a window size.
+    """
+    value = options.get('owned_memory_floor')
+    if value is None:
+        return []
+    try:
+        floor = None if isinstance(value, bool) else int(str(value), 0)
+    except ValueError:
+        floor = None
+    if floor is None or not 0 < floor < 1 << 64 or floor % 0x200000:
+        raise Error(f'Owned memory floor: {value!r} is not a nonzero 64-bit address in 2 MiB steps')
+    if not options.get('owned_memory_size') or not options.get('owned_memory_excluded_ranges'):
+        raise Error('Owned memory floor: needs owned_memory_size and owned_memory_excluded_ranges')
+    return [('darwinboot-memory-floor', struct.pack('<Q', floor))]
+
+
 def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon=False, root_policies=False):
     root = read_fdt(Path(dtb).read_bytes())
     entries = list(root.walk())
@@ -329,6 +350,7 @@ def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon
         if not 1 <= slots <= 4096:
             raise Error('Owned memory excluded ranges: a table size of 1 to 4096 ranges')
         chosen.append(('darwinboot-memory-excluded', bytes(16 * slots)))
+    chosen += memory_floor(options)
     # Two empty records DarwinBoot fills with where its inputs lie in the firmware's memory map (the payload RAM disk and the
     # entry's initrd buffer); the kernel reports them as kern.boot_payload_memory. With the excluded-range table the loader
     # also counts the whole pages of a verified input inside the window as usable memory.
