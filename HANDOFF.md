@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 23:52）：**路线一上机中（Task 6）。诊断镜像有了第一个读数：收编 3 GiB 但不增加上报的内存总量（`memory-outside-report=0`，23:42 上机），系统显示 6.0 GB，没有闪烁；新现象是"终端"时而未响应、恢复、又未响应。这和"图形坏是上报的内存总量变大引起的"相符，但还没有对照（同一个新内核、总量变大时还会不会闪），不能算证实。23:51 已从内存启动 `out/flash/boot-v4-payload.topwin-adopt3g-diag-report2100.img`（应显示约 8.05 GB），在等用户报结果；之后按结果跑 1900 那份或对照镜像，镜像都已做好。** 已知：①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住；②收编 3 GiB 以上并且照实上报（读数 9.0、9.5 GB）图形就坏：`dpu-scanout=2` 时闪烁、指针抖动、卡住，`dpu-scanout=0` 时刚进桌面黑一下然后画面定住；只收编紧贴窗口的 512 MiB（6.5 GB）正常。①的原因没找到。屏幕诊断页没有加进诊断内核（原因见文末"23:04 诊断内核"一条）。补丁里加参数的改动还没提交。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 23:57）：**路线一上机中（Task 6）。问题②的方向定了：图形坏是"上报的内存总量变大"引起的，不是被收编的页本身。证据是同一份镜像只改一个启动参数的对比：收编同样的 3 GiB，`memory-outside-report=0`（显示 6.0 GB）不闪，`memory-outside-report=2100`（显示 8.05 GB）闪。哪个东西按总量取值、分界在哪，还不知道。下一步是 `out/flash/boot-v4-payload.topwin-adopt3g-diag-report1900.img`（应显示约 7.86 GB）；23:56 起有一个后台等待程序，平板一回到 fastboot 就读状态并从内存启动它（最多等约 8 分钟，过时就要重新发起）。** 另外两件没弄清的事：report0 那次"终端"时而未响应、几个已打开的应用卡顿加载，原因不知道，日常 6 GB 镜像上有没有也不知道；①收编 `0x880000000`–`0x8A0000000` 会在一两分钟内定住，原因没找到。屏幕诊断页没有加进诊断内核（原因见文末"23:04 诊断内核"一条）。补丁里加参数的改动还没提交。`boot_a` 没有动。 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -710,6 +710,12 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
     - **23:49 用户补充（report0 那次）："其他功能没受影响，有几个已打开的app会卡顿加载"；23:51 `report2100` 上机**
       - 所以 report0 那次不只是"终端"：几个已经打开的应用也会卡一下再加载出来，其他功能正常，没有闪烁。日常 6 GB 镜像上有没有同样的卡顿，用户还没答。
       - 23:49 读数：槽 a，`slot-retry-count:a` 5，`slot-unbootable:a` no，电池 3981 mV（今晚一路在降：22:49 4058、23:10 4044、23:41 4004）；镜像 sha256 核对为 `789a2fd8…`。23:51 `boot-sheng.py` 启动，bootloader 45 秒没回来，镜像在运行。
+    - **23:55 前后的结果（23:51 那次，`memory-outside-report=2100`）：用户"已进系统，物理内存8.05g，闪烁了"**
+      - 这是一次干净的单变量对比：`report0` 和 `report2100` 两份镜像的内核、设备树、GPU 附加件、信任缓存全都相同（载荷是复制出来的，只换了 `unixnu.toml` 里的一个参数值），收编的页也相同。0 不闪，2100 闪。所以**②是上报的内存总量引起的（H-SIZE），不是被收编的页被图形用到引起的（H-GPU）**；"重编一次就好了"也排除了，对照镜像不用跑了。
+      - 还不知道的：分界在哪（已知 6.5 GB 正常、8.05 GB 闪）；是哪个东西按总量取值。候选之一是 Metal 插件的 `recommendedMaxWorkingSetSize`（8 GiB 起封顶到 2 GiB = `0x80000000`），没有证据，只是它的取值正好在这个区间里变。
+      - 顺带核对过一处：补丁给被收编内存建的内核映射用的是普通可缓存属性（`ARM_PTE_ATTRINDX(CACHE_ATTRINDX_DEFAULT)`，`window-outside-memory-adoption.patch` 第 148–149 行），不是设备内存那种不走缓存的映射，所以"被收编的页访问慢"这个猜测不成立。
+      - 23:56 起后台等待：平板出现在 fastboot 后读槽、`slot-retry-count:a`、`slot-unbootable:a`、电池，槽是 a 且次数不少于 3 才 `boot-sheng.py out/flash/boot-v4-payload.topwin-adopt3g-diag-report1900.img`（sha256 已核对 `589d4df6…`）。
+      - 1900 的读法：不闪 → 分界在 7.86–8.05 GB 之间，指向 8 GiB 这一类取值；可以做的直接验证是把插件的封顶改到 2 GiB 以下、照实上报 9 GB 再看（要重编，要用户同意）。闪 → 继续往下二分（1024 → 约 7.0 GB）。
     - 设备包里还有现成的诊断手段没用过：启动参数 `boot-progress=1|2` 和 `boot-diag-resume=<秒>`（`../UniXNU-sheng/package/BootProgress.c` 第 88 行：系统停止输出画面超过这么多秒，诊断页接管面板）。现在的参数行里都没有。下一步证据不够时加上。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
