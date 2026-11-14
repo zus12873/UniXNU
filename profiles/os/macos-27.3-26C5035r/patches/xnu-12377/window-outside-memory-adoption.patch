@@ -4,6 +4,7 @@ A board can have a DRAM bank too far below the managed span (boot_args physBase/
 the kernel's virtual address space cannot hold a span that reaches it. The loader lists the free runs of such memory in
 /chosen/darwinboot-memory-outside ((base, size) pairs of 64-bit values); /chosen/darwinboot-memory-outside-kept may
 list parts of them to leave alone. Without the first property nothing changes; memory-outside=0 ignores it.
+memory-outside-report=<MiB> (a diagnostic) adopts the same pages but lets the memory sizes grow by no more than that.
 
 arm_vm_init.c keeps the runs and a twig-aligned span around them, gives the span one entry of the physical aperture's
 table and maps nothing there. The span's addresses lie below the kernel's static region, in the part of the address
@@ -478,7 +479,7 @@ diff --color -ruN a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
 diff --color -ruN a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
 --- a/osfmk/arm64/machine_routines.c	2026-11-11 06:35:53
 +++ b/osfmk/arm64/machine_routines.c	2026-11-11 06:38:34
-@@ -2278,6 +2278,94 @@
+@@ -2278,6 +2278,99 @@
  }
  
  /*
@@ -555,8 +556,13 @@ diff --color -ruN a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routine
 +		}
 +	}
 +	if (adopted != 0) {
-+		const uint64_t bytes = ptoa_64(adopted);
++		uint64_t bytes = ptoa_64(adopted);
++		uint32_t report = UINT32_MAX;
 +
++		/* memory-outside-report=<MiB>: the memory sizes grow by no more than that; the pages are adopted all the same. */
++		if (PE_parse_boot_argn("memory-outside-report", &report, sizeof(report)) && bytes > ((uint64_t)report << 20)) {
++			bytes = (uint64_t)report << 20;
++		}
 +		max_mem += bytes;
 +		max_mem_actual += bytes;
 +		mem_actual += bytes;
