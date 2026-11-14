@@ -252,11 +252,27 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
 
 用户原话："我现在想开机自启动macos，然后我想再往上刷个ipados"，并指定参考仓库 `https://github.com/CrossDarwin/UniXNU_macOS`（已克隆到 `../UniXNU_macOS`，默认分支 `test_27`，是 UniXNU 主仓库的 fork，与本地 main 的分叉点是 `2bbb39d`，领先 64 个提交）。
 
-**参考仓库里有什么**
-- Actions 打包流程（`docs/zh/guide/sheng-macos-actions.md`）：面向 256 GB 的 sheng；文档写明 `boot.img` 用于临时启动。
-- 实验性的原生 APFS 容器存储后端（`scripts/sheng-apfs/README.md`）：替换现有 userdata 布局，单系统，没有封印和逐块校验。
-- 账户预置支持 `--auto-login`；PSCI 关机与重启补丁（`scripts/data/armdt-platform-psci.patch`、`macos-union-shutdown.patch`）。
-- 没有"刷进 boot 分区自启动"和"双系统并存"的做法。
+**参考仓库里有什么（2026-11-14 逐提交核对；远端最新是 `c4f9d5e`（11-12），`../UniXNU_macOS` 已是这个版本）**
+- 概况：fork 自己的工作是 55 个非合并提交，全部由 Jelly10086 在 11-10 到 11-12 提交；另有 9 个合并（Jelly10086 7 个、RinnRei 2 个，都是合并上游）。`test_27` 里 rponeawa 的 GPU、Mesa、Metal 提交来自上游，不是 fork 的工作。相对分叉点共改 87 个文件，+5338/−157 行（`git diff --stat upstream/main...origin/test_27`）。
+- 分支和标签：
+  - `test_27`：默认分支，也是主线。
+  - `main`：上游的旧镜像，落后上游 61 个提交，没有自己的提交。
+  - `sheng/macos-actions`：Actions 文档里让在这个分支上运行工作流，但它停在 11-11，比 `test_27` 旧。
+  - `macos/retain-root-union-on-shutdown`：只有一个提交 `3350146`，内容是关机补丁。
+  - 标签 `test_27-apfs-smoke-1`（`bdc3721`）和 `test_27-apfs-xart-1`（`b34ad0e`），都打在 11-11。
+- `test_27` 落后上游 main 8 个提交，其中有上游 11-13 的 `51d1c56 feat(macos): build APFS containers with native tools`（作者 bluseliu50）和当天的回退 `dff2765 fix(macos): restore the previous root storage layout`。本地分支基于上游，已经带着这次回退。
+- fork 做的五块工作：
+  1. Actions 打包（`.github/workflows/sheng-macos.yml`、`docs/zh/guide/sheng-macos-actions.md`、`scripts/ci/`）：只能手动触发，在 `xcode-27` runner 上从下载 IPSW 一直做到 `boot.img` 和覆盖整个 userdata 的 `userdata-full.img`，分卷上传。平台种子放在 Secrets 的 `UNIXNU_UNIQUE_CHIP_ID`，第一次安装勾选 `init_data`。面向 256 GB 的 sheng（userdata 249497890816 字节）；这台是 16+512（`0x77AD3BB000`），整分区镜像不能直接刷。文档写明 `boot.img` 用于临时启动。
+  2. 下载和构建：IPSW 按区间并发下载（`scripts/unixnu/ipsw.py`，`UNIXNU_IPSW_WORKERS`，默认 64，8 MiB 分块，只重试失败的块，分块缓存可以跨次复用）；GitHub 下载遇到限流会重试，或改走 Git 对象（`scripts/github_download.py`）；准备系统镜像前按固定哈希校验 WCN7850 固件、蓝牙源码等输入。
+  3. 实验性的原生 APFS 容器（`scripts/sheng-apfs/README.md`）：用 macOS 自带工具做出 System、Data、AppOS 卷组，xART 可以之后在 Linux 上补，再用 mkosi 打包。替换现有 userdata 布局，单系统；内核绑定容器 UUID，Data 可写；没有封印和逐块校验；要配合 ShengUfs `57f031c9…`。`provision-data.py` 可以预置账户（支持 `--auto-login`）。
+  4. 关机和重启：`macos-union-shutdown.patch`（`d95eaaf`）和 PSCI 断电和重启。`03c7486` 先把 `drivers/ArmDTPlatform` 子模块指到带 PSCI 的版本；`e29de06` 改回已发布的驱动版本，把 PSCI 改成构建时打的补丁 `scripts/data/armdt-platform-psci.patch`（由 `scripts/build-arm-driver.py` 打上）。
+  5. 其他：QEMU 的 AMP 拓扑描述和可写覆盖盘、桌面诊断打包、panic 探针链接、终端重连；`AGENTS.md` 加了"等构建或刷机时交给只读监控子代理"的规则。
+- 没有的东西："刷进 boot 分区自启动"和"双系统并存"的做法；睡眠（见第 9 节"睡眠不工作"）。
+- 和本地分支的关系：
+  - 已经拿过来：`fcbfc2e`（原样摘取 `d95eaaf`）和 `6ce74b5`（移植 PSCI 补丁，补丁文件和 fork 逐字节相同）。
+  - 原生 APFS 暂时不搬：按 256 GB 分区打包，换布局要重刷整个 userdata，没有封印和逐块校验，上游 11-13 合入类似方案后当天就回退了，而现有布局已经能用。
+  - 可以考虑借用：IPSW 并发下载。这部分相对独立，以后重建遇到下载慢再拿。
+  - 没查到的：GitHub API 在沙箱里 TLS 校验失败（`gh` 报 `x509: OSStatus -26276`），所以没看 Releases 和 Actions 运行记录，不知道这个工作流实际有没有跑通。
 
 **自启动 macOS：调研到的事实**
 - 分区大小（ROM 的 `partition_dev_n81a.xml`，上机后要用 `fastboot getvar partition-size:boot_a` 复核）：`boot_a` 192 MiB，`vendor_boot_a` 96 MiB，`recovery_a` 100 MiB，`init_boot_a` 8 MiB。
@@ -371,6 +387,7 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
   - 上游的设备记录里，sheng 的睡眠和唤醒本来就没有测过：`docs/zh/devices/sheng-4545189wj.md` 第 351-356 行（iPadOS 27 睡眠时关背光"not verified"）、第 531 行（"sleep and wake, idle power and recovery are not tested"）、第 765-796 行（挂起和恢复、外设电源各自的覆盖情况）。`sheng-3364789753.md` 有同样的条目。
   - `boot_a` 里的启动参数没有和睡眠相关的项（只有一个 `gpu-power=9`）。
   - 这次的关机修复只给平台驱动加了关机和重启（`haltRestart` 里的 PSCI SYSTEM_OFF、SYSTEM_RESET），没有涉及睡眠。
+  - 参考仓库也没有做睡眠，没有现成补丁可拿：`../UniXNU_macOS/docs/zh/drivers/arm-dt-platform.md:16` 写的是"睡眠和唤醒需要另行接入 CPU 与外设恢复"。
 - 用户的要求："先落handoff，之后处理"。所以这里只记录，不动代码。
 
 **其他还开着的问题（前面各节有详细记录，这里汇总）**
