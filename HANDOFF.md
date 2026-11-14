@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-14 22:09）：**路线一上机中（Task 6），收编后卡住的原因还没找到。带 GPU 驱动页归属表修正的内核已重建（用户同意），22:08 从内存启动了带修正的 512 MiB 镜像 `out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`，等用户反馈连 Wi-Fi 卡不卡。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
+当前阶段（2026-11-14 22:24）：**路线一上机中（Task 6），收编后卡住的原因还没找到。带 GPU 驱动页归属表修正的内核 22:08 上机也卡了（刚进桌面就定住），归属表不是原因。下一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m-hi-ownfix.img`（sha256 `4c833b1a…`，收编量还是 512 MiB，换成紧贴窗口下方的 `0x960000000`–`0x980000000`），等用户把平板强制进 fastboot 后从内存启动。** 之前 21:53 不带修正的 512 MiB 那份：6.50 GB，连 Wi-Fi 时画面定住；用户说 6 GB 时没有这类问题。主机上的构建盘已还原到日常状态。`boot_a` 没有动。以下是 21:50 的记录： `boot_a` 是 `out/flash/boot-v4-flash.prev.img`（sha256 `40234c20…`，旧内存表，21:11 按用户同意刷回，重试 7）。对照镜像 `out/flash/boot-v4-payload.topwin-k443.img` 收编 3.5 GiB：进了系统，物理内存 9.5 GB，但屏幕闪烁、系统卡住；关掉收编的 `boot-v4-payload.topwin-k443-noadopt.img`：6.0 GB、不闪。21:50 复查的结论：GPU 驱动页归属表的推测解释不了闪烁，先不改驱动、不重建内核。下一步是只换 payload 的内存启动，第一份已做好：`out/flash/boot-v4-payload.topwin-adopt512m.img`（只收编 `0x880000000`–`0x8A0000000`，预期 6.5 GB），等用户把平板进 fastboot。文件没有改名：`out/flash/boot-v4-flash.img`（`c244f53d…`，实测内存表）现在不在任何分区里。读数记在文末"路线一上机"。
 
 上一阶段（2026-11-14 21:00）：**内存路线一在 Mac 上的部分做完了，并经过一次独立审阅；三个新镜像还没有上机。** 审阅结论：可以只从内存启动做 Task 6（先 `out/flash/boot-v4-payload.topwin-k443.img`，再 `out/flash/boot-v4-payload.topwin.img`）；写 `boot_a` 之前要先请用户决定 GPU 驱动那一条已知限制（见文末"路线一的主机部分"）。
 
@@ -620,6 +620,22 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
     - 镜像（都只从内存启动）：`out/flash/boot-v4-payload.topwin-k443-ownfix.img`（sha256 `f11489e492148f353f8a98904cd287e1b696b1eacc7e3dbf80da0c7ba753ba45`，收编 3.5 GiB）；`out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`（sha256 `5aee5598b2e79c48d9e11808614f585fbd106cca6e27b2b08b6ee10e70f1cd3a`，收编 512 MiB，做法同前：新设备树保留列表第三对的长度改成 `0xe0000000`，和 k443-ownfix 的卷只差 `kernel.macho.adt`）。payload 在 `<output>/payload/payload.topwin-k443-ownfix.img`、`payload.topwin-adopt512m-ownfix.img`。
     - 主机已还原：`../UniXNU-sheng/board.toml` 已 `git checkout`（差异为空）；`<output>/kernel/kernel.macho` 回到 `33d294c8…`，`<output>/payload/payload.img` 回到 `8a36fe56…`；OS 镜像已卸载。`<output>/tree/build`、`<output>/runtime`、`<output>/payload/stage` 里是这次构建的中间产物。
     - 22:08:03 从内存启动 `out/flash/boot-v4-payload.topwin-adopt512m-ownfix.img`：fastboot 应答槽位 a、电池 4125 mV，`Booting OKAY`，45 秒内引导程序没有回来。请用户做同样的动作（打开 Wi-Fi 菜单连同一个已知网络），结果等用户反馈。
+  - **22:09 带修正的那份也卡了（用户："进桌面就卡，放mp4下了"）**
+    - 录像 `data/mp4/IMG_6398.MOV`（22:09:45，3.28 秒）：画面定在桌面，启动后约 1.5 分钟。活动监视器读数：物理内存 6.50 GB，已用 4.48 GB，缓存文件 2.03 GB，交换 0，App 内存 2.76 GB，联动内存 1.69 GB，压缩 0。恢复出来的窗口有地图（空白网格）、活动监视器、终端、系统设置。菜单栏右侧只画出了聚焦图标，时钟和 Wi-Fi 图标还没出来，说明是刚进桌面就定住。右上角的黄色方块在窗口后面，是桌面上的东西，不是移植层画的标记（`../UniXNU-sheng/package/BootProgress.c` 的彩色角标只画在诊断页的启动帧缓冲上）。
+    - 结论：**GPU 驱动页归属表不是原因。** 那个修正对这个布局是对的，留在子模块分支上，但解决不了卡住。
+    - 之后读过的代码，都没有找到按地址区别对待被收编页的地方：
+      - 存储：`../UniXNU-sheng/drivers/ShengUfs/NativeUfs.cpp` 的直读（`hostDmaAddress`，1121 行起）用 `ml_vtophys`，上限 `gDmaLimit` 取自 SMMU 的地址宽度（1410 行起），和页在窗口内外无关。
+      - 显示直接扫描输出：`drivers/GopFramebuffer/NativeLegacyDisplay.cpp` 的 `directSlot` 用 `getPhysicalSegment` 取 64 位物理地址，`native_ufs_dpu_map`（`NativeUfs.cpp:1664`）原样写进显示的页表，输出宽度 48 位。
+      - RAM 盘和 GPU addon：`drivers/RamBlock/NativeRamBlock.cpp:371,705` 要求启动数据在内核自己的范围内，否则不启动；能进桌面说明它们在窗口里。
+      - 内核收编补丁全文：`pa_valid`、`pa_index`、`pai_to_pa` 和页号基数树（`osfmk/vm/vm_resident.c` 的 `vm_pages_radix_*`，层数按 `vm_pages_first_pnum - pmap_first_pnum` 算，没有固定上限）都不依赖地址大小。
+      - 固件内存表（`../uefi-sheng/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c`）：固件自己的区域都在低内存条（`0xA7000000` 一带），内存条 1 列出的全是普通内存。
+    - **之前说得太满的一点**：我说过"被收编的页在日常布局里是窗口页，用着没事"。日常布局里内核映像和启动数据（RAM 盘等）就装在窗口开头，也就是 `0x880000000` 起的这一段，所以这 512 MiB 在日常布局里有相当一部分是静态内容，没有当普通页用过。"这一段物理内存当普通页用有问题"还没有排除。
+    - **画面定住也可能是内核 panic**，现在分不出来：启动参数 `debug=0x14e` 会把 panic 信息画到启动帧缓冲上，但 `dpu-scanout=2` 时面板不扫那块内存，看不到。
+    - 现在的三个假设：H1，`0x880000000`–`0x8A0000000` 这段内存当普通页用有问题；H2，收编机制在这个布局下有还没找到的错；H3，新布局下连 Wi-Fi 会卡，和收编无关。
+    - **下一份（已做好，只从内存启动）**：`out/flash/boot-v4-payload.topwin-adopt512m-hi-ownfix.img`（sha256 `4c833b1adb26345d6f0d1bcd3a6e56ec307b8a41576cda610f81308ca8c3fa39`）。内核带修正，收编量不变（512 MiB），换成紧贴窗口下方的 `0x960000000`–`0x980000000`（日常布局里是普通窗口页）。做法：`kernel.macho.topwin-adopt512m-ownfix.adt` 保留列表第三对的起点 `0x8a0000000` 改成 `0x880000000`（1 个字节），长度 `0xe0000000` 不变，即保留 `0x880000000`–`0x960000000`。预期收编 131072 页，读数 6.50 GB。payload 是 `<output>/payload/payload.topwin-adopt512m-hi-ownfix.img`，设备树是同目录的 `kernel.macho.topwin-adopt512m-hi-ownfix.adt`（读回卷里的文件核对过 sha256 一致）。
+      - 不卡（并且连上 Wi-Fi 用 5 分钟以上）：H1 成立，H3 排除。下一步收编 `0x8C0000000`–`0x980000000`（3 GiB，预期 9.0 GB），`0x880000000`–`0x8C0000000` 留着不用。
+      - 还卡：H1 排除。接着跑两份：关掉收编连 Wi-Fi（`out/flash/boot-v4-payload.topwin-k443-noadopt.img`，分 H3）；收编不变、`dpu-scanout=0`（面板扫启动帧缓冲，panic 信息能看到，也能分出是不是直接扫描输出这条路的问题；这份还没做）。
+    - 还没做、之后可能需要的：把 Linux 日志读取器打成这台机器接受的 v4 镜像，读 `log=1` 的持久日志。日志只留一次启动，下一次启动 macOS 就会盖掉 22:08 那次的。
 
 **开机待机久了，键盘和触控板失效（用户 2026-11-14 报告，还没有调查）**
 - 用户原话："开机待机久了之后，键盘+触控板的固件会失效"。指的是键盘保护套（键盘加触控板）。
