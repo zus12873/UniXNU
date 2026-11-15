@@ -863,6 +863,9 @@
       - 内核的 GPU 恢复计数（`native_adreno_recovery`）不在 sysctl 里，读不到复位了几次。
       - 和 `ci-mps` 有没有关系分不清：CD2-2（没有 `ci-mps`）一进桌面也是指针闪。
     - 这时 WindowServer 是 `_windowserver` 用户的进程，SSH 的账户杀不了；`launchctl kickstart` 系统服务会被 SIP 拒绝。只能重启。
+- **约 22:04 用户："可以"**（同一份镜像第二次上机，暂记 CD4-2）
+  - fastboot（22:05:18）：a 7、b 7，都是 unbootable no；电压 3829 mV；sha256 `4ba1bede…` 相符。
+  - 22:05:24 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
