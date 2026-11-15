@@ -333,6 +333,29 @@
     2. 取样窗口能取消就取消；活动监视器整个卡住就用 ⌥⌘Esc 强制退出它再打开。
     3. 直接 Run Spindump（菜单栏 View 里或 ⋯ 里）；找 iconservicesagent 和终端两段，录像。
     4. 控制台的崩溃报告列表也拍一张。
+- **17:05 用户发来照片 #12、#13**（D6；#13 上平板时钟 10:13）
+  - #12，活动监视器搜 icon，只有两行：
+    - `iconservicesagent`：1.4 MB，2 个线程，43 个端口，PID 806，用户 **root**；
+    - `iconservicesd`：1.3 MB，2 个线程，52 个端口，PID 131，用户 `_iconservices`。
+    - 以用户身份（huanmeng）跑的那个 iconservicesagent 不在。
+  - 这台 Mac 上的启动配置（宿主机的 macOS，平板上没核对）：iconservicesagent 有两份。
+    - 一份是每个用户的代理 `/System/Library/LaunchAgents/com.apple.iconservices.iconservicesagent.plist`；
+    - 一份是 root 的守护进程 `/System/Library/LaunchDaemons/` 下同名文件（参数 `runAsRoot`）。
+    - 两份都提供 `com.apple.iconservices` 服务，都是 `RunAtLoad false`（有请求才起），`EnablePressuredExit true`、`EnableTransactions true`：内存紧张、手上没活时，launchd 可以让它退出，下次有请求再拉起来。
+    - iconservicesd 是 `_iconservices` 用户，`RunAtLoad true`，提供 `com.apple.iconservices.store`。
+    - 终端是用户进程，找的是用户那一份。那一份不在，root 那一份 1.4 MB、2 个线程，像是刚起、停在很早的地方。对它取样一直停在 "please wait while the sample is taken"（#13，有 Cancel 按钮）。用户也对 iconservicesd 取过样，那个窗口出来了（内容没拍）。
+  - #13，聚焦搜 `spin` 有一个大发现：`/Library/Logs/DiagnosticReports/` 里已经有系统自己写的 spin 报告。用户以前强制退出没响应的终端时，系统会自动跑 spindump。这些报告带每个进程的内核栈，正是要的证据。
+    - `Terminal_2026-11-14-082152_MacBook-Pro.spin`（4.4 MB）
+    - `Terminal_2026-11-14-063545_MacBook-Pro.spin`（4.5 MB）
+    - `Terminal_2026-11-13-151057_MacBook-Pro.spin`（4.4 MB）
+    - `Terminal_2026-11-13-104357_MacBook-Pro.spin`
+    - `Sharing_2026-11-14-063449_MacBook-Pro.spin`（3.4 MB）
+    - 文件名里的时间是平板的时钟，不可信。
+  - 菜单里 "Run Spindump" 在活动监视器的 View 下（聚焦的菜单项结果写的是 "Activity Monitor > View"）。
+  - 请用户：
+    1. 取消那个取样；
+    2. View → Run Spindump，在结果里 ⌘F 搜 `iconservicesagent`、`Terminal`，各录一段；
+    3. 用聚焦打开 `Terminal_2026-11-14-082152_MacBook-Pro.spin`（会用控制台打开），从头录到终端主线程的栈结束，再 ⌘F 搜 `iconservicesagent` 录一段。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
