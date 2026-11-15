@@ -990,6 +990,37 @@
     - 日志里没有 `MPSImageUnaryKernel`；`launchctl print gui/501/com.apple.iconservices.iconservicesagent` 的崩溃次数不涨；
     - `tablet-icon-stress.js` 跑两轮没有失败、代理 PID 不变。
   - 过了再在 gpu 区加 device 证据、提交、推到 `zus12873/UniXNU-sheng`、开 PR 到 `UniXNU/UniXNU-sheng`。PR 里写明：和 AdrenoMetal#37 不重复；插件里的 `ci-mps` 改动只在本地，不提交。
+- **约 23:35 用户：克隆 `CrossDarwin/UniXNU_macOS`，定规则"每次新开发前先查别人的仓库"，再对比别人和我的进度**
+  - `../UniXNU_macOS` 早就克隆过（干净），快进到 `test_27` `4a67177`。
+  - 规则写在 `.claude/rules/check-other-repos-first.md`（`2a9badd`）。
+  - 对比工具 `local-tools/compare-progress.py`：按内容比，不只按提交。上游是压扁合并的，所以看分支改过的文件在我这边是不是一样。
+  - 拉到了：核心 `crossdarwin-macos/*`；sheng 的 `crossdarwin/*`、`rponeawa/*`；AdrenoMetal 的 `crossdarwin/*`；uefi-sheng 的 `crossdarwin/*`。
+  - 和上游 main 比我基本是新的：核心落后 26 个（多是文档），sheng 落后 15 个（文档），AdrenoMetal 落后 3 个（文档）。领先的都在别人没合进上游的分支里。
+  - **和我眼下的问题最相关的（都没验证）**：
+    - 内存。
+      - rponeawa `f4e0bc2`（11-15，`fix/sheng-startup-diagnostics`）：收编低位内存时把固件占着的 8 段（modem、TZ/XBL/QTEE、可信 UI 和 OEM 虚拟机、LLCC 附近）也挡掉。以前只有 GPU 池挡这些，内核收编只挡音频的 64 KiB；CPU 写进这些地方是同步外部异常。
+      - 我本地 `board.toml` 还是旧的 `["0xd0000000:0x10000", "0x880000000:0x280000000"]`。日常镜像和第 1 步镜像都收编低位内存，"每次都在内存第一次用满后定住"和这个对得上。
+      - CrossDarwin `uefi-sheng` 的 `memory/abl-reservations-8g`（11-14）、`fix/memory-compatible-dxe`（11-16）：固件按 ABL 实际的保留区出内存表（ShengBootMemoryDxe），他们的是 8 GiB 机型；上机还没验，上一版显示 6.44 GB。sheng 侧对应 `crossdarwin/fix/compat-abl-memory` `c4d5a19`。
+    - GPU 运行时：rponeawa 在 AdrenoMetal 上 11-15 有 8 个分支。
+      - 接了 metal2vulkan development `400efe79` / `d9236a8a`，加了 A740 原生路径（并发分箱、快速边框色）。
+      - 改了半精度 FMA 和除法；着色器预热收反射输入；有 GPU 验收探针。
+      - "Vulkan 设备恢复后停止原生校准"，图形故障和自动恢复的测试。
+      - 接着做卡死 A/B 之前先看这些。
+    - 充电：rponeawa `fix/sheng-charge-*`，小米电量计和 MiPPS 充电器认证（HMAC、VDM，约 750 行），Linux 充电读取器。宿主机测过，上机待验；和"只充 2 A"有关。
+  - 别的领先项：
+    - CrossDarwin 的启动传输进了标准构建（UniXNU#263、sheng#103）；持久 Data 初始化（#102）。
+    - 原生 APFS 容器镜像（`test_27`：容器扩到整盘，交换绑到 VM 卷）。
+    - 内部 UFS 介质身份（#105/#266，上机 PASS）。
+    - PSCI 关机和重启（#101，上机确认）。
+    - 蓝牙发现和持久 HCI 日志（#104/#267，PASS）。
+    - GitHub Actions 出整套测试包。
+    - rponeawa 约 100 个诊断和实验室自动化提交：持久化启动检查点、panic 文本、固件看门狗交接、无人值守 GPU 实验。
+  - 我领先的：
+    - 12 GiB 机型的 7.5 GiB 窗口（别人 6.0 到 6.9 GB）；
+    - 图标服务崩溃的真正原因和修法（#37 自己测还是 FAIL）；
+    - GPU 复位后 WindowServer 自己重启；
+    - `enable-jobs`（默认开 SSH）；
+    - 指针漂移、合盖卡死这两个问题的原因。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
