@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-15 13:06）：**路线 A 的主机部分做完了（四个代码任务、新内核、新固件、六份载荷、五份只从内存启动的镜像）。7.5 GiB 的第 1 步镜像今天从内存启动过两次，都进了桌面，macOS 显示 7.50 GB，大窗口本身能启动。但两次都定住了：10:13 那次登录后约两分钟指针来回跳、然后定住；10:28 那次（诊断上机 D1，不恢复上次的应用）从约 5 分钟起应用一个个未响应，再过 10 分钟整机不应答。早上日常镜像的基线也有卡顿和指针抖动。每次都是内存第一次用满之后出事，原因还没有证据。第 1 步没有通过，后面几步都没有做，`boot_a` 没有动过。平板 10:55 在 fastboot（槽位 a，重试次数掉到过 0、已补回 7，见下面"槽位 a 的重试次数"一条；电压 3761，macOS 读的电量 23%），在等用户充电和决定下一次上机。用户 11:04 另外提出给 macOS 补充电驱动：驱动已经有了，缺的是 macOS 下充不进的原因，建议先量再定，在等用户答复（见下面"用户 11:04 提出"一条）。11:24 重启进日常镜像（上机 D2）：macOS 开着、接充电头能充（电池 +2 A），接 Mac 的口只进 0.45 A、电池在掉，停在 fastboot 基本不充。D2 在 11:34 以"终端全屏后卡死、键盘壳失灵、触屏还能用、已用 4.61 G / 5.95 G"结束，用户强制重启。11:39 再次重启进日常镜像（上机 D3，全程接 Mac 的线）：约 26 分钟时拍到了证据。整机没死，终端卡在重画自己的窗口里；已用 4.91 G 里被钉住的（Wired）占 3.26 G，程序只剩 1.02 G，交换 0、压力绿。交换不是瓶颈，下一步是查谁占着 Wired、卡住的程序最底层在等什么（见"11:39 上机 D3"一条）。13:02 用户又开了一次机（D4），终端在开机后约 7.5 分钟恢复窗口时就卡住，已请用户用触屏取样（见"13:02 用户发来照片"一条）。**
+当前阶段（2026-11-15 13:23）：**路线 A 的主机部分做完了（四个代码任务、新内核、新固件、六份载荷、五份只从内存启动的镜像）。7.5 GiB 的第 1 步镜像今天从内存启动过两次，都进了桌面，macOS 显示 7.50 GB，大窗口本身能启动。但两次都定住了：10:13 那次登录后约两分钟指针来回跳、然后定住；10:28 那次（诊断上机 D1，不恢复上次的应用）从约 5 分钟起应用一个个未响应，再过 10 分钟整机不应答。早上日常镜像的基线也有卡顿和指针抖动。每次都是内存第一次用满之后出事，原因还没有证据。第 1 步没有通过，后面几步都没有做，`boot_a` 没有动过。平板 10:55 在 fastboot（槽位 a，重试次数掉到过 0、已补回 7，见下面"槽位 a 的重试次数"一条；电压 3761，macOS 读的电量 23%），在等用户充电和决定下一次上机。用户 11:04 另外提出给 macOS 补充电驱动：驱动已经有了，缺的是 macOS 下充不进的原因，建议先量再定，在等用户答复（见下面"用户 11:04 提出"一条）。11:24 重启进日常镜像（上机 D2）：macOS 开着、接充电头能充（电池 +2 A），接 Mac 的口只进 0.45 A、电池在掉，停在 fastboot 基本不充。D2 在 11:34 以"终端全屏后卡死、键盘壳失灵、触屏还能用、已用 4.61 G / 5.95 G"结束，用户强制重启。11:39 再次重启进日常镜像（上机 D3，全程接 Mac 的线）：约 26 分钟时拍到了证据。整机没死，终端卡在重画自己的窗口里；已用 4.91 G 里被钉住的（Wired）占 3.26 G，程序只剩 1.02 G，交换 0、压力绿。交换不是瓶颈，下一步是查谁占着 Wired、卡住的程序最底层在等什么（见"11:39 上机 D3"一条）。D4（约 12:50 开机）的取样录像读完：终端主线程在等图标服务（IconServices）回一个同步请求，要的是标题栏上的文档小图标。下一步是看图标服务自己在做什么。13:19 平板在 fastboot，槽位 a 从 1 补回 7。**
 
 - 细节在文末"路线 A：主机部分做完，基线有了第一份结果"一条：提交、审阅结论、每个文件的字节数和 sha256、基线的读数。
 - 计划 `docs/superpowers/plans/2026-11-15-memory-large-window.md` 的六个任务：
@@ -214,6 +214,23 @@
     - 13:17 核对后要降级的一点：上游 run139（2026-11-12，同型号，macOS 27.3）用的源码基线 UniXNU `2bbb39dc`、UniXNU-sheng `b9223ad4`，两者都已经包含 `cs-lazy=1`（本仓库 `268bfa1`，设备仓库 `81f43eb` 把它写进内置参数）。那次压了 5120 MiB，交换涨到 4 GiB，正常结束。所以 `cs-lazy=1` 在上游硬件上经受过内存压力，补丁头和设备文档里 "not run on hardware" 是旧话。它仍是候选，但不是首选：run139 压的是一个程序的匿名内存，不是"内存满了以后再开新程序"。
     - 能做、但没做的对照：命令行加 `cs-lazy=0` 就能关掉它，不用改内核（内置参数只在命令行没有这个名字时才查，`zzzz-sheng-ipados27-bringup.patch` 里 `PE_parse_boot_argn` 先查命令行；`cs-lazy` 是 `TUNABLE`，经 `osfmk/kern/startup.c:301` 的 `PE_parse_boot_argn` 读）。日常命令行 877 字节，加上是 887，在 1000 以内。要做得先有证据指向它，并且用户同意。
     - 上游和本机的一个明显差别：上游压力下交换会涨；本机每次卡住时交换都是 0、压力都是绿的。
+- **13:19 用户："terminal的sample日志的视频记录放到mp4路径下了，键盘壳断开重新吸回可以恢复，然后平板现在在fastboot模式下，视频内容提取可以使用grok的api来做内容提取和整理"**
+  - 录像 `data/mp4/IMG_6418.MOV`（92 秒，4K，13:09:48 存；不入库）。我在本机用 ffmpeg 抽帧直接读，没有传给 Grok：帧里的字读得清，录像也不出本机。抽的帧在临时目录 `d4-6418/`。
+  - **终端卡住的原因找到了一层：它在等图标服务回话。** 取样（pid 841，2281 次）主线程每一次都是同一条完整的路：
+    - `-[NSView _recursive:displayRectIgnoringOpacity:…]` → `_NSViewDrawRect` → `-[NSControl drawRect:]` → `-[NSThemeDocumentButtonCell drawWithFrame:inView:]`（标题栏上的文档小图标）
+    - → `-[NSImage CGImageForProposedRect:context:hints:]` → `NSISIconImageRepGetCGImage` → `-[ISIcon prepareImagesForImageDescriptors:]`（IconServices）→ `-[ISConcreteIcon generateImageWithDescriptor:]` → `_ISRetryRequest`
+    - → `_NSXPCDistantObjectSimpleMessageSend2` → `-[NSXPCConnection _sendInvocation:…]` → `__NSXPCCONNECTION_IS_WAITING_FOR_A_SYNCHRONOUS_REPLY__` → `xpc_connection_send_message_with_reply_sync` → `mach_msg2_trap`。
+    - 也就是：主线程向图标服务发了一个同步请求，要标题栏那个图标，一直没等到回复。CPU 0% 和"在重画里卡住"都由此而来。终端本身没毛病。
+  - 取样末尾的汇总："Sort by top of stack" 是 `__psynch_cvwait` 13686、`kevent` 4562、`mach_msg2_trap` 2281、`__workq_kernreturn` 2281、`read` 2281、`semaphore_wait_trap` 2281；其余线程都在空等（6 个在 `NativeAdrenoMetal` 里等条件变量，tty 线程在 `read`）。终端也加载了 GPU 插件（`NativeAdrenoMetal.bundle`、`libvulkan_freedreno.dylib`）。
+  - D3 的取样只拍到 `_NSViewDrawRect`，前面每一层都和这次一样，多半是同一个原因（没拍到底，不算证实）。
+  - 上游记过的图标服务问题（`docs/zh/devices/sheng.md`）：
+    - 246 行：macOS 内核原先带着 iPadOS 的内存上限策略，五次开机里 iconservicesagent（450 MB）被杀 62 次。修正是 `profiles/os/macos-27.3-26C5035r/patches/xnu-12377/xnuconfig-macos-memorystatus-policy.patch`，在我们的补丁序列里（`patches/xnu/series:32`），所以本机不会因为"超过软上限"杀它；但"页面不足"等几种杀法还在。
+    - 218 行（iPadOS）：一次同步 XPC 等 iconservicesagent，挡住了 4.444 秒的画面。
+    - `../UniXNU-sheng/package/BootWatchdogPolicy.c:30`（iPadOS）："iconservicesagent also dies in CI::GLContext::init"；关掉它图标就全没了，所以留着。
+  - 还不知道的：图标服务这时在做什么——忙着画（GPU 或内存在等）、在等别的服务、还是被杀了正在反复重启。和"内存满了才卡"的关系也还没对上。
+  - 键盘壳：拔下再吸上就能恢复。
+  - fastboot（13:19:32）：当前槽位 a；a 剩 1 次、unbootable no、successful no；b 剩 7 次、unbootable no、successful no；电压 3916 mV。a 在 4 以下，13:19:41 `fastboot set_active a`，读回 a 7 次、b 7 次没变。
+  - 下一趟要拍的（日常镜像，等用户说可以再启动）：有程序卡住时，在活动监视器搜索框输 `icon`，拍 iconservicesagent 那一行（PID、内存、CPU），再对它点 Sample，像这次一样录像翻完。PID 隔一会儿再看一次，变了就是被杀后重启过。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
