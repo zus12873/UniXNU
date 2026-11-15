@@ -56,8 +56,8 @@ class MakePayloadVariant(unittest.TestCase):
         self.base = self.dir / 'base.img'
         self.out = self.dir / 'out.img'
 
-    def make_base(self, args=ARGS, adt=ADT):
-        make_volume(self.base, 64, {ADT_PATH: adt, TOML_PATH: toml(args), KERNEL_PATH: KERNEL})
+    def make_base(self, args=ARGS, adt=ADT, toml_bytes=None):
+        make_volume(self.base, 64, {ADT_PATH: adt, TOML_PATH: toml_bytes or toml(args), KERNEL_PATH: KERNEL})
         self.base_sha = sha256(self.base.read_bytes())
 
     def run_tool(self, *args, base=None, out=None):
@@ -147,6 +147,21 @@ class MakePayloadVariant(unittest.TestCase):
         self.make_base(args=ARGS + ' data-reset=1')
         self.assertRefused(self.run_tool('--arg', 'memory-outside=0'))
         self.assertRefused(self.run_tool('--set', 'darwinboot-memory-size=1'))
+
+    def test_refuses_data_reset_in_confirm_args(self):
+        self.make_base(toml_bytes=toml() + b'\n[[entry]]\nname = "install"\nconfirm_args = ["", "data-reset=1"]\n')
+        self.assertRefused(self.run_tool('--arg', 'memory-outside=0'))
+        self.assertRefused(self.run_tool('--set', 'darwinboot-memory-size=1'))
+
+    def test_base_named_like_the_temporary_file_survives(self):
+        self.base = self.out.with_name(self.out.name + '.tmp')
+        self.make_base()
+        result = self.run_tool('--arg', 'memory-outside=0')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(result.stderr.startswith(REFUSAL), result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(sha256(self.base.read_bytes()), self.base_sha)
+        self.assertFalse(self.out.exists())
 
     def test_refuses_duplicate_and_malformed_arguments(self):
         self.make_base()

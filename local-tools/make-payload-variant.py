@@ -124,8 +124,8 @@ def args_lines(toml):
 def new_toml(toml, arguments, edit):
     lines, found = args_lines(toml)
     names = {token.partition(b'=')[0] for _, _, content in found for token in content.split()}
-    if b'data-reset' in names:
-        raise Refusal('an args line of unixnu.toml already has data-reset')
+    if b'data-reset' in toml:
+        raise Refusal('unixnu.toml already mentions data-reset (an args line, confirm_args or anything else)')
     if not edit:
         return toml
     if not found:
@@ -174,6 +174,8 @@ def extract_all(volume, into):
 def make_variant(base, out, values, arguments):
     reader = load_reader()
     temporary = out.with_name(out.name + '.tmp')
+    if same_file(base, temporary):
+        raise Refusal(f'BASE {base} is the temporary file OUT.tmp; give OUT or BASE another name')
     try:
         shutil.copyfile(base, temporary)
         with tempfile.TemporaryDirectory() as work:
