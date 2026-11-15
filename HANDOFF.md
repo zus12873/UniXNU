@@ -666,6 +666,9 @@
         - `bootimg-contents.py` 核对过 v4 两份装的载荷。
       - 22 份日常镜像的 sha256 和 17:43 记的一样。19:38 OS 镜像已卸载。
     - 下一步 Task 4：先启动 `boot-v4-payload.bigwin-cd2-s1.img`（7.5 GiB，本机固件），要用户说可以。
+  - **约 19:45 用户："可以"**（cd2 第一次上机，暂记 CD2-1）
+    - fastboot（19:46:33）：a 7、b 7，都是 unbootable no；电压 3756 mV；sha256 `aaa4e60c…` 相符。
+    - 19:46:40 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd2-s1.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
