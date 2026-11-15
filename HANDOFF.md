@@ -696,6 +696,10 @@
     - 注意：我们的内核每次开机都会重写 `/private/var/db/com.apple.xpc.launchd/disabled.plist`（`BootWatchdogPolicy.c:123-133`，O_TRUNC），开启的记录重启后就没了，每次开机要重新运行一次。
   - 公钥由用户在 Mac 自己的终端里用 `ssh-copy-id` 装上去（要输一次平板的登录密码）。我连的时候用 `-o IdentitiesOnly=yes` 和单独的 `out/ssh/known_hosts`。平板的 IP 不写进入库的文件。
   - fastboot（20:07）：a 7、b 7，都是 unbootable no；电压 3793 mV。20:07:42 再次从内存启动 `boot-v4-payload.bigwin-cd2-s1.img`（`aaa4e60c…`），`Booting OKAY`，45 秒内引导程序没有回来。
+  - **约 20:10 用户："进桌面鼠标闪烁了，再次启动试下"**：这一趟（CD2-2）进了桌面，指针在闪。指针闪以前也在内存满的时候出现过，这次是一进桌面就闪。
+    - fastboot（20:10:45）：a 7、b 7，都是 unbootable no；电压 3775 mV。
+    - 20:10:54 第三次从内存启动同一份镜像（CD2-3）：`Booting OKAY`，45 秒内引导程序没有回来。
+    - 同一份镜像，一次正常、一次指针闪，又是"单次开机不能拿来比较"。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
