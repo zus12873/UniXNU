@@ -918,6 +918,18 @@
     - 基线；
     - A：再加 `--arg gpu-preempt=0`；
     - B：`--replace-arg gpu-dcvs=0`（参数行里本来是 `gpu-dcvs=1`）。
+  - 22:32 前载荷构建成功：
+    - 插件 22:31:37 重编，二进制里 `ending %s so launchd` 和 `ci-mps=0` 都有，`MadeBeforeRecovery` 出现 4 处；
+    - 载荷 `8225f8f3`，另存为 `payload.cd5-base.img`（只读）。
+    - 日常文件已还原（`33d294c8`、`8a36fe56`、`35f03ec4`），OS 镜像已卸载。
+  - 载荷和镜像（新固件；22 份日常镜像没变）：
+    - 基线：`payload.cd5-s1.img`（`b75a3dce…`，971 字节）→ `out/flash/boot-v4-payload.bigwin-cd5-s1.img`（`c5aa28e9…`）
+    - A：`payload.cd5-s1-nopreempt.img`（`8772a4c4…`，985 字节，`gpu-preempt=0`）→ `…-cd5-s1-nopreempt.img`（`6fdbc718…`）
+    - B：`payload.cd5-s1-nodcvs.img`（`9feae9e8…`，971 字节，`gpu-dcvs=0`）→ `…-cd5-s1-nodcvs.img`（`5bb6b594…`）
+  - 比法：
+    - 每份开机、连 Wi-Fi 后，经 SSH 跑 `tablet-icon-stress.js` 若干轮，请用户开关系统设置几次；
+    - 数日志里 WindowServer 的 `GpuRecoveryVictim`、`MadeBeforeRecovery`、插件的 "the render server's GPU context is lost; ending WindowServer"，以及 WindowServer 的 PID 有没有变；
+    - 同时看兜底有没有起作用：卡住后应该回到登录窗口，而不是整屏卡死。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
