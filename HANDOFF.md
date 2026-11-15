@@ -879,6 +879,25 @@
       - 用 `NSWorkspace iconForFile:` 取终端、/Applications、系统设置的图标都成功。
       - 系统设置（[831]，开了 4 分 44 秒）和活动监视器都在跑。
     - 指针乱跳是老问题：今天早上日常镜像的基线、第 1 步（10:13）都记过"指针在两个位置之间每一到三帧跳一次"，和这次的改动无关，单独查。
+  - **约 22:16 用户："当前桌面画面卡死了，你能尝试读到相关中断日志么"**（22:16-22:21 经 SSH 读）
+    - 又是一次 GPU 复位，WindowServer 没恢复过来。
+      - WindowServer 115% CPU；10 分钟里 6957 条 `MadeBeforeRecovery`。
+      - 平板时间 06:15:32.023 WindowServer 记 "[com.apple.coreanimation:Render] timed out fence 743029343556"；06:15:32.957 记 "Detected command buffer completion failure. Error code = 0x1" 和 "MTLCommandBuffer … error = GpuRecoveryVictim"；06:15:34 起一直是 `MadeBeforeRecovery`。
+      - 卡住前几秒，root 那一份图标服务 [506] 一直在建纹理（"heap texture refused: … OutOfMemory(Heap)"，会退回单独建）。MPS 关掉以后，它用的是 CoreImage 自己的核。
+      - 新的崩溃报告没有。
+    - **和 `ci-mps` 无关，是老问题**。统一日志里 WindowServer 的 `MadeBeforeRecovery` 按 10 分钟计：
+      - Nov 14 11:20 那一格 2065 条：平板时间，即 CD2-1，用户"打开系统设置之后，活动监视器和终端卡住"那一次；
+      - Nov 15 04:30 那一格 455 条：CD2-3 或 LG-1，都没有 `ci-mps`；
+      - 05:50 9288、06:00 5697（CD4-1），06:10 8271（CD4-2）。
+      - 第一条 "Error code = 0x1" 出现在 2026-11-14 11:28:31.130、2026-11-15 05:57:02.697、06:15:32.957。
+      - 用 `--start/--end` 按时间段取以前那几次的上下文，取回来的是新的行：时钟跳过以后，日志按时间筛不可靠。
+    - **WindowServer 为什么不重启**：插件只在命令缓冲区的 Metal 错误码是 11（DeviceLost）时结束渲染服务器（`NativeBridgeMetalFrontend.mm:3463-3472` 调 `endRenderServerAfterGpuLoss`，`:580-587` 发 SIGTERM）。
+      - 现在的运行时会自己恢复设备，WindowServer 拿到的是 `GpuRecoveryVictim`（错误码 1，`metal2vulkan-runtime/src/error.rs` 的 `metal_code`），之后是本地拒绝的 `MadeBeforeRecovery`（`- (void)refuse:`，`:3180-3182`），都不是 11，所以从不结束。
+      - 渲染服务器在 macOS 上就是 WindowServer（`NativeRenderServer.h`）。
+    - 打算的改法（驱动改动，要用户同意）：
+      - 在 `refuse:` 里，拒绝原因含 `MadeBeforeRecovery` 时也调 `endRenderServerAfterGpuLoss()`，WindowServer 被 launchd 重启。
+      - 代价：GPU 卡住时会退回登录窗口，程序会关掉，但不再整屏卡死。
+      - GPU 为什么会卡住，另外查：现在能看到的只有"卡住前在画图标"这一点，内核的复位记录只在板级日志里，读不到。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
