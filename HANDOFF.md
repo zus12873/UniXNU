@@ -796,6 +796,27 @@
 - **约 21:11 用户："进入fastboot了"**（cd3 第一次上机，暂记 CD3-1）
   - fastboot（21:12:20）：a 7、b 7，都是 unbootable no；电压 3742 mV；sha256 `c02657ed…` 相符。
   - 21:12:35 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd3-s1-ssh.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+  - 约 21:14 用户连上 Wi-Fi。21:15 SSH 直接连上，平板上什么都没输：`launchctl print-disabled system` 里是 `"com.openssh.sshd" => enabled`，`kern.bootargs` 里有 `enable-jobs=com.openssh.sshd`、`log-gpu=1`。默认开 SSH 这一条成立。
+  - 21:16-21:26 经 SSH 查 GPU 这条路（探测脚本都在平板的 `/tmp`，主要的一份在 `local-tools/tablet-ci-blur-probe.js`）：
+    - 直接用 MPS：两张插件建的 RGBA16Float 纹理，`MPSImageGaussianBlur` 编码执行，`status 4`，没有错误。`MPSSupportsMTLDevice` 是 true。MPS 本身能用。
+    - 只画棋盘、只画原始像素，都能出图。只要加上模糊就报 "source may not be nil"。
+    - CoreImage 渲染图（`CI_PRINT_TREE`，PDF 拷到 scratchpad 的 `ci-tree/`）：处理器节点是 "processor CIBlurProcessor-2.000 … outputFormat=RGBAh canReduceChannels supportsCompressed onlyMetal"，输入是 RGBAh 的中间图。
+    - **换工作格式就好**：`kCIContextWorkingFormat = kCIFormatRGBA8`（或环境变量 `CI_WORKING_FORMAT=RGBA8`）能出图；默认的 RGBAh 不行。关缓存不行。
+    - IOSurface 的 BGRA、RGBA、RGhA、`&RhA`、`&BGA`、RGfA 都建得出来，也都能包成纹理，不是这里的问题。
+    - CoreImage 读的环境变量（从这台 Mac 的 `dyld_shared_cache_arm64e.05` 里搜出来的 `CI_*`）里试了几个：
+      - **`CI_ENABLE_MPS=0` 能出图**（CoreImage 改用自己的模糊核，仍然用 GPU）；
+      - `CI_LOSSLESS_COMPRESSED_INTERMEDIATES=0`、`CI_LOSSY_COMPRESSED_INTERMEDIATES=0`、`CI_IOSURFACE_INTERMEDIATES=0`、`CI_RECYCLE_METAL_TEXTURES=0`、`CI_USE_INFLIGHT_INTERMEDIATES=0`、`CI_ENABLE_HALF_KERNELS=0`、`CI_INTERMEDIATE_SRGB_TEXTURES=0` 都不行。
+    - `CI_LOG_TEXTURE_CACHE=1`：RGBAh 时分配两张纹理就断言了，RGBA8 时分配了三张、正常出图。
+    - 把变量送进图标服务，试了三条，都不成：
+      - `sudo launchctl asuser 501 launchctl setenv` 进的不是桌面会话那个域；
+      - `sudo launchctl bsexec <Dock> launchctl setenv` 报 "141: Reentrancy avoided"；
+      - 在 `~/Library/LaunchAgents` 装一个登录时跑 `launchctl setenv CI_ENABLE_MPS 0` 的代理：`gui/501` 的 environment 里有了 `CI_ENABLE_MPS => 0`，但图标服务这项任务的 "inherited environment" 是登录时定下的，之后又起的几个实例照样报 MPS 错。
+      - 重新加载 Apple 的服务（`kickstart -k`）被 SIP 拒绝。这个代理 21:25 已从平板上删掉。
+    - **可行的做法（21:26 验证）**：CoreImage 在第一次模糊时才读 `CI_ENABLE_MPS`。在已经建好上下文（插件已加载）之后再 `setenv("CI_ENABLE_MPS","0",1)`，模糊照样出图。
+      - 所以可以由我们的 Metal 插件在加载时自己设这个变量，和它从启动参数设 `SHENG_LOG_GPU` 一样（`drivers/AdrenoMetal/NativeAdrenoMetalPlugin.mm:388-391`）。
+      - 打算加启动参数 `ci-mps=0`，只放进测试载荷，不覆盖环境里已有的值。
+      - 这是驱动改动，要用户同意。
+    - 根因（为什么 RGBAh 中间图交给 MPS 时是空的）还没找到。上面这个是绕开它的办法，图标仍由 GPU 画。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
