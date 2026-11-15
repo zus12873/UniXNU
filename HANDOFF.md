@@ -757,6 +757,28 @@
   - 20:39 数到 0 台。我起了一个最多等 150 秒的等待，被用户打断（用户说"continue"）。
   - 20:40:38 数到 1 台：a 7、b 7，都是 unbootable no；电压 3805 mV。
   - 20:40:43 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd2-s1-loggpu.img`（`691717af…`）：`Booting OKAY`，45 秒内引导程序没有回来。
+- **约 20:47 用户发来截图 #24**：用户按方式一在平板上装了 sudoers 文件（"parsed OK"、"OK"）。SSH 用的地址和上次一样。
+  - `sudo -n -l` 显示规则是 `(root) NOPASSWD: /bin/launchctl, /usr/bin/log, /bin/rm/etc/sudoers.d/zz-unixnu-test`：`/bin/rm` 和路径之间少了空格（截图里的命令就是这样），所以删这个文件的那一项不生效。
+  - 试完要请用户用密码自己删：`sudo rm /etc/sudoers.d/zz-unixnu-test`。这个文件在数据卷上，重启后还在。
+  - 20:48 这一趟开机 7 分钟，用户那一份图标服务已经 `runs = 15`、`successive crashes = 15`，`minimum runtime = 160`。
+  - 插件日志（`log-gpu=1` 起作用了）：每次启动都是：
+    - "native-metal: no device answer: the device has no answer for gpuCoreCount / maxVertexAmplificationCount / maxComputeThreadgroupMemory / isLargeMRTSupported / supportsComputeCompressedTextureWrite / supportsConditionalLoadStore"；
+    - 接着 "base limits: 22 fields of 264 bytes filled"；
+    - 约 0.13 秒后就是 MPS 第 335 行的错误；
+    - 中间插件没有记下任何拒绝（`NBLOG` 的 "refused"）。
+  - 20:49 `sudo launchctl debug gui/501/…` 报 "Configuration failed: 150: Operation not permitted while System Integrity Protection is engaged"。`sudo log config --mode "private_data:on"` 报 "Invalid Modes"。两条路都走不通。
+  - **20:50 用 JXA 在 SSH 里复现了**：探测脚本 `local-tools/tablet-ci-blur-probe.js`，用 `osascript -l JavaScript` 跑，对棋盘图做 CoreImage 高斯模糊。
+    - sigma=2、128 px 就触发，标准错误里是全文："MPSImageUnaryKernel.mm:335: failed assertion `[MPSImageGaussianBlur apply...] source may not be nil'"，退出码 134。
+    - 纯色图不触发（纯色模糊了还是自己）。
+    - 也就是 CoreImage 交给 MPS 模糊核的输入纹理是空的。
+  - **CPU 这条路不通**（20:51）：
+    - `CI_ENABLE_METAL_GPU=0` 时 `CIContext contextWithOptions:` 直接返回 nil；
+    - `FORCE_SOFTWARE_RENDERER=1`，或者用 `kCIContextUseSoftwareRenderer` 建上下文，都还是 "(metal 1)"，同一个断言；
+    - macOS 27 的 CoreImage 没有 CPU 后备。只能修 GPU。
+  - 修 GPU 的线索：
+    - `NMB_LOG_STDERR=1` 跑探测，插件在断言前没有任何 "refused"。新建纹理（`NativeBridgeMetalFrontend.mm:4500-4512`）、IOSurface 纹理（4515-4534）、纹理视图（1393-1394）失败时都会记。
+    - `NBTexture` 加了 `MTLTexture` 协议（`IOGPUMetalDeviceShim.h:217-234`）。
+    - 所以空纹理不是插件明着拒绝的，原因还没找到。上游以前修过几处 iconservicesagent 拿到 nil Metal 对象的问题（`NativeBridgeMetalFrontend.mm:552`、`:1660`、`:1764`、`:4214`）。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
