@@ -35,7 +35,10 @@ BS_DATA, FREE = 4, 7
 STRIDE = 48
 MIB = 1 << 20
 KERNEL_OFFSET = 0x4000      # the kernel's link address inside a 2 MiB block
-HEAD = 0x11000000           # the loaded image and the room behind it, a generous 272 MiB
+# The head the loader allocates at the window's start (HeadSize in DarwinBoot.c): the placed image and the room behind it,
+# DARWIN_WINDOW_RESERVE in MemoryWindow.h, 144 MiB for a 9 GiB window. 272 MiB stands for that reserve and a 128 MiB image.
+# No result here depends on it: every window starts at its floor in the 9 GiB run, which takes any head from 2 MiB to 4 GiB.
+HEAD = 0x11000000
 HELD_AT_TOP = 0x10000000    # model: the firmware's own allocations take the top 256 MiB of the highest free range
 BANK_1 = 0x880000000
 WINDOW = 0x8C0004000
@@ -253,6 +256,7 @@ class LargeWindowLayout(unittest.TestCase):
         self.assertEqual(runs, [(0x80000000, 0xd0000000), (0xd0010000, 0x100000000)])
         self.assertEqual(span, (0x80000000, 0x100000000))
         # Twenty small runs: the loader's table holds 16 ranges and the kernel adopts 14 of them.
+        # Two of the 16 slots go to bank 1's two runs below the window, which the kept range then excludes.
         small = [(0x90000000 + index * 0x2000000, 16 * MIB) for index in range(20)]
         self.assertEqual(len(self.outside(small + self.bank_1)), 16)
         runs, span = self.adoption(small + self.bank_1)
@@ -265,6 +269,7 @@ class LargeWindowLayout(unittest.TestCase):
         self.assertIn('vm_compression_limit=1572864', arguments)
         self.assertFalse([item for item in arguments if item.split('=')[0] in ('memory-outside', 'data-reset')])
         line = payload.check_args(['vm-swapin-io=1', 'memory-outside=0'] + arguments)
+        # The board's arguments and the two run arguments, joined by single spaces.
         self.assertEqual(len(line), 923)
 
 
