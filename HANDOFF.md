@@ -573,6 +573,20 @@
   - 下一步（等用户批准设计）：
     - 先只合并核心仓库的社区分支（试合并无冲突），用里面的模板打包工具，把我们自己的内核和载荷装进这个 v0 外壳，从内存启动；
     - 再做设备仓库合并和全部重编。设计文件已按这个顺序改好。
+- **18:39 用户："进fastboot了，帮我开始执行"**：批准了设计。
+  - fastboot（18:39:45）：a 7、b 7，都是 unbootable no；电压 3772 mV。
+  - 计划 `docs/superpowers/plans/2026-11-15-community-v0-wrap.md`（`9de4d61`），由我自己执行。
+  - Task 1（18:44）：`git merge --no-ff crossdarwin/boot/sheng-firmware-compat`，合并提交 `4ad8cab`，没有冲突。
+    - 社区带来的 `test_boot_template.py` 10 个测试 OK。
+    - 这次合并把 `drivers/AdrenoMetal` 和 `drivers/RamBlock` 两个子模块的指针改到了社区的版本，工作区里还是旧的检出（`git status` 显示 `M`）。第二阶段重编之前要 `git submodule update` 这两个。
+  - Task 2（18:50）：`local-tools/make-bootimg-v0-template.py` 加测试 `local-tools/test_make_bootimg_v0_template.py`，`8dc1b5d`。
+    - 先写的测试，5 个都失败；实现后 5 个 OK，端到端那个也真跑了，不是跳过。
+    - 和计划的小差别：先查载荷里有没有 `data-reset`，再查模板校验值，这样两个拒绝的测试互不依赖。
+  - Task 3（18:53）：用模板 `8fed0304…`、加载器取自 `SILICIUM_UEFI.bigwin-8407c84f.fd`，打了两份：
+    - `out/flash/boot-v0-cd.bigwin-ctl6.img`：载荷 `payload.bigwin-ctl6.img`（`f1338e96…`，6 GiB），214626304 字节，sha256 `d1dfe732…`；
+    - `out/flash/boot-v0-cd.bigwin-s1.img`：载荷 `payload.bigwin-s1.img`（`ccd883c6…`，7.5 GiB），214626304 字节，sha256 `5e747915…`。
+    - 两份的 kernel 都是 4904432 字节，ramdisk 209715200 字节，换进去的加载器 sha256 都是 `717d5649…`。
+    - 22 份日常镜像的 sha256 和 17:43 记的一样。打包脚本里第一次的前后核对没起作用：zsh 不按空格拆变量，算出来的是空的。之后按 17:43 的文件清单重算才比对上。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
