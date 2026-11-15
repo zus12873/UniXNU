@@ -898,6 +898,15 @@
       - 在 `refuse:` 里，拒绝原因含 `MadeBeforeRecovery` 时也调 `endRenderServerAfterGpuLoss()`，WindowServer 被 launchd 重启。
       - 代价：GPU 卡住时会退回登录窗口，程序会关掉，但不再整屏卡死。
       - GPU 为什么会卡住，另外查：现在能看到的只有"卡住前在画图标"这一点，内核的复位记录只在板级日志里，读不到。
+  - **约 22:23 用户："有没有更好的优化方案，不让gpu hung"**（22:23-22:26 查，给了做法，等用户选）
+    - 板级日志在 userdata 最后 8192 个 4 KiB 块（`../UniXNU-sheng/scripts/read-sheng-log.py:38`）。macOS 里 `diskutil list` 只有存储驱动开的几个窗口：disk1 是 Data 的物理存储，225.5 GB；还有 disk0、disk4、disk6 等。日志那一段不在任何一个里，从 macOS 读不到。
+    - 以前读不了，是因为 Linux 读取器是 v0 镜像。现在社区的 v0 外壳在本机能启动（18:29），按它的头部参数重打读取器也许能行，没试。
+    - 不改代码就能做的排除试验（只加启动参数）：
+      - `gpu-preempt=0`：只用一个环，没有环间抢占。默认是 2：高优先级走环 0，其余走环 1（`docs/zh/devices/sheng.md:562`）。
+      - `gpu-dcvs=0`：GPU 不随负载调频（`gpu-dcvs=1` 时随忙闲调频，`:921`）。
+      - 抢占和调频是 Adreno 移植里最常见的两个挂起来源，这只是经验判断，没有证据。
+    - 触发：已知三次卡住都发生在大量画图标的时候（打开系统设置、程序坞画图标、图标服务画图）。可以经 SSH 用 JXA 连续取一批程序图标来压，也可以请用户反复开关系统设置，再数日志里的 `MadeBeforeRecovery`。
+    - WindowServer 在 GPU 复位后自己重启这一条，作为兜底照样要做。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
