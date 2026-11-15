@@ -193,6 +193,24 @@
     - 日常镜像的命令行里有没有 `gpu-bo-contig`、`gpu-pool` 是多少：还没读（`boot.json` 里没有命令行，要从载荷里读）。
     - 分配失败时驱动置一个 `pressure` 标志，经 `NativeAdrenoUserClient.cpp:211` 报给用户态的图形运行库。运行库拿它做什么没读。
     - 驱动自己记着"哪个进程占多少图形内存"（`native_adreno_bo_owners`、`native_adreno_import_owners`），但只写进板级日志（`../UniXNU-sheng/package/BootLog.c:1073-1100`），本机读不到，`ioreg` 里也没有。
+  - 13:06:56 用户发来第二张照片（平板时钟 10:22，取样窗口加活动监视器 Memory 页）：
+    - 内存页：Physical 5.95 GB，Memory Used 4.61 GB，Cached Files 1.22 GB，Swap Used 0 bytes，压力图绿；App Memory 1.79 GB，Wired Memory 2.50 GB，Compressed 325.3 MB。已用加缓存是 5.83 GB，又是满的。
+    - 进程表：WindowServer 899.1 MB（pid 172），WallpaperAerialsExtension 344.5 MB（557），Activity Monitor 317.3 MB（1009），Notification Center 79.5 MB，Control Center 68.2 MB，System Settings 63.6 MB（970）；Terminal 标着 Not Responding。
+    - 终端（pid 841）：10:11:53.559 启动，10:22:13.646 取样，2281 次；Recent hangs 13；CPU 0.00%；Physical footprint 44.4M（峰值 53.7M）；Real 77.8 MB，Private 27.0 MB；版本 2.15 (489.10)。
+    - 取样的主线程 2281 次全在同一条路上，和 D3 逐层相同：`-[NSApplication run]` → `CA::Transaction::commit()` → `CA::Context::commit_transaction` → `CA::Layer::display_if_needed` → `-[NSViewBackingLayer display]` + 1268 → AppKit 里三层没有名字的（`0x191bb5000 + 0x11b9288`、`+ 0x11b8b00`、第三层被窗口底边截掉）。再往下没拍到。窗口没有放到全屏。
+    - 时间：终端启动到打出 `[Restored …10:13:03]` 用了 70 秒；到取样时已经 10 分 20 秒，还在同一条路上。
+    - 按两张照片对时间，这次开机大约在真实时间 12:50（推算，没有读数）；取样时是开机后约 16.7 分钟，终端启动时是开机后约 6.4 分钟。
+    - 要收回的一句：上面"卡住都发生在要画新内容的时候"说得太宽。活动监视器（pid 1009）和系统设置（pid 970）都是在终端（pid 841）之后启动的，开窗口、开取样窗口、开信息面板都正常。卡的是某些程序（终端、Music、Messages），不是所有新画面。
+    - 13:08 请用户接着做：在取样窗口右边滚动条的空白处点一下翻页，连拍 3 页；信息面板的 Statistics 页拍两张，隔半分钟；最后点 Save…。结果还没有。
+  - 13:09 到 13:13 读代码，和"为什么偏偏是终端"有关的几件事：
+    - 终端画字走的是普通的 CPU 画字接口。这台 Mac（macOS 27.2.1）上的 Terminal 2.15 (488.9) 导入的是 `CTFontDrawGlyphsWithAdvances`，没有导入 Metal、IOSurface、Core Image 的符号。平板上是 2.15 (489.10)，没有直接读过。所以"终端卡是因为它自己在用 GPU"基本排除。
+    - 日常镜像的命令行（从 `out/flash/boot-v4-flash.prev.img` 里读出来）没有 `gpu-pool`、`gpu-bo-contig`、`cs-lazy`。但内核里还有一串内置参数（`../UniXNU-sheng/package/BootWatchdogPolicy.c:58-60`，在日常内核 `kernel.macho` 里也搜到了 `cs-lazy=1` 和 `gpu-pool=0`）：`timebase-user=1 cs-lazy=1 keyboard-lone=1 armcpu-edge=1 boot-payload-release=1 thermal=1 thermal-ms=100 thermal-level=1 board-clock=7 gpu-pool=0`。
+    - 所以 `gpu-bo-contig` 是 0，驱动从不要连续内存，上游注释里"扫描空闲页"那种卡在本机排除。
+    - `cs-lazy=1` 是开着的。这是代码页读入时校验签名的一条路（`profiles/os/macos-27.3-26C5035r/patches/xnu-12377/cshash-native4k-lazy.patch`）：内核用 4 KiB 页，签名按 16 KiB 一块；一块里的某一页第一次要用时，把这一块的页逐页读进来、拼起来算哈希，再让缺页重试（`VM_FAULT_RETRY`）。补丁开头写着 "Has not run on hardware"，设备文档 298 行写着 "Not yet run on hardware"。
+    - 本机自己加的 `../UniXNU-sheng/patches/xnu-12377/sheng-text-fixup-verified-pagein.patch` 也在同一带：封存卷按 16 KiB 一块校验，块里已经在内存的页可能被改写过，所以校验前先把原字节放回一份副本。
+    - 和内存满的关系（推断，没有验证）：内存没满时，代码页读进来就一直在；满了以后被回收的页要重新读、重新校验，这两条路才被大量走到，而且常常是一块里只缺一两页。终端要用别的程序不用的字体和代码页，先中招说得通，但没有证据。
+    - 能读这条路计数的现成命令：`sysctl vm.cs_native4k_stats`（`bsd/kern/ubc_subr.c:6789`）。会打出 lazy、auth、bad、err、ms、各处的 retry 和 unready；补丁说 unready 必须一直是 0。本机从没读过。
+    - 下一趟顺序里的第一条命令改成它：登录后先输 `sysctl vm.cs_native4k_stats` 拍照，再输 `vm_stat`、`sudo purge`；`purge` 之后再输一次 `sysctl vm.cs_native4k_stats`。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
