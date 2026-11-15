@@ -151,6 +151,7 @@ git commit -m "feat(devicetree): owned_memory_size up to 9 GiB"
 **Files:**
 - Create: `local-tools/make-payload-variant.py`
 - Create: `local-tools/tests/test_make_payload_variant.py`
+- Modify: `local-tools/adt-chosen.py`（`read_node` 多给出每个属性的值在文件里的偏移；它的命令行行为和现有测试不变）
 
 **Interfaces:**
 - Produces: 命令行
@@ -196,7 +197,7 @@ Expected: 新的 8 个测试 FAIL（工具不存在）。
 
 - [ ] **Step 3: 实现工具**
 
-设备树的读法照 `local-tools/adt-chosen.py` 的 `read_node`（节点头是两个小端 32 位数：属性个数、子节点个数；每个属性是 32 字节名字、4 字节长度（只取低 31 位）、值，按 4 字节补齐）。本工具只需要找到 `/chosen` 下目标属性的值在文件里的偏移，原地改 8 个字节。
+设备树只有一份解析代码：`local-tools/adt-chosen.py` 的 `read_node`。把它返回的属性从 `(名字, 值)` 改成 `(名字, 值, 值在文件里的偏移)`，`adt-chosen.py` 自己的 `main` 跟着改，现有的 3 个黑盒测试必须照旧通过。新工具用 `importlib.util.spec_from_file_location` 载入 `adt-chosen.py`（文件名带连字符，不能直接 import），调用它的 `read_node` 找到 `/chosen` 下目标属性的偏移，原地改 8 个字节；不另写一份解析。
 
 - [ ] **Step 4: 运行，确认通过**
 
@@ -206,7 +207,7 @@ Expected: `Ran 51 tests`，`OK`。
 - [ ] **Step 5: 提交**
 
 ```bash
-git add local-tools/make-payload-variant.py local-tools/tests/test_make_payload_variant.py
+git add local-tools/make-payload-variant.py local-tools/tests/test_make_payload_variant.py local-tools/adt-chosen.py
 git commit -m "tools: derive a payload that differs in window values and arguments only"
 ```
 
