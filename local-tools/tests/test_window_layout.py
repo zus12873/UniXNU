@@ -1,5 +1,5 @@
-"""The memory layout of the 12 GiB sheng unit with the kernel window at the top of DRAM bank 1, worked out on the host from
-the three places that define it:
+"""The memory layout of the 12 GiB sheng unit with the kernel window the 9 GiB run 0x8C0000000..0xB00000000 of DRAM bank 1,
+worked out on the host from the three places that define it:
 
     ../uefi-sheng     MemoryMapLib.c      the firmware's memory table
     ../UniXNU-sheng   board.toml          the window's size and floor, and the memory the kernel must leave alone
@@ -7,7 +7,8 @@ the three places that define it:
 
 The loader's functions are the production code, compiled here as its own tests compile it. The kernel's part is a
 transcription of arm_vm_outside_init in window-outside-memory-adoption.patch: the kernel adopts the listed runs that lie
-below the window, less the kept ranges, and gives all of it up without a message when the runs span more than 4 GiB.
+below the window, less the kept ranges, and gives all of it up without a message when the runs span more than 4 GiB. Bank 1
+is kept out whole, so the kernel adopts the low bank only.
 
     python3 -I -B -m unittest discover -s local-tools/tests -v
 """
@@ -23,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from unixnu import devicetree  # noqa: E402
+from unixnu import devicetree, payload  # noqa: E402
 
 HEADER = ROOT / 'drivers/DarwinBoot/DarwinBootPkg/Driver/MemoryWindow.h'
 MAP = ROOT.parent / 'uefi-sheng/Platforms/Xiaomi/shengPkg/Library/MemoryMapLib/MemoryMapLib.c'
@@ -37,9 +38,9 @@ KERNEL_OFFSET = 0x4000      # the kernel's link address inside a 2 MiB block
 HEAD = 0x11000000           # the loaded image and the room behind it, a generous 272 MiB
 HELD_AT_TOP = 0x10000000    # model: the firmware's own allocations take the top 256 MiB of the highest free range
 BANK_1 = 0x880000000
-WINDOW = 0x980004000
-BANK_1_RUNS = [(0x880000000, 0x8B9D00000), (0x8B9F00000, 0x8BBD00000), (0x8C0000000, 0x980000000)]
-SPAN = (0x880000000, 0x980000000)
+WINDOW = 0x8C0004000
+LOW_RUNS = [(0xbab00000, 0xccd00000), (0xccf80000, 0xd0000000), (0xd0010000, 0xd8000000), (0xe6720000, 0xff800000)]
+LOW_SPAN = (0xbaa00000, 0xff800000)
 
 SOURCE = '''
 #include <stdint.h>
@@ -153,10 +154,10 @@ def flattened(tree):
 
 
 @unittest.skipUnless(MAP.is_file() and BOARD.is_file(), 'needs ../uefi-sheng and ../UniXNU-sheng next to this repository')
-class TopWindowLayout(unittest.TestCase):
+class LargeWindowLayout(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.work = tempfile.TemporaryDirectory(prefix='top-window-')
+        cls.work = tempfile.TemporaryDirectory(prefix='large-window-')
         work = Path(cls.work.name)
         (work / 'layout.c').write_text(SOURCE)
         # The header's other functions are not called here.
@@ -182,11 +183,12 @@ class TopWindowLayout(unittest.TestCase):
         return [(number(base), number(size)) for base, _, size in (str(item).partition(':')
                                                                     for item in self.adt['owned_memory_outside_reserved'])]
 
-    def window(self, free):
-        """Where the loader starts the window on this firmware table, with the board's size and floor."""
+    def window(self, free, size=None, floor=None):
+        """Where the loader starts the window on this firmware table, with the board's size and floor unless given."""
+        size = number(self.adt['owned_memory_size']) if size is None else size
+        floor = number(self.adt.get('owned_memory_floor', '0')) if floor is None else floor
         blob = b''.join(struct.pack('<I4xQQQQ8x', kind, base, 0, size >> 12, 0) for kind, base, size in memory_map(free))
-        return self.lib.start(blob, len(blob), STRIDE, KERNEL_OFFSET, HEAD, number(self.adt['owned_memory_size']),
-                              number(self.adt.get('owned_memory_floor', '0')))
+        return self.lib.start(blob, len(blob), STRIDE, KERNEL_OFFSET, HEAD, size, floor)
 
     def outside(self, free):
         """The (base, size) pairs the loader lists as free memory outside that window, in the board's table."""
@@ -202,13 +204,22 @@ class TopWindowLayout(unittest.TestCase):
     def test_firmware_table_lists_bank_1_to_the_top(self):
         self.assertEqual(self.bank_1, [(0x880000000, 0x39D00000), (0x8B9F00000, 0x01E00000), (0x8C0000000, 0x240000000)])
 
-    def test_window_starts_at_the_floor(self):
+    def test_board_window_is_the_9_gib_run(self):
+        self.assertEqual(number(self.adt['owned_memory_size']), 0x240000000)
+        self.assertEqual(number(self.adt['owned_memory_floor']), 0x8C0000000)
         self.assertEqual(self.window(self.free), WINDOW)
 
-    def test_generator_accepts_the_board_options(self):
-        self.assertEqual(devicetree.memory_floor(self.adt), [('darwinboot-memory-floor', struct.pack('<Q', 0x980000000))])
+    def test_planned_windows_start_at_their_floors(self):
+        for size, floor, start in [(0x1E0000000, 0x920000000, 0x920004000), (0x180000000, 0x980000000, 0x980004000),
+                                   (0x1E0000000, 0x8C0000000, 0x8C0004000), (0x200000000, 0x900000000, 0x900004000)]:
+            with self.subTest(size=hex(size), floor=hex(floor)):
+                self.assertEqual(self.window(self.free, size, floor), start)
 
-    def test_generated_tree_carries_the_floor_and_the_kept_ranges(self):
+    def test_generator_accepts_the_board_options(self):
+        self.assertEqual(devicetree.memory_floor(self.adt), [('darwinboot-memory-floor', struct.pack('<Q', 0x8C0000000))])
+        self.assertEqual(devicetree.memory_size(self.adt), [('darwinboot-memory-size', struct.pack('<Q', 0x240000000))])
+
+    def test_generated_tree_carries_the_window_and_the_kept_ranges(self):
         # The generator's whole path from the board's options to /chosen, read back with the tool that checks a built payload.
         work = Path(self.work.name)
         (work / 'hardware.dtb').write_bytes(flattened(HARDWARE))
@@ -217,49 +228,44 @@ class TopWindowLayout(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), [
-            'darwinboot-memory-size 8 0x180000000',
+            'darwinboot-memory-size 8 0x240000000',
             'darwinboot-memory-excluded 1024 64 empty pairs',
-            'darwinboot-memory-floor 8 0x980000000',
+            'darwinboot-memory-floor 8 0x8c0000000',
             'darwinboot-loader-inputs 64 4 empty pairs',
             'darwinboot-memory-outside 256 16 empty pairs',
-            'darwinboot-memory-outside-kept 32 0xd0000000+0x10000 0x80000000+0x800000000',
+            'darwinboot-memory-outside-kept 32 0xd0000000+0x10000 0x880000000+0x280000000',
         ])
 
-    def test_kernel_adopts_the_three_runs_below_the_window(self):
+    def test_kernel_adopts_only_the_low_bank(self):
         runs, span = self.adoption(self.free)
-        self.assertEqual(runs, BANK_1_RUNS)
-        self.assertEqual(span, SPAN)
-        self.assertEqual(sum(end - base for base, end in runs), 0xFBB00000)
+        self.assertEqual(runs, LOW_RUNS)
+        self.assertEqual(span, LOW_SPAN)
+        self.assertEqual(sum(end - base for base, end in runs), 0x36350000)
+        self.assertTrue(all(end <= 0x100000000 for _, end in runs))
 
-    def test_everything_below_bank_1_is_kept_out(self):
-        # Whatever the firmware leaves free below bank 1, even all of it: one stray run there would stretch the span
-        # past 4 GiB and the kernel would adopt nothing.
-        runs, span = self.adoption([(0x80000000, BANK_1 - 0x80000000)] + self.bank_1)
-        self.assertEqual(runs, BANK_1_RUNS)
-        self.assertEqual(span, SPAN)
-
-    def test_without_the_new_kept_range_nothing_is_adopted(self):
-        self.assertIn('0x80000000:0x800000000', self.adt['owned_memory_outside_reserved'])
+    def test_without_the_bank_1_kept_range_nothing_is_adopted(self):
+        self.assertIn('0x880000000:0x280000000', self.adt['owned_memory_outside_reserved'])
         self.assertEqual(self.adoption(self.free, kept=[(0xd0000000, 0x10000)]), ([], None))
 
-    def test_keeping_the_newly_listed_memory_out(self):
-        # The comparison image of the first hardware run: the 443 MiB the measured table added on 2026-11-14 stay out.
-        runs, span = self.adoption(self.free, kept=self.kept() + [(0x8A0000000, 0x20000000)])
-        self.assertEqual(runs, [(0x880000000, 0x8A0000000), (0x8C0000000, 0x980000000)])
-        self.assertEqual(span, SPAN)
-        self.assertEqual(sum(end - base for base, end in runs), 0xE0000000)
-
-    def test_fragmented_low_bank_keeps_the_span(self):
-        bank_1_pairs = [(base, end - base) for base, end in BANK_1_RUNS]
-        # Twenty small free runs in the low bank: the table keeps the largest runs, the three of bank 1 among them.
+    def test_bank_1_stays_out_whatever_the_low_bank_looks_like(self):
+        # One free run across the whole low bank: bank 1 is still out, and the span is exactly the low bank.
+        runs, span = self.adoption([(0x80000000, 0x80000000)] + self.bank_1)
+        self.assertEqual(runs, [(0x80000000, 0xd0000000), (0xd0010000, 0x100000000)])
+        self.assertEqual(span, (0x80000000, 0x100000000))
+        # Twenty small runs: the loader's table holds 16 ranges and the kernel adopts 14 of them.
         small = [(0x90000000 + index * 0x2000000, 16 * MIB) for index in range(20)]
-        self.assertLessEqual(set(bank_1_pairs), set(self.outside(small + self.bank_1)))
-        # Twenty runs larger than the 30 MiB run of bank 1 push that one out of the table; the span stays.
-        large = [(0x90000000 + index * 0x3000000, 40 * MIB) for index in range(20)]
-        runs, span = self.adoption(large + self.bank_1)
-        self.assertEqual(runs, [BANK_1_RUNS[0], BANK_1_RUNS[2]])
-        self.assertEqual(span, SPAN)
-        self.assertEqual(sum(end - base for base, end in runs), 0xF9D00000)
+        self.assertEqual(len(self.outside(small + self.bank_1)), 16)
+        runs, span = self.adoption(small + self.bank_1)
+        self.assertEqual(len(runs), 14)
+        self.assertEqual(sum(end - base for base, end in runs), 0xE000000)
+        self.assertTrue(all(end <= 0x100000000 for _, end in runs))
+
+    def test_command_line_fits_with_the_run_arguments(self):
+        arguments = tomllib.loads(BOARD.read_text())['os_overrides'][PROFILE]['payload']['kernel_args']
+        self.assertIn('vm_compression_limit=1572864', arguments)
+        self.assertFalse([item for item in arguments if item.split('=')[0] in ('memory-outside', 'data-reset')])
+        line = payload.check_args(['vm-swapin-io=1', 'memory-outside=0'] + arguments)
+        self.assertEqual(len(line), 923)
 
 
 if __name__ == '__main__':
