@@ -669,6 +669,23 @@
   - **约 19:45 用户："可以"**（cd2 第一次上机，暂记 CD2-1）
     - fastboot（19:46:33）：a 7、b 7，都是 unbootable no；电压 3756 mV；sha256 `aaa4e60c…` 相符。
     - 19:46:40 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd2-s1.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+    - **约 19:56 用户发来照片 #21、#22："avtivity monitor和terminal在我打开系统设置之后，就开始进入卡顿不可交互状态，系统设置在短暂卡顿后，可交互但图标加载异常"**
+      - #22（平板时钟 11:30）：
+        - 进了桌面，终端能用，标题栏也画出了文件夹小图标；
+        - 物理内存 **7.50 GB**；已用 5.43 = 程序 2.17 + Wired 2.67 + 压缩 0.5761；缓存 2.08；交换 0；压力绿；
+        - `sysctl vm.cs_native4k_stats`：`lazy 1 blobs 822 auth 90167 bad 0 err 0 … reval 0 range 0`；
+        - 进程表前几名：mediaanalysisd 393.8 MB、WallpaperAerialsExtension 344.7 MB、Terminal 255.1 MB。
+      - #21（11:32，打开系统设置之后）：
+        - 第二次 `sysctl`：`auth 90368 bad 0 err 0 … reval 0`；
+        - 内存：已用 5.50 = 程序 2.38 + Wired 2.76 + 压缩 0.3394；缓存 1.94。已用加缓存 7.44，已经满了；
+        - 系统设置左栏的图标大多是空白方块；活动监视器上是彩色转圈。
+      - 读法：
+        - 第一处问题（WindowServer 被代码签名杀掉）这一趟还没出现。内存满时校验失败数仍是 0，但时间还短。
+        - 第二处问题还在：系统设置一下子要很多图标，图标服务多半又在 Metal 断言里崩了、被推迟重启；活动监视器和终端也要图标，跟着卡住。待崩溃报告证实。
+      - 一条线索：`../UniXNU-sheng/board.toml:83-85` 给 iPadOS 的 iconservicesagent 设了环境变量 `FORCE_SOFTWARE_RENDERER = "0"`、`CI_ENABLE_METAL_GPU = "0"`。上游文档说这是 24A446 原厂的设置。macOS 的覆盖把 `payload.runtime.launchd_job_environment` 整个去掉了，macOS 上的 iconservicesagent 没有这两个变量（这台 Mac 上它的 plist 里 `EnvironmentVariables` 也是空的）。
+      - 下一步：
+        1. 控制台崩溃报告里这次的 iconservicesagent，拍断言原文；
+        2. 不改镜像先试：终端能用时 `launchctl setenv CI_ENABLE_METAL_GPU 0`、`launchctl setenv FORCE_SOFTWARE_RENDERER 1`、`killall iconservicesagent`，再开系统设置看图标。这是让 CoreImage 改走 CPU 的推测，不一定生效；重启就失效。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
