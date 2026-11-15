@@ -559,6 +559,20 @@
   - fastboot（18:29:22）：a 7、b 7，都是 unbootable no；电压 3780 mV。模板解压后的 sha256 `6d96d27a…` 相符。
   - 18:29:31 `boot-sheng.py out/downloads/cd-template-218fdcce/sheng-recovery-218FDCCE-boot.img`：`Sending 'boot.img' (161468 KB) OKAY`，`Booting OKAY`，**45 秒内引导程序没有回来**（18:30:26 数到 0 台）。
   - 11-13 我们自己的 v0 是 0.4 秒就回来；这次引导程序接受了社区的 v0 模板，镜像在跑。屏幕上是什么，等用户的照片。
+  - **约 18:33 用户发来照片 #16："启动卡在这了"**。
+    - 菜单没有停住，自己进了社区的 macOS 26 诊断内核，多半就是那个 `fallback_timeout = 30`。内核在挂系统卷时 panic：
+      - "SHENG - FIRST PANIC / PANIC: UFS ROOT FAILURE: no userdata partition"
+      - "stage=GPT entries prepared=0 published=0 reads=0 failures=0 … result=00000000"
+      - "HC cap=3587031f ver=00000400 hcs=0000010f hce=00000001"
+      - "CMD n=6 type=01 op=28 lun=00 ocs=00 rsp=21000000"
+      - "SMMU slot=104"
+      - 异常是 "Synchronous exception taken while SP1 selected at pc 0xfffffe00073bc878, esr 0x96000021"，屏幕上还有一个二维码。
+    - 说明社区的 v0 外壳在本机能走完整条链：引导程序 → 社区固件 → 加载器 → XNU 内核 → UFS 驱动（读了 GPT）。
+    - 停住的原因是社区这份旧诊断内核的 UFS 驱动没在 GPT 里找到 userdata。它没有找到数据分区，也就没有写用户数据。这和我们的系统无关。
+    - 要用户按住电源键加音量下键回 fastboot。
+  - 下一步（等用户批准设计）：
+    - 先只合并核心仓库的社区分支（试合并无冲突），用里面的模板打包工具，把我们自己的内核和载荷装进这个 v0 外壳，从内存启动；
+    - 再做设备仓库合并和全部重编。设计文件已按这个顺序改好。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
