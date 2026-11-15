@@ -933,6 +933,18 @@
 - **约 22:35 用户："可以"**（基线上机，暂记 CD5-BASE-1）
   - fastboot（22:35:39）：a 7、b 7，都是 unbootable no；电压 3852 mV；sha256 `c5aa28e9…` 相符。
   - 22:35:50 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd5-s1.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+  - 约 22:38 用户连上 Wi-Fi。
+    - 22:39 起在平板上跑 `tablet-icon-stress.js 6`，同时用 `log stream` 把事件录进 `/tmp/gpu-events.log`：GpuRecoveryVictim、MadeBeforeRecovery、"GPU context is lost"、"timed out fence"、图标服务启动。
+    - 用 `log show --last 10m` 数不准：上一趟 WindowServer 也是 PID 173，尾巴算进来了，所以改用 stream。
+    - 约 22:44 用户开关了系统设置几次（用户原话"好了，鼠标渲染会飘"）。
+  - **基线结果**（平板时间 06:39:51 到 06:45:21，事件拷到 `data/tablet-logs/20261115-hang-ab/`）：
+    - 压测 6 轮，66 个程序，2376 张位图，0 个失败，每轮约 42 秒。
+    - **一次 GPU 恢复，落在 NotificationCenter [456]**：06:44:09 到 06:44:30，18 条 "command buffer refused: setDepthStencilState: depth/stencil state: NotImplemented(MadeBeforeRecovery)"。
+    - WindowServer 只记了两次 "timed out fence"（06:44:24、06:44:33），没有被拒绝。PID 一直是 173，CPU 1.2%，画面没卡死，兜底也就没触发。
+    - 也就是这次挂住的是 NotificationCenter 的提交，只有它的设备被恢复；它的对象之后都被拒绝（小组件之类可能画不出来），它不会被重启。
+    - 图标服务：06:39:51 启动的 [911] 一直在，`successive crashes = 2` 没变。
+    - 指针"飘"仍在，是另一回事。
+  - 下一步：A（`gpu-preempt=0`）同样的做法。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
