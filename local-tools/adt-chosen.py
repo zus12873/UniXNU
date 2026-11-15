@@ -23,7 +23,7 @@ class Malformed(Exception):
 
 
 def read_node(blob, at, depth=0):
-    """(properties as (name, value) in order, children as the same tuples, offset behind the node)"""
+    """(properties as (name, value, offset of the value in blob) in order, children as the same tuples, offset behind the node)"""
     if depth > 64 or len(blob) - at < 8:
         raise Malformed('a node is cut off')
     count, children = struct.unpack_from('<II', blob, at)
@@ -37,7 +37,7 @@ def read_node(blob, at, depth=0):
         at += 36
         if length > len(blob) - at:
             raise Malformed('a property value is cut off')
-        properties.append((name.split(b'\0', 1)[0].decode('ascii', 'replace'), blob[at:at + length]))
+        properties.append((name.split(b'\0', 1)[0].decode('ascii', 'replace'), blob[at:at + length], at))
         at += length + (-length % 4)
         if at > len(blob):
             raise Malformed('the padding of a property is cut off')
@@ -46,6 +46,17 @@ def read_node(blob, at, depth=0):
         child, at = read_node(blob, at, depth + 1)
         nodes.append(child)
     return (properties, nodes), at
+
+
+def find_chosen(blob):
+    """The /chosen node of a blob that is exactly one device tree."""
+    root, end = read_node(blob, 0)
+    if end != len(blob):
+        raise Malformed(f'{len(blob) - end} bytes behind the root node')
+    chosen = [child for child in root[1] if dict((name, value) for name, value, _ in child[0]).get('name') == b'chosen\0']
+    if len(chosen) != 1:
+        raise Malformed(f'{len(chosen)} /chosen nodes')
+    return chosen[0]
 
 
 def describe(value):
@@ -64,16 +75,10 @@ def main():
         sys.exit(__doc__)
     path = Path(sys.argv[1])
     try:
-        blob = path.read_bytes()
-        root, end = read_node(blob, 0)
-        if end != len(blob):
-            raise Malformed(f'{len(blob) - end} bytes behind the root node')
+        chosen = find_chosen(path.read_bytes())
     except (OSError, Malformed) as error:
         sys.exit(f'{REFUSAL}{path}: {error}')
-    chosen = [child for child in root[1] if dict(child[0]).get('name') == b'chosen\0']
-    if len(chosen) != 1:
-        sys.exit(f'{REFUSAL}{path}: {len(chosen)} /chosen nodes')
-    for name, value in chosen[0][0]:
+    for name, value, _ in chosen[0]:
         if name.startswith('darwinboot-'):
             print(name, len(value), describe(value))
 
