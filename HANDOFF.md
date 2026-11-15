@@ -441,6 +441,26 @@
     4. `launchctl print system/com.apple.iconservices.iconservicesagent | head -30`，再把 `system` 换成 `gui/$(id -u)` 各拍一张；
     5. `cd /Library/Logs/DiagnosticReports`，`less Terminal_2026-11-14-082152_MacBook-Pro.spin`，输入 `/iconservicesagent` 回车跳过去，拍那一屏；
     6. 照常用 20 分钟，看内存满了以后新开程序还卡不卡。
+- **17:45 用户："看看远端提交有没有新的镜像编译分支"**（17:46 拉取了四个仓库的全部远端，另外拉了 rponeawa 和 CrossDarwin 的 UniXNU-sheng、CrossDarwin 的 uefi-sheng；只拉取，没有合并）
+  - 远端没有现成镜像：仓库里只有源码，镜像要用本机的芯片号自己打。上游 CI 用的是他们自己的私有芯片号。
+  - 和内存问题有关的两个：
+    1. **CrossDarwin/UniXNU_macOS 的 `vm/signed-text-revalidation`**（`3be2a10`，11-14 19:49），新增内核补丁 `profiles/os/macos-27.3-26C5035r/patches/xnu-12377/cshash-signed-text-revalidation.patch`，加进 `patches/xnu/series`，还带 `tests/codesign/test_text_fixup.py`。
+       - 它的说明："Signed-text fixups leave resident vnode pages different from their signed bytes. Hash exact configured replacements as their original bytes during eager and lazy 16 KiB authentication and derived 4 KiB validation."
+       - 我们的内核在开机时改两处代码页：`../UniXNU-sheng/board.toml:242` 的 `text_fixups`（`dyld_shared_cache_arm64e.03` 偏移 `0x5de1134`，`08060037` 换成 `1f2003d5`）；`timebase-user=1` 改 libsystem 里读时钟的例程（`timebase-user-scaled-read.patch`）。
+       - 这些页在内存里和签名不一样。等内存满了、同一个 16 KiB 块里有页被回收再读回来时，按块重新校验（`cs-lazy=1` 走的就是按块校验）会对不上。块被记成 bad，`cshash-native4k-lazy.patch:349-352` 会给 `cs_native4k_lazy_bad` 加一。
+       - 这和"内存第一次用满之后才出事"对得上：那正是代码页第一次被回收、再读回来的时候。
+       - 不在 upstream/main 里，也不在我们的内核里。我们自己的 `sheng-text-fixup-verified-pagein.patch` 只管 decmpfs 读页那一条路，不管按块校验。
+       - 校验失败以后进程是被杀还是卡住，没核对。先看证据：`sysctl vm.cs_native4k_stats` 里 `bad` 不为 0，就基本坐实。
+       - 我 13:17 因为上游 run139 也开着 cs-lazy 而把它降了级。现在看，上游 11-14 晚上专门修了这条路，降级的理由不够。
+    2. **rponeawa 的 `f4e0bc2`**（今天 17:42，"fix: reserve firmware-owned DRAM during memory adoption"）：`board.toml` 把 4 GiB 以下几块固件自己用的内存排除在收编之外，改了 `package/GpuMemoryPool.cpp`。这几块是 mpss、mpss_dsm、TZ/XBL/QTEE、trusted UI、llcc_lpi 等，原来只排除了音频 DSP 的 64 KiB。
+       - 这关系到低位内存区的收编：第 3 步，以及日常镜像默认的收编。
+       - 管不到 9 GiB 那次在登录窗口闪：那 1.5 GiB 在 4 GiB 以上。
+  - 其他分支：
+    - CrossDarwin `boot/sheng-firmware-compat`（"Record the qualified desktop boot"，UniXNU_macOS 同名分支 "Preserve the qualified sheng firmware transport"）；
+    - uefi-sheng upstream `sheng` 合进了早期看门狗 PR #7（看门狗不要照搬，见 16:24 一条）；
+    - rponeawa 的三个充电分支；
+    - 上游主线今天下午的几个只有文档。
+  - 建议：先启动刚打好的不带图标服务的测试镜像，拿到能用的终端，输 `sysctl vm.cs_native4k_stats` 拍一张。`bad` 不为 0，再请用户同意把这个补丁加进内核（这是内核改动），打一份 7.5 GiB 的测试镜像从内存启动，看内存满了以后还卡不卡。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
