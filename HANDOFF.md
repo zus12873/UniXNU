@@ -977,6 +977,19 @@
   - 打算的修法（驱动改动，要用户同意）：盖子合上时触摸屏驱动先发一次"全部松开"，之后丢掉报点，打开后再恢复；只看盖子（lid），不看折到背后（tablet），折到背后还要用屏幕。能不能顺便把背光关掉另说。
   - WindowServer 现在这样多半自己好不了，只能重启（SIP 不让杀它）。
 - 同一时间暂停的事：Core Image 修复的 PR。查过没人做过（AdrenoMetal#37 改的是纹理优化设置，它自己在 sheng 上的图标测试是 FAIL，崩溃原因写着"待分析"）。打算走 sheng 仓库自己的路：macOS 启动参数加 `exec-env=iconservicesagent:CI_ENABLE_MPS=0`（内核补丁 `profiles/os/macos-27.3-26C5035r/patches/xnu-12377/macos-droidvm-k27-parity.patch` 的 exec-env，上游已有），不碰插件；插件那份在 AdrenoMetal 仓库，进不了 sheng 的 PR。提交前要上机验证一次；外置构建盘 `/Volumes/UniXNUBuild` 现在没挂上。
+  - 约 23:20 用户选"先验证再提交"（原话"1"）。
+  - 改动已写好、没提交没推：工作树 `../UniXNU-sheng-pr-mps`，分支 `fix/macos-icon-agent-mps`，基于 `upstream/main` `24aab96`。
+    - `board.toml`：macOS `kernel_args` 末尾加 `exec-env=iconservicesagent:CI_ENABLE_MPS=0`，上面加说明；命令行 862 → 905 字节。
+    - `porting.toml`：board.toml 归 configuration、usb、packaging 三个区，CI 要求三个区都改 findings（照 `c73f9c0` 的写法），再加 gpu 区一条。本地的和上游 main 的 `scripts/porting-record.py check --base upstream/main` 都过。
+  - 试验镜像（等盘接上）：`payload.cd5-base.img` → `payload.cd5-s1-execenv.img`，参数是 `--set darwinboot-memory-size=0x1E0000000 --set darwinboot-memory-floor=0x920000000 --arg memory-outside=0 --arg enable-jobs=com.openssh.sshd --arg exec-env=iconservicesagent:CI_ENABLE_MPS=0`。
+    - 不带 `ci-mps=0`，变量只能从 exec-env 来；去掉 `log-gpu=1`，否则约 1005 字节超限。
+    - 用 `make-bootimg-v4.py <output>/boot/boot-bigwin.img … out/flash/boot-v4-payload.bigwin-cd5-s1-execenv.img`，再用 `bootimg-contents.py --payload` 核对。
+  - 上机要看：
+    - `kern.bootargs` 里有 exec-env、没有 ci-mps；
+    - 用户那份 iconservicesagent 的环境（`ps eww`）里有 `CI_ENABLE_MPS=0`；
+    - 日志里没有 `MPSImageUnaryKernel`；`launchctl print gui/501/com.apple.iconservices.iconservicesagent` 的崩溃次数不涨；
+    - `tablet-icon-stress.js` 跑两轮没有失败、代理 PID 不变。
+  - 过了再在 gpu 区加 device 证据、提交、推到 `zus12873/UniXNU-sheng`、开 PR 到 `UniXNU/UniXNU-sheng`。PR 里写明：和 AdrenoMetal#37 不重复；插件里的 `ci-mps` 改动只在本地，不提交。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
