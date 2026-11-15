@@ -866,6 +866,19 @@
 - **约 22:04 用户："可以"**（同一份镜像第二次上机，暂记 CD4-2）
   - fastboot（22:05:18）：a 7、b 7，都是 unbootable no；电压 3829 mV；sha256 `4ba1bede…` 相符。
   - 22:05:24 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+  - **约 22:12 用户："连上wifi了，现在桌面上，鼠标指针会闪，从一个地方突然跳到另个地方，但我实际位移没有那么多跳"**（终端、系统设置的情况用户还没说）
+    - 22:12:40 SSH，开机 7 分钟，负载 2.01。WindowServer 不在 CPU 前几名。
+    - **这一趟没有 GPU 复位**：
+      - 12 分钟里没有 "MadeBeforeRecovery"，也没有 "command buffer completion failure"。
+      - 平板时间 06:08:14 连上 Wi-Fi 时照样有 "Time Change: accumulated change of 67099.739 seconds"，之后没出事。
+      - 所以上一趟的卡死不是对时引起的，那次 GPU 卡住是偶发的。WindowServer 在 GPU 复位后恢复不过来，这个问题还在，以后要处理。
+    - **图标服务稳定**：
+      - 用户那一份 [863] 06:08:37 启动，到 22:13 还在跑；`runs = 3`、`successive crashes = 2`（那两次在 06:08:37 之前）。
+      - 这一趟日志里没有 `MPSImageUnaryKernel` 报错。
+      - root 那一份 [506] 开机就在，日志里时不时还有 "[com.apple.renderbox:error] precondition failure: <private>"（Fault），但进程没退出。
+      - 用 `NSWorkspace iconForFile:` 取终端、/Applications、系统设置的图标都成功。
+      - 系统设置（[831]，开了 4 分 44 秒）和活动监视器都在跑。
+    - 指针乱跳是老问题：今天早上日常镜像的基线、第 1 步（10:13）都记过"指针在两个位置之间每一到三帧跳一次"，和这次的改动无关，单独查。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
