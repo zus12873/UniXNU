@@ -779,6 +779,13 @@
     - `NMB_LOG_STDERR=1` 跑探测，插件在断言前没有任何 "refused"。新建纹理（`NativeBridgeMetalFrontend.mm:4500-4512`）、IOSurface 纹理（4515-4534）、纹理视图（1393-1394）失败时都会记。
     - `NBTexture` 加了 `MTLTexture` 协议（`IOGPUMetalDeviceShim.h:217-234`）。
     - 所以空纹理不是插件明着拒绝的，原因还没找到。上游以前修过几处 iconservicesagent 拿到 nil Metal 对象的问题（`NativeBridgeMetalFrontend.mm:552`、`:1660`、`:1764`、`:4214`）。
+- **约 20:52 用户："能不能在新的镜像中，默认开启ssh服务，便于后续联调"**（这是对内核改动的明确要求）
+  - 做法：在每次开机都会重写的 launchd 策略文件里，把 `com.openssh.sshd` 写成启用（`<false/>`）。系统自带的 `ssh.plist` 是 `Disabled = true`，这样就盖过去了。
+    - 加的是启动参数 `enable-jobs=<label>[,…]`，只放进测试镜像的载荷，日常镜像不受影响。
+  - 设备仓库 `1939cc1`（本地）：
+    - `package/BootWatchdogPolicy.c` 加 `enable_jobs[200]`、`append_job_state(cursor, disabled)`，字符检查和 `disable-jobs` 相同。只给了 `enable-jobs` 时也写这个文件。
+    - `scripts/check-boot-watchdog-policy.py` 加了三条测试：只启用；和禁用并存；非法字符返回 EINVAL。先跑过一遍是失败的（第 245 行的断言），实现后整份通过（"PASS: production policy initializer…"）。
+  - 20:55 构建前日常文件 `33d294c8`、`8a36fe56`。OS 镜像只读挂到 scratchpad 的 `os-mount`。20:55 起后台跑 `./unixnu build kernel payload`。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
