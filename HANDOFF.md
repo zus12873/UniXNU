@@ -535,6 +535,26 @@
     - **B**：把两个仓库的社区分支整个合进来，保留本机的固件、v4 头和 7.5 GiB 设置，重编内核、载荷和固件。一次改很多。
     - **C**：原样用他们的镜像。不做，理由见上。
   - A 和 B 都是内核改动，要用户点头。
+- **约 18:22 用户："先B，然后尝试下v0格式"**。18:24 写了短设计 `docs/superpowers/specs/2026-11-15-community-branch-test-design.md`（`539e534`），等用户批准。
+  - 设备仓库试合并只有 `board.toml` 两处冲突，都是内存设置，打算保留本机的。
+  - `../uefi-sheng` 已经没有未提交的改动：本机内存表在本地分支 `local/sheng-12g-memory-map` 的两个提交里（`5dfcc572`、`20331338`）。
+  - 日常镜像的固件比这两个提交早，用的是上游的内存表，在本机一直正常。
+- **约 18:25 用户："先试 v0 格式"**（改了顺序：先做设计里的第二部分）
+  - 18:25 下载社区模板到 `out/downloads/cd-template-218fdcce/`（`out/` 不入库）：
+    - 地址取自社区 `board.toml`：`https://github.com/CrossDarwin/macOS-ForSheng/releases/download/sheng-recovery-218fdcce-preview1/sheng-recovery-218FDCCE-boot.img.xz`；
+    - 11822220 字节，sha256 `8fed0304…`，和社区钉住的值相符；解压后 165343232 字节，sha256 `6d96d27a…`。
+  - 镜像内容：
+    - 头版本 0，页大小 4096，cmdline 为空；os_version 解出来是 17.0.0、补丁 2026-08；
+    - kernel 4905304 字节，gzip 压缩（社区说的 shim 加板级固件、设备树）；
+    - ramdisk 160432128 字节，是 FAT 卷，里面是 `EFI/UniXNU/unixnu.toml`、`Payloads/kernel.macho`、`kernel.macho.adt`。
+  - 菜单：`timeout = -1`（等按键），`fallback_timeout = 30`（这个键我们的代码里没有，含义不知道），只有一项 "SHENG macOS 26 - UFS+ISC+LOG+UI+REC 218FDCCE"。
+    - 参数带 `-v`、`cpus=1`、`native-ufs-root=1`、`native-ufs-diagnostics=1`，没有 `data-reset`。
+    - 这是社区一份 macOS 26 的诊断内核，不是我们的系统。
+  - 11-13 本机试 v0 的结果（本文件"header v0 启动不了"一条）：`Booting OKAY` 后 0.4 秒引导程序就回来了，屏幕黑；之后再 `fastboot boot` 一直报 `Load Error`，要先 `fastboot reboot bootloader`。当时的推测是本机的安卓 14 国行引导程序不支持 v0，或者附带的设备树对不上。
+  - 这次的做法：原样从内存启动这份模板，只看引导程序接不接受。
+    - 接受了，会出现社区的菜单。用户拍照，然后按住电源键加音量下键回 fastboot，不进它的内核。
+    - 不接受，`fastboot reboot bootloader` 一次再继续。
+    - 都不写 `boot_a`。要用户进 fastboot、说可以再启动。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
