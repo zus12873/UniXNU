@@ -644,6 +644,9 @@
       - `af5304a` 合并社区分支：`board.toml` 用 `git merge-file --ours` 解决，窗口 `0x240000000`、`owned_memory_outside_ranges = 16` 是本机的，社区的模板一节、`size_mib = 187`、`max_image_bytes` 照收。
       - 子模块按记录的版本检出：设备仓库 Ath12kWifi `39cc47b`、QcaBluetooth `68e2e605`、ShengNovatekTouch `69fdd622`、ShengUfs `b6fe07b3`；核心仓库 AdrenoMetal `6d4a3f38`、RamBlock `00a6e5dd`。
     - Task 2：构建前日常文件 `33d294c8`、`8a36fe56`、`35f03ec4`，备份都在。19:24 OS 镜像只读挂到 scratchpad 的 `os-mount`（`/dev/disk11s1`，构建完要卸载）。19:24 起后台跑 `./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。
+      - 第一次（19:28 前结束）：内核编好了，`<output>/kernel/kernel.macho` 现在是 `ed6a1794…`，日常内核被盖掉了，要从 `kernel.macho.daily-33d294c8` 还原。日志里 `cshash-signed-text-revalidation.patch`（第 137 行）和 `sheng-text-fixup-verified-pagein.patch`（第 157 行）都打上了。
+      - 载荷停在："unixnu: the payload files take 180 MiB; raise size_mib (now 187) in board.toml [payload]"。`payload.img` 没被改（仍是 `8a36fe56`）。
+      - 设备仓库 `b172096`：macOS 的 `size_mib` 改回合并前的 200（测试镜像只从内存启动）。之后重跑同一条构建命令。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
