@@ -647,6 +647,25 @@
       - 第一次（19:28 前结束）：内核编好了，`<output>/kernel/kernel.macho` 现在是 `ed6a1794…`，日常内核被盖掉了，要从 `kernel.macho.daily-33d294c8` 还原。日志里 `cshash-signed-text-revalidation.patch`（第 137 行）和 `sheng-text-fixup-verified-pagein.patch`（第 157 行）都打上了。
       - 载荷停在："unixnu: the payload files take 180 MiB; raise size_mib (now 187) in board.toml [payload]"。`payload.img` 没被改（仍是 `8a36fe56`）。
       - 设备仓库 `b172096`：macOS 的 `size_mib` 改回合并前的 200（测试镜像只从内存启动）。之后重跑同一条构建命令。
+      - 第二次（19:31 前结束）成功。内核仍是 `ed6a1794`。
+        - `nm` 里有 `_cs_text_fixup_hash`（社区补丁加的）和 `_cs_text_fixup_restore`（设备补丁加的）。
+        - 载荷 `cfbbe5c9`，但菜单是社区的新样子：`timeout = -1`（有按键设备时等按键），还多一项 "Initialize macOS Data and boot"（要确认，确认后才加 `confirm_args = ["data-reset=1"]`）。
+        - 我们的 `make-payload-variant.py` 拒绝任何提到 `data-reset` 的载荷（"unixnu.toml already mentions data-reset"），所以这份只另存为 `payload.cd2-base.img`（只读），不用。
+      - 设备仓库 `7fe7546`（本地）：macOS 覆盖里把 `payload.install` 放回 `remove` 列表，去掉社区加的 install 一节和 `"timeout" = -1`。
+        - 菜单因此和合并前一样，3 秒倒计时，只有 Boot、Restart、Power off。
+        - 菜单代码 `package/UniXNUPkg/Library/UniXNULib/Config.c:1622` 本来就保证倒计时不会启动要确认的项。不留这一项，是为了守住"测试镜像不带 data-reset"这一条。
+      - 19:35 先把 cd2 内核放回原位，再只跑 `./unixnu build payload`，得到 `payload.cd2-base-noinstall.img`（`d018afc5…`，只读）。日常内核和载荷再从备份还原，核对 `33d294c8`、`8a36fe56`、`35f03ec4`。
+      - 另存的：`<output>/kernel/kernel.macho.cd2-ed6a1794`（`kernel.json`、`kernel.map.json` 同后缀）、`payload.cd2-base.img`（`cfbbe5c9`，带初始化项，不用）、`payload.cd2-base-noinstall.img`（`d018afc5`）。
+    - Task 3（19:38 前做完）：
+      - 载荷 `payload.cd2-s1.img`（`768f8e83…`，`darwinboot-memory-size=0x1e0000000`、`floor=0x920000000`、`memory-outside=0`）和 `payload.cd2-ctl6.img`（`53917b0d…`，`0x180000000`、`0x980000000`、`memory-outside=0`）。参数行都是 923 字节。
+      - 镜像（新固件 `boot-bigwin.img`；v0 用社区模板，加载器 `717d5649…`）：
+        - `out/flash/boot-v4-payload.bigwin-cd2-s1.img` `aaa4e60c…`
+        - `out/flash/boot-v4-payload.bigwin-cd2-ctl6.img` `543a135a…`
+        - `out/flash/boot-v0-cd.cd2-s1.img` `d538e492…`
+        - `out/flash/boot-v0-cd.cd2-ctl6.img` `66bd8552…`
+        - `bootimg-contents.py` 核对过 v4 两份装的载荷。
+      - 22 份日常镜像的 sha256 和 17:43 记的一样。19:38 OS 镜像已卸载。
+    - 下一步 Task 4：先启动 `boot-v4-payload.bigwin-cd2-s1.img`（7.5 GiB，本机固件），要用户说可以。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
