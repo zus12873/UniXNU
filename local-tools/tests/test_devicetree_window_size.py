@@ -4,7 +4,9 @@ as /chosen/darwinboot-memory-size. The generator and the loader accept the same 
     python3 -I -B -m unittest discover -s local-tools/tests -v
 """
 import struct
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +16,8 @@ from unixnu import devicetree  # noqa: E402
 from unixnu.util import Error  # noqa: E402
 
 WINDOW_SIZE_HEADER = ROOT / 'drivers/DarwinBoot/DarwinBootPkg/Driver/WindowSize.h'
+# The loader's own test of DarwinWindowSizeValid: it asserts 9 GiB is accepted and 9 GiB + 2 MiB is not.
+WINDOW_SIZE_TEST = ROOT / 'drivers/DarwinBoot/Test/window-size.c'
 
 
 class MemorySize(unittest.TestCase):
@@ -43,6 +47,16 @@ class MemorySize(unittest.TestCase):
         text = WINDOW_SIZE_HEADER.read_text()
         self.assertIn('0x240000000ULL', text)
         self.assertNotIn('0x200000000ULL', text)
+
+    def test_loader_test_of_the_bound_passes(self):
+        # By behaviour: the loader's test program, built from the header as it is, runs its asserts and exits 0.
+        self.assertIn('0x240000000ULL', WINDOW_SIZE_TEST.read_text())
+        with tempfile.TemporaryDirectory(prefix='window-size-') as work:
+            program = Path(work) / 'window-size'
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', str(WINDOW_SIZE_TEST), '-o', str(program)],
+                           check=True, capture_output=True)
+            result = subprocess.run([str(program)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':

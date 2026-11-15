@@ -61,6 +61,20 @@ class AdtChosen(unittest.TestCase):
         self.assertTrue(result.stderr.startswith(REFUSAL), result.stderr)
         self.assertEqual(result.stdout, '')
 
+    def test_refuses_bytes_behind_the_root_node(self):
+        result = self.run_tool(TREE + bytes(4))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(result.stderr.startswith(REFUSAL), result.stderr)
+        self.assertIn('4 bytes behind the root node', result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_refuses_two_chosen_nodes(self):
+        result = self.run_tool(node('device-tree', [('model', b'fixture\0')], [node('chosen', CHOSEN), node('chosen', CHOSEN)]))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue(result.stderr.startswith(REFUSAL), result.stderr)
+        self.assertIn('2 /chosen nodes', result.stderr)
+        self.assertEqual(result.stdout, '')
+
 
 if __name__ == '__main__':
     unittest.main()
