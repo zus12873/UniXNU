@@ -287,6 +287,19 @@ def platform_node(name, table):
     return node(name, properties, children)
 
 
+def memory_size(options):
+    """The /chosen property for payload.adt owned_memory_size: the size of the window the kernel manages.
+
+    The range is the one the loader accepts (DarwinWindowSizeValid in WindowSize.h): 256 MiB to 9 GiB in 2 MiB steps.
+    """
+    if not options.get('owned_memory_size'):
+        return []
+    size = int(str(options['owned_memory_size']), 0)
+    if not 0x10000000 <= size <= 0x240000000 or size % 0x200000:
+        raise Error('Owned memory must be 256 MiB to 9 GiB in 2 MiB steps')
+    return [('darwinboot-memory-size', struct.pack('<Q', size))]
+
+
 def memory_floor(options):
     """The /chosen property for payload.adt owned_memory_floor: the lowest address DarwinBoot may start the window at.
 
@@ -337,11 +350,7 @@ def generate(dtb, config, *, unique_chip_id=None, data=False, trust=False, addon
         chosen += [('unique-chip-id', struct.pack('<Q', seed)), ('chip-id', struct.pack('<I', chip))]
     elif options.get('unique_chip_id') == 'required':
         raise Error('Pass --unique-chip-id HEX for this board')
-    if options.get('owned_memory_size'):
-        size = int(str(options['owned_memory_size']), 0)
-        if not 0x10000000 <= size <= 0x200000000 or size % 0x200000:
-            raise Error('Owned memory must be 256 MiB to 8 GiB in 2 MiB steps')
-        chosen.append(('darwinboot-memory-size', struct.pack('<Q', size)))
+    chosen += memory_size(options)
     # A table DarwinBoot fills with the ranges of the window the kernel must not use (gaps between DRAM banks, memory the firmware
     # keeps). With it the window may span more than one run of free memory; only an OS profile whose XNU reads the property sets it.
     if options.get('owned_memory_excluded_ranges'):
