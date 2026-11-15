@@ -92,10 +92,10 @@
 
 ### Task 4: 推到用户的 fork
 
-- [ ] 推之前扫一遍要推的提交：芯片号、局域网 IP、邮箱、私钥都没有。
-- [ ] 建 `zus12873/AdrenoMetal`（`gh repo fork UniXNU/AdrenoMetal --clone=false`），子模块加一个 remote 指过去。
-- [ ] 推整合分支和现在的工作分支：核心、sheng、AdrenoMetal 各两个；uefi-sheng 只推 `local/sheng-12g-memory-map`。不推 `main`，不 force。
-- [ ] 核对远端分支的哈希和本地一致。
+- [x] 推之前扫一遍要推的提交：芯片号、局域网 IP、邮箱、私钥都没有。
+- [x] 建 `zus12873/AdrenoMetal`（`gh repo fork UniXNU/AdrenoMetal --clone=false`），子模块加一个 remote 指过去。
+- [x] 推整合分支和现在的工作分支：核心、sheng、AdrenoMetal 各两个；uefi-sheng 只推 `local/sheng-12g-memory-map`。不推 `main`，不 force。
+- [x] 核对远端分支的哈希和本地一致。
 
 ### Task 5: 测试（构建盘接上、用户同意启动以后）
 
@@ -116,3 +116,7 @@
   - AdrenoMetal 的主机检查要 MoltenVK，没跑；sheng 有 5 个检查要 `kits/` 布局或 `UniXNU-sm8550-common`，没跑。
 - 合并 rponeawa 时覆盖了本地被忽略的根卷策略文件，已从载荷取回并核对（`local-tools/recover-root-policies.py`）。
 - 额外合了 CrossDarwin #104 的分支 `diagnostics/persistent-desktop-hci`，它比 `integration/desktop-repairs` 里的那份新。
+- Task 4 做完（11-16 00:05）：推之前扫过 7 个分支，没有芯片号、局域网 IP、邮箱、私钥。
+  - 新建了 fork `zus12873/AdrenoMetal`，子模块的 remote 叫 `mine`。
+  - 推了 `integrate/others-20261115` 和原来的工作分支：核心、sheng、AdrenoMetal 各两个，uefi-sheng 一个。远端和本地哈希逐个核对一致。
+- Task 5 等构建盘：11-16 00:06 `/Volumes/UniXNUBuild` 仍没挂上。

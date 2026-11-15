@@ -1056,7 +1056,10 @@
     - 我们的 3 份 header 和钥匙用新工具 `local-tools/recover-root-policies.py`，从 `out/flash/boot-v4-payload.bigwin-cd5-s1.img` 的载荷里取回：钥匙在 `kernel.macho` 偏移 `0x1f1c84`，header 在 `kernel.macho.vroot`。三个窗口都核对过：钥匙和策略一致，header 和镜像一致。
     - 以后合别人的分支前先查"对方新增、本地被忽略"的文件。
   - 本地 `verification.json` 三处改动还是没提交（先 stash，合完放回）。
-  - 还没做：推送（Task 4）；构建和上机（Task 5，等构建盘）；CrossDarwin 的 8 GiB ABL 内存表和 `test_27` 没合（见计划"这次不合的"）。
+  - 11-16 00:05 推送做完：新建 fork `zus12873/AdrenoMetal`（子模块 remote `mine`）。
+    - 核心、sheng、AdrenoMetal 各推了 `integrate/others-20261115` 和原来的工作分支，uefi-sheng 推了 `local/sheng-12g-memory-map`；远端哈希都核对过。
+    - 不 force，不推 main，不建 PR。
+  - 还没做：构建和上机（Task 5，等构建盘，00:06 仍没挂上）；CrossDarwin 的 8 GiB ABL 内存表和 `test_27` 没合（见计划"这次不合的"）。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
