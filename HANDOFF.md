@@ -729,6 +729,14 @@
     - 这段时间里要图标的程序都在等它，所以终端、活动监视器卡住，系统设置的图标空白。
     - 这和内存满不满没有关系。"越往后卡得越久"是推迟时间指数增长的结果，正好和内存慢慢用满同时发生，看起来就像"内存满了才卡"。
   - 第一处问题（WindowServer 被代码签名杀掉）在 cd2 内核下没有再出现。
+- **约 20:28 用户同意试验（原话"可以"）**：经 SSH 让图标服务改走 CPU 再重启它。
+  - 20:29 在 SSH 会话里 `launchctl setenv CI_ENABLE_METAL_GPU 0`、`FORCE_SOFTWARE_RENDERER 1`。`getenv` 读得到，但 `gui/501` 里这项服务的 "inherited environment" 只有 `SSH_AUTH_SOCK`：SSH 会话的设置到不了桌面会话那个域。
+  - `launchctl kickstart -k gui/501/…` 一直没返回，放到后台后停掉了。
+  - 20:31 已 `unsetenv` 还原。
+  - `launchctl debug gui/501/… --stderr …`（下次启动时带环境变量、并把它的标准错误写进文件）报 "This subcommand requires root privileges"。不带 `-k` 的 `kickstart` 也没把它拉起来，还是 `spawn scheduled`、`runs = 17`。
+  - 要往下做，得有 root。我不碰密码，请用户二选一：
+    - 在 Mac 自己的终端里用 `ssh -t` 逐条输 sudo；
+    - 或者临时加一个 sudoers 文件，只放行 `/bin/launchctl`、`/usr/bin/log`，以及删这个文件本身。试完删掉。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
