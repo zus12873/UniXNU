@@ -930,6 +930,9 @@
     - 每份开机、连 Wi-Fi 后，经 SSH 跑 `tablet-icon-stress.js` 若干轮，请用户开关系统设置几次；
     - 数日志里 WindowServer 的 `GpuRecoveryVictim`、`MadeBeforeRecovery`、插件的 "the render server's GPU context is lost; ending WindowServer"，以及 WindowServer 的 PID 有没有变；
     - 同时看兜底有没有起作用：卡住后应该回到登录窗口，而不是整屏卡死。
+- **约 22:35 用户："可以"**（基线上机，暂记 CD5-BASE-1）
+  - fastboot（22:35:39）：a 7、b 7，都是 unbootable no；电压 3852 mV；sha256 `c5aa28e9…` 相符。
+  - 22:35:50 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd5-s1.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
