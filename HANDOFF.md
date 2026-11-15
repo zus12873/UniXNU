@@ -700,6 +700,35 @@
     - fastboot（20:10:45）：a 7、b 7，都是 unbootable no；电压 3775 mV。
     - 20:10:54 第三次从内存启动同一份镜像（CD2-3）：`Booting OKAY`，45 秒内引导程序没有回来。
     - 同一份镜像，一次正常、一次指针闪，又是"单次开机不能拿来比较"。
+- **约 20:23 用户："连接远程设备ssh -i out/ssh/tablet_ed25519 -o 'UserKnownHostsFile=out/ssh/known_hosts' …，拉取设备上的报错日志"**（SSH 通了；平板地址只在对话里，不写进文件）
+  - 20:24 平板：
+    - 内核 "Darwin Kernel Version 25.5.0: Sun Nov 15 19:27:32 +08 2026"（cd2 内核），开机 13 分钟；
+    - `hw.memsize` 8053047296；`vm.swapusage` total 0；
+    - 平板的时钟这次是对的（连上网对了时）。
+  - 崩溃和卡顿报告拷到本机 `data/tablet-logs/20261115-2025/`（`data/` 不入库）：
+    - cd2 那几趟里**没有** WindowServer 的崩溃报告，也没有 iconservicesagent 的 `.ips`；
+    - 有 `Terminal_2026-11-14-113246/113552_MacBook-Pro.spin`、`Terminal_…113729.hang`（11:3x 是 CD2-1 时平板的时钟），以及 `Console_2026-11-15-040554_MacBook-Pro.spin`；
+    - 旧的 WindowServer 和 iconservicesagent 报告都在 Nov 14 01:35-01:47，出自 cd2 之前那几趟。
+  - Terminal 的 spin（"Slow response to HID event"，开机 692 秒，内存 7.50 GB）：主线程还是那条路，`NSThemeDocumentButtonCell` → `ISConcreteIcon generateImageWithDescriptor` → NSXPC 同步等待 → `mach_msg2_trap`，242 个样本里 231 个。
+  - 同一份 spin 里有两个 iconservicesagent：
+    - [769] 是 root 那一份，空闲，2 个线程，1457 KB；
+    - [848] 是新起的，"Execed from xpcproxy"，11:31:36.939 起、11:31:37.565 止，只活了 0.6 秒，203 KB 涨到 90.99 MB，29 个线程。
+    - [848] 最后几个样本停在 `+[CIBlurProcessor processWithInputs:…]` → MPSImage → `MPSDevice::GetLibrary` → NativeAdrenoMetal `nmb_library_new` → NativeAdrenoMetal 内部加缺页，然后就没了。下一份 spin 里换成了 [927]。
+  - 统一日志（`/usr/bin/log show --last 3d`，远端 zsh 的 `log` 是内建命令，要写全路径）：
+    - 每次启动 iconservicesagent 都记两条 "[com.apple.renderbox:error] precondition failure: <private>"（Fault），时间是 11:31:07、11:31:28、11:32:09、11:33:29、04:19:59、04:25:20；
+    - 还有写不进 `com.apple.iconservicesagent` 偏好、"user tccd unavailable" 这两种。
+    - 断言原文被隐去了；`.ips` 的 `asi` 也是空的。
+  - **launchd 的记录（`launchctl print gui/501/com.apple.iconservices.iconservicesagent`，04:27）**：
+    - `state = spawn scheduled`；`runs = 17`、`successive crashes = 17`；
+    - `last terminating signal = Abort trap: 6`；
+    - `minimum runtime = 640`（base 10）。
+    - root 那一份（`system/…`）`runs = 1`，`last exit code = (never exited)`。
+  - **结论（这一层有证据了）**：
+    - 用户那一份图标服务每次启动都在画图那条路上 abort（RenderBox 的 precondition failure，或 CoreImage 的 MPS 模糊在 Metal 断言里）；
+    - launchd 按 exponential throttling 推迟重启，16 分钟里已经推到 640 秒；
+    - 这段时间里要图标的程序都在等它，所以终端、活动监视器卡住，系统设置的图标空白。
+    - 这和内存满不满没有关系。"越往后卡得越久"是推迟时间指数增长的结果，正好和内存慢慢用满同时发生，看起来就像"内存满了才卡"。
+  - 第一处问题（WindowServer 被代码签名杀掉）在 cd2 内核下没有再出现。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
