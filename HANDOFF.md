@@ -1000,6 +1000,7 @@
     - 内存。
       - rponeawa `f4e0bc2`（11-15，`fix/sheng-startup-diagnostics`）：收编低位内存时把固件占着的 8 段（modem、TZ/XBL/QTEE、可信 UI 和 OEM 虚拟机、LLCC 附近）也挡掉。以前只有 GPU 池挡这些，内核收编只挡音频的 64 KiB；CPU 写进这些地方是同步外部异常。
       - 我本地 `board.toml` 还是旧的 `["0xd0000000:0x10000", "0x880000000:0x280000000"]`。日常镜像和第 1 步镜像都收编低位内存，"每次都在内存第一次用满后定住"和这个对得上。
+      - **更正（11-16 00:30 合并时发现）**：rponeawa 自己在 17:42 加了这一条，18:13 就用 `ca1e6a5`（"revert: restore upstream sheng memory configuration and pool"，没写原因）撤掉了，他分支的最新提交里没有它。所以这条线索是"作者试过又撤了，原因不明"，整合分支里也没有。要试得另做，先弄清他为什么撤。
       - CrossDarwin `uefi-sheng` 的 `memory/abl-reservations-8g`（11-14）、`fix/memory-compatible-dxe`（11-16）：固件按 ABL 实际的保留区出内存表（ShengBootMemoryDxe），他们的是 8 GiB 机型；上机还没验，上一版显示 6.44 GB。sheng 侧对应 `crossdarwin/fix/compat-abl-memory` `c4d5a19`。
     - GPU 运行时：rponeawa 在 AdrenoMetal 上 11-15 有 8 个分支。
       - 接了 metal2vulkan development `400efe79` / `d9236a8a`，加了 A740 原生路径（并发分箱、快速边框色）。
@@ -1021,6 +1022,41 @@
     - GPU 复位后 WindowServer 自己重启；
     - `enable-jobs`（默认开 SSH）；
     - 指针漂移、合盖卡死这两个问题的原因。
+- **约 23:40 用户："别人设备是8+256，然后把他们领先的内容整合到自己本地仓库先，然后同步到自己的仓库上"；23:40 "落文档，然后开始继续测试"**
+  - 计划：`docs/superpowers/plans/2026-11-15-integrate-others.md`（`134756e`）。
+  - 每个仓库开 `integrate/others-20261115`，原来的工作分支没动。
+  - **AdrenoMetal** `acadac3`（从 `local/sheng-ci-mps` 开）：
+    - 合了上游 main、rponeawa `fix/sync-development-d923`（新运行时，含他另外 5 个分支）、CrossDarwin #37（只有 README 冲突，两段都留）；
+    - 本机的 `ci-mps=0` 和 `MadeBeforeRecovery` 兜底都还在；
+    - 主机检查 `scripts/check-native-metal-frontend-host.py` 要 MoltenVK，本机没装，没跑。
+  - **核心** `0e4503c`（从 `local/sheng-16g-macos` 开）：
+    - 合了上游 main（账户输入的四处冲突取本地，本地是 #258 加一条修复，已包含上游那版）；
+    - 合了 CrossDarwin `integration/desktop-repairs-20261115`（状态颜色取 CrossDarwin 较新的；AdrenoMetal 指针和 `components.toml` 指 `acadac3`）、`vm/signed-text-revalidation`；
+    - QcomDwc3 改指 `42f7c2d`，和 sheng 一致。
+    - `check-unixnu.py` PASS；`tests/macos` 7 个 OK；`tests/build` 关沙箱 6 个 OK（沙箱里开不了伪终端）。
+  - **sheng** `31d0686`（从 `local/sheng-12g-large-window` 开），依次合了：
+    - 上游 main；
+    - CrossDarwin 的 `integration/desktop-repairs`、#103、#102、#105、#104（`diagnostics/persistent-desktop-hci`）；
+    - rponeawa 的 `fix/sheng-startup-diagnostics`、`fix/sheng-charge-panic-recovery`（后者的内容已全在前者里）。
+  - sheng 的冲突取舍：
+    - `porting.toml` 用新工具 `local-tools/resolve-porting-conflicts.py` 逐键三方合并。
+    - `board.toml` 内存全留本机：窗口 `0x240000000`、起点 `0x8C0000000`、bank 1 整段排除。
+    - `size_mib` 200：超过合格外壳的 193 MiB，只能进我们的 v4 镜像。
+    - #102 的"初始化 Data"菜单项没要：试验镜像不能带 `data-reset`。
+    - 内核补丁列表两边都留：本地的改 `decmpfs.c`/`ubc_subr.c`，他的 5 个改别的文件。
+  - sheng 的子模块：ShengUfs `2b6638b`、QcaBluetooth `e853395`（只在 CrossDarwin 的 fork 里，已取到本地）、Ath12kWifi 留 `39cc47b`。
+  - sheng 的检查：
+    - 上游和本地的 `porting-record.py check --base upstream/main` 都过；为此补了 network、input、arm64e-os、gpu 四个区的 findings。
+    - battery、charger-auth、keyboard-cover/service、wn8030、boot-log、geni-i2c、gpu-trace 都 PASS。
+    - `check-boot-watchdog-policy` 编不过：rponeawa 加的 `POLICY_CALL` 在被抽取的代码外面。补了测试桩（`31d0686`）后 PASS。
+    - 另 5 个检查要 `kits/` 目录布局或 `UniXNU-sm8550-common`，本机没有，没跑。
+  - **事故（已恢复）**：
+    - 合 rponeawa 时，他提交进仓库的 `scripts/policies/macos-27.3-26C5035r/*/{trusted-key.bin,manifest.header.bin}` 覆盖了我们本地构建生成、被 git 忽略的同名文件。git 把被忽略的文件当可丢弃的，不报错。
+    - 我们的钥匙哈希是 `74eace58…`，他的是 `896b3246…`。他的这 6 个文件没进合并提交。
+    - 我们的 3 份 header 和钥匙用新工具 `local-tools/recover-root-policies.py`，从 `out/flash/boot-v4-payload.bigwin-cd5-s1.img` 的载荷里取回：钥匙在 `kernel.macho` 偏移 `0x1f1c84`，header 在 `kernel.macho.vroot`。三个窗口都核对过：钥匙和策略一致，header 和镜像一致。
+    - 以后合别人的分支前先查"对方新增、本地被忽略"的文件。
+  - 本地 `verification.json` 三处改动还是没提交（先 stash，合完放回）。
+  - 还没做：推送（Task 4）；构建和上机（Task 5，等构建盘）；CrossDarwin 的 8 GiB ABL 内存表和 `test_27` 没合（见计划"这次不合的"）。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。

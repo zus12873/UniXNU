@@ -64,31 +64,31 @@
 
 **Files:** `drivers/AdrenoMetal` 子模块，分支 `integrate/others-20261115`
 
-- [ ] 从 `local/sheng-ci-mps`（`2b9a743`）开分支，依次合 `origin/main`、`origin/fix/sync-development-d923`、`crossdarwin/metal/texture-layout-policy`；README 冲突两边都留。
-- [ ] 核对本机的两条还在：`NativeAdrenoMetalPlugin.mm` 里有 `ci-mps=0`，`NativeBridgeMetalFrontend.mm` 的 `refuse:` 里有 `MadeBeforeRecovery`。
-- [ ] `git diff --check` 干净；能跑的主机检查都跑一遍（看仓库里现有的检查脚本）。
-- [ ] 记下整合提交的哈希，给 Task 2 用。
+- [x] 从 `local/sheng-ci-mps`（`2b9a743`）开分支，依次合 `origin/main`、`origin/fix/sync-development-d923`、`crossdarwin/metal/texture-layout-policy`；README 冲突两边都留。
+- [x] 核对本机的两条还在：`NativeAdrenoMetalPlugin.mm` 里有 `ci-mps=0`，`NativeBridgeMetalFrontend.mm` 的 `refuse:` 里有 `MadeBeforeRecovery`。
+- [x] `git diff --check` 干净；能跑的主机检查都跑一遍（看仓库里现有的检查脚本）。
+- [x] 记下整合提交的哈希，给 Task 2 用。
 
 ### Task 2: 核心整合分支
 
 **Files:** `UniXNU`，分支 `integrate/others-20261115`
 
-- [ ] 从 `local/sheng-16g-macos` 开分支，合 `upstream/main`。冲突在 `docs/porting/macos.md`、`docs/zh/porting/macos.md`、`scripts/make-macos-data-seed.py`、`tests/macos/test_seed_account.py`：先看本机改了什么、上游改了什么，两边的功能都要留。
-- [ ] 合 `crossdarwin-macos/integration/desktop-repairs-20261115`。`components.toml` 的 AdrenoMetal `revision` 和子模块指针改成 Task 1 的提交，其余组件取 CrossDarwin 的选择。
-- [ ] 合 `crossdarwin-macos/vm/signed-text-revalidation`。
-- [ ] 跑 `python3 -I -B scripts/check-unixnu.py` 和 `tests/` 下相关的测试，要过。
+- [x] 从 `local/sheng-16g-macos` 开分支，合 `upstream/main`。冲突在 `docs/porting/macos.md`、`docs/zh/porting/macos.md`、`scripts/make-macos-data-seed.py`、`tests/macos/test_seed_account.py`：先看本机改了什么、上游改了什么，两边的功能都要留。
+- [x] 合 `crossdarwin-macos/integration/desktop-repairs-20261115`。`components.toml` 的 AdrenoMetal `revision` 和子模块指针改成 Task 1 的提交，其余组件取 CrossDarwin 的选择。
+- [x] 合 `crossdarwin-macos/vm/signed-text-revalidation`。
+- [x] 跑 `python3 -I -B scripts/check-unixnu.py` 和 `tests/` 下相关的测试，要过。
 
 ### Task 3: sheng 整合分支
 
 **Files:** `../UniXNU-sheng`，分支 `integrate/others-20261115`
 
-- [ ] 从 `local/sheng-12g-large-window` 开分支，依次合：
+- [x] 从 `local/sheng-12g-large-window` 开分支，依次合：
   - `upstream/main`、`crossdarwin/integration/desktop-repairs-20261115`；
   - `crossdarwin/boot/qualified-macos-transport`、`crossdarwin/boot/explicit-macos-data`、`crossdarwin/build/ufs-internal-media`；
   - `rponeawa/fix/sheng-startup-diagnostics`、`rponeawa/fix/sheng-charge-panic-recovery`。
-- [ ] 按"冲突的取舍"处理 `board.toml`；合完用 `tomllib` 读出 macOS 段最终的内存和保留区，和本机原值、rponeawa 的保留区列表逐项对一遍。
-- [ ] `patches/xnu-12377/series` 两边的补丁都在；`porting.toml` 两边都留。
-- [ ] 跑核心的 `scripts/porting-record.py check --device ../UniXNU-sheng --base upstream/main`，以及 sheng 里和这些改动相关的检查脚本（watchdog、battery、keyboard 等），要过。
+- [x] 按"冲突的取舍"处理 `board.toml`；合完用 `tomllib` 读出 macOS 段最终的内存和保留区，和本机原值、rponeawa 的保留区列表逐项对一遍。
+- [x] `patches/xnu-12377/series` 两边的补丁都在；`porting.toml` 两边都留。
+- [x] 跑核心的 `scripts/porting-record.py check --device ../UniXNU-sheng --base upstream/main`，以及 sheng 里和这些改动相关的检查脚本（watchdog、battery、keyboard 等），要过。
 
 ### Task 4: 推到用户的 fork
 
@@ -108,3 +108,11 @@
   - GPU 复位次数；
   - 关机和重启（PSCI）。
 - [ ] 之后另做一份 `memory-outside` 打开的镜像，看固件保留区挡上以后内存用满还会不会卡。
+
+## 进度（2026-11-16 00:40）
+
+- Task 1 到 3 做完：AdrenoMetal `acadac3`、核心 `0e4503c`、sheng `31d0686`，各仓库分支 `integrate/others-20261115`。
+  - 取舍和检查结果见 `HANDOFF.md`"约 23:40 用户：别人设备是8+256"一条。
+  - AdrenoMetal 的主机检查要 MoltenVK，没跑；sheng 有 5 个检查要 `kits/` 布局或 `UniXNU-sm8550-common`，没跑。
+- 合并 rponeawa 时覆盖了本地被忽略的根卷策略文件，已从载荷取回并核对（`local-tools/recover-root-policies.py`）。
+- 额外合了 CrossDarwin #104 的分支 `diagnostics/persistent-desktop-hci`，它比 `integration/desktop-repairs` 里的那份新。
