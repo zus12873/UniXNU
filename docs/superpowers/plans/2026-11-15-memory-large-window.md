@@ -320,13 +320,13 @@ Run: `./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNU
 
 - [ ] **Step 4: 做各份变体载荷**
 
-对上表每一份运行 `python3 -I local-tools/make-payload-variant.py <output>/payload/payload.bigwin-base.img <output>/payload/<名字> …`。每份做完用 `adt-chosen.py` 读一次设备树，并取出 `unixnu.toml` 看参数行：带 `memory-outside=0` 的在最前面，都没有 `data-reset`。
+先把 `<output>/payload/payload.bigwin-base.img` 设成只读（`chmod a-w`）。对上表每一份运行 `python3 -I local-tools/make-payload-variant.py <output>/payload/payload.bigwin-base.img <output>/payload/<名字> …`。每份做完用 `adt-chosen.py` 读一次设备树，并取出 `unixnu.toml` 看参数行：带 `memory-outside=0` 的在最前面，都没有 `data-reset`。全部做完后核对基准载荷的 sha256 没有变。（只读和事后核对是 2026-11-15 整体审阅后加的。）
 
 - [ ] **Step 5: 构建新固件并打包**
 
 Run: `./unixnu build firmware --os macos-27 --uefi ../uefi-sheng`
 
-核对：`../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/AARCH64/DarwinBoot.efi` 的修改时间晚于 Task 2 的提交；里面仍能找到 UTF-16LE 的 `DARWINBOOT: window floor=`。把 `../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd` 复制成 `out/flash/SILICIUM_UEFI.bigwin-<sha256 前 8 位>.fd`。
+核对：`../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/AARCH64/DarwinBoot.efi` 的修改时间晚于这次构建开始的时间；里面仍能找到 UTF-16LE 的 `DARWINBOOT: window floor=`。这两条只说明加载器重编过，不说明它带的是 9 GiB 的上限，所以构建前后各记一次 `git -C drivers/DarwinBoot rev-parse HEAD`（应为 Task 2 的提交）和 `git -C drivers/DarwinBoot status --porcelain --untracked-files=no`（应为空）。把 `../uefi-sheng/Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd` 复制成 `out/flash/SILICIUM_UEFI.bigwin-<sha256 前 8 位>.fd`。
 
 ```bash
 ./unixnu bootimg --os macos-27 --dtb /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/tree/build/sheng/sheng.dtb -o /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/boot/boot-bigwin.img
@@ -336,9 +336,17 @@ python3 -I local-tools/make-bootimg-v4.py <固件的 v0 镜像> ../uefi-sheng/Re
 
 Expected: `<output>/boot/boot.img` 的哈希前 8 位仍是 `35f03ec4`；五个镜像各 210903040 字节；`make-bootimg-v4.py` 的最后一行是 `…: v4, kernel K, ramdisk R, signature 0, N bytes, sha256 H`，用同一个固件的镜像 `K` 相同。`out/flash/` 下日常那几份的哈希与 `HANDOFF.md` 第 8 节一致。
 
+五个镜像大小相同，`K` 只能分清固件，所以每份打完都要核对里面装的是哪份载荷（2026-11-15 整体审阅后加的）：
+
+```bash
+python3 -I local-tools/bootimg-contents.py out/flash/<镜像名> --payload <output>/payload/<载荷名>
+```
+
+Expected: 第二行是 `ramdisk is <载荷的路径>`，退出码 0。镜像的 sha256 和载荷的 sha256 都记进 `HANDOFF.md`。`make-bootimg-v4.py` 会直接覆盖输出文件，打包期间先把 `out/flash/` 下日常的 `boot-v4-flash*.img` 和不带 `bigwin` 的 `boot-v4-payload*.img` 设成只读，打完改回原来的权限。
+
 - [ ] **Step 6: 记录并提交**
 
-`HANDOFF.md` 第 9 节记下：新内核、新固件、七份载荷、五个镜像的文件名、字节数、sha256；构建时各仓库和子模块的提交；它们都还没有上机；日常文件没有动；固件构建目录现在停在新固件上；`scripts/check-darwinboot-window-parser.py` 现在跑不起来、没有跟着改。
+`HANDOFF.md` 第 9 节记下：新内核、新固件、六份载荷（基准一份、三份上机用的变体、两份备用）、五个镜像的文件名、字节数、sha256；构建时各仓库和子模块的提交；它们都还没有上机；日常文件没有动；固件构建目录现在停在新固件上；`scripts/check-darwinboot-window-parser.py` 现在跑不起来、没有跟着改。
 
 ```bash
 git add HANDOFF.md
@@ -371,6 +379,12 @@ Expected: `Booting OKAY`，之后 45 秒 bootloader 没有再响应。
 通过线：`hw.memsize` 不低于 7784628224，或活动监视器的物理内存不低于 7.25 GB；三次上机（一次计时满 30 分钟，另两次各 10 分钟以上）按设计的通过标准判。第一次上机时试 `sudo dmesg | grep -E "kmem_|compressor|zones|memory outside"`。
 
 停在加载器之后、没有内核的字：先请用户拍屏幕顶部的颜色条，按设计"失败时怎么办"的表处理。要跑对照时用 `boot-v4-payload.bigwin-ctl6.img`。
+
+设计里"`kmem_alloc: failure` 时把压缩器钉到 4 GiB 再试一次"那份诊断镜像，用工具的 `--replace-arg` 从当步的载荷做（基准的参数行里已经有 `vm_compression_limit`，`--arg` 会因为同名而拒绝），再照 Task 5 Step 5 打包并核对：
+
+```bash
+python3 -I local-tools/make-payload-variant.py <output>/payload/<当步的载荷> <output>/payload/<当步的载荷名>-comp4g.img --replace-arg vm_compression_limit=1048576
+```
 
 - [ ] **Step 3: 第 1b 步，`boot-v4-payload.bigwin-s1b.img`，一次，5 分钟**
 
