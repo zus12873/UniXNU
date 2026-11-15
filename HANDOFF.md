@@ -5,19 +5,27 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-15 08:30）：**路线 A 的设计用户已确认（原话"开始实施验证"），正在按计划 `docs/superpowers/plans/2026-11-15-memory-large-window.md` 执行。Task 1 做完了，Task 2 到 6 还没做；还没有构建，没有碰平板。**
+当前阶段（2026-11-15 10:05）：**路线 A 的主机部分做完了：四个代码任务已提交并审阅，新内核、新固件、六份载荷、五份只从内存启动的镜像都已做好并逐份核对；新镜像一份都还没上机。用户正在日常系统里做基线，基线刚开始就出了现象（内存占满时卡顿、指针抖动），后面几步怎么判要先和用户定。**
 
-- 计划的六个任务：
-  1. 内核引导页表从 16 页改成 22 页。**完成**：提交 `e9d3bb9`，主机测试 38 个全过，审阅通过。
-  2. 生成器和加载器的窗口上限从 8 GiB 改成 9 GiB。未开始。
-  3. 从一份载荷派生变体（只换设备树里的窗口数值和启动参数）的工具。未开始。
-  4. 板级配置（9 GiB 窗口、下限、保留列表、钉住压缩器）和布局测试。未开始。
-  5. 构建内核、固件，打五份镜像。未开始。
-  6. 上机。未开始；每一次都要用户在场并当次说可以开始。
-- 执行方式：Task 1 到 4 各交给一个子代理实现，再由另一个子代理审阅；Task 5、6 由主会话自己做。每个任务的状态记在 `.superpowers/sdd/2026-11-15-memory-large-window/progress.md`（不入库，只在本机），新会话接手先读它，再对 `git log`。
-- 用户确认涵盖的范围：改内核补丁里的一个常量并重编一次内核；改加载器的上限并重编一次固件；设计里点名的那几份镜像从内存启动；用户在日常系统里做一次 30 分钟的基线。**不含刷 `boot_a`**，那要在第 3 步之后另外问。
-- 第 1 步上机之前，用户要先在日常系统里做一次 30 分钟的基线（做法见设计的"上机步骤和通过标准"）。
-- 00:35 之后没有重新核对过平板；上机前先用 `fastboot getvar` 看现状，先充电（macOS 下不充电）。
+- 细节在文末"路线 A：主机部分做完，基线有了第一份结果"一条：提交、审阅结论、每个文件的字节数和 sha256、基线的读数。
+- 计划 `docs/superpowers/plans/2026-11-15-memory-large-window.md` 的六个任务：
+  1. 内核引导页表从 16 页改成 22 页。**完成**：`e9d3bb9`。
+  2. 生成器和加载器的窗口上限从 8 GiB 改成 9 GiB。**完成**：`294936c`，子模块 `drivers/DarwinBoot` 的 `bdb6ff7`。
+  3. 从一份载荷派生变体（只换设备树里的窗口数值和启动参数）的工具。**完成**：`64c26a0`、`60a61ba`，整体审阅后的修补 `822e47d`。
+  4. 板级配置（9 GiB 窗口、下限、保留列表、钉住压缩器）和布局测试。**完成**：`b47b5f5`，`../UniXNU-sheng` 的 `5877d2c`。
+  5. 构建内核、固件，打五份镜像。**完成**。
+  6. 上机。**只开了个头**：基线进行中；第 1 步到第 3 步都没开始，每一次都要用户在场并当次说可以开始。
+- 平板现在：09:46:40 我按用户的话（"现在在fastboot为我启动"）执行了 `fastboot reboot`，从 `boot_a` 起日常系统（`boot-v4-flash.prev.img`，`40234c20`）。重启前读到 `slot-retry-count:a` 是 5，这次开机用掉一次，现在应是 4，没有回读。下次进 fastboot 先读；到 2 或以下就 `fastboot set_active a`（用户 11-14 允许）。
+- 电：macOS 下不充电。09:46 读到的 `battery-voltage` 是 3794。每次进 fastboot 先读一次，低了先充再上机。
+- 等用户的三样东西：
+  1. 基线剩下的结果：退出几个应用之后指针还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
+  2. 一个决定：内存占满时的"闪烁"还算不算这一步不过。设计写的是出现一次就不过，但日常系统自己在内存占满时就有，照原样判没法比。我的建议写在文末那一条里，用户还没答。
+  3. 第 1 步可以开始的那句话。用的镜像是 `out/flash/boot-v4-payload.bigwin-s1.img`（sha256 `8bc7b897…`），做法在计划的 Task 6 Step 2。
+- 整体审阅后那一轮修补的复审（只读）09:51 派出，写这一段时还没回来；结果补在文末那一条的最后。它不管说什么都不再做第二轮修补，剩下的问题记录在案。
+- 执行方式：Task 1 到 4 各交给一个子代理实现，再由另一个子代理审阅；Task 5、6 由主会话自己做。逐条记录在 `.superpowers/sdd/2026-11-15-memory-large-window/progress.md`（不入库，只在本机），新会话接手先读它，再对 `git log`。
+- 用户确认涵盖的范围没有变：一处内核补丁加一次内核重编（已用掉）；加载器上限加一次固件重建（已用掉）；设计里点名的那几份镜像从内存启动；一次 30 分钟的基线。**不含刷 `boot_a`**，那要在第 3 步之后另外问。别的内核或驱动改动也都要另外问。
+
+上一阶段（2026-11-15 08:30）：路线 A 的设计用户已确认（原话"开始实施验证"），计划写好，Task 1 做完，Task 2 到 6 还没做，没有构建，没有碰平板。
 
 上一阶段（2026-11-15 01:45）：**用户选了内存路线 A：把内核窗口本身做大（先 7.5 GiB，再 9 GiB，最后加上低位内存区的收编，预计约 9.4 GiB），不再收编高位内存区。设计在 `docs/superpowers/specs/2026-11-15-memory-large-window-design.md`，等用户确认。确认之前不改内核、加载器、生成器和板级配置，不构建，不动平板。** 确认之后先写计划（放 `docs/superpowers/plans/`），再动手；第 1 步上机之前还要用户在日常系统里做一次 30 分钟的基线。要点见文末"路线 A：把窗口做大"一条。
 
@@ -866,6 +874,75 @@ fastboot boot /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_ma
     - 内核地址预算的参照：约 3 GiB 可分时两次短跑没有分配失败；出过分配失败的是只剩约 1.2 GiB 的那一版（收编补丁开头的说明）。
     - 8 GiB 的上限还写在另外三处：`drivers/DarwinBoot/Test/make-fixtures.py:85`（要跟着改）、`scripts/check-darwinboot-window-parser.py:37,42`（没人调用，能跑通就跟着改）、`../UniXNU-sheng/scripts/make-sheng-adt.py:110-112`（旧生成器，不动）。
   - 顺带核实：收编补丁没有 `vm.outside_memory` 这个 sysctl，上面"建议的下一步"第 1 条里写的那条命令读不到东西。内核只在启动时打一行 `memory outside the span: N pages adopted, M refused`（`osfmk/arm64/machine_routines.c:2369`），要用 `sudo dmesg` 看；从 `hw.memsize` 的差值也能算出来。
+- **路线 A：主机部分做完，基线有了第一份结果（2026-11-15 08:20 到 10:05；新镜像一份都还没上机）**
+  - 用户确认设计（原话"开始实施验证"）之后又说过三句话，都照做了："审阅完直接开始构建"；"镜像打好后告诉我，我来做基线"；"现在在fastboot为我启动"（我理解成把日常系统起起来做基线，执行的是 `fastboot reboot`）。
+  - 提交（都在本地，没有推送）：
+    - `UniXNU`（分支 `local/sheng-16g-macos`）：`e9d3bb9` 引导页表 22 页；`294936c` 生成器上限 9 GiB；`64c26a0`、`60a61ba` 变体载荷工具和它的第一轮修补；`b47b5f5` 布局测试；整体审阅后的一轮修补 `822e47d`（变体工具）、`1f60234`（新工具 `local-tools/bootimg-contents.py`）、`005dca4`（测试）、`30e521d`（文档里的 9 GiB 和测试注释）。
+    - 子模块 `drivers/DarwinBoot`：`bdb6ff7`（分支 `local/window-9g`），加载器上限 9 GiB。
+    - `../UniXNU-sheng`：`5877d2c`（分支 `local/sheng-12g-large-window`），只改 `board.toml`：窗口 `0x240000000`、下限 `0x8C0000000`、保留列表第二项 `0x880000000:0x280000000`、macOS 27.3 的 `kernel_args` 末尾加 `vm_compression_limit=1572864`。这个仓库里原有的未提交改动没有动。
+    - `../uefi-sheng`：`20331338`，没有改。
+  - 主机测试：`python3 -I -B -W error -m unittest discover -s local-tools/tests`，87 个全过。
+  - 三处上限现在一致：补丁 22 页；生成器 `scripts/unixnu/devicetree.py:298` 的 `0x240000000`；加载器 `drivers/DarwinBoot/DarwinBootPkg/Driver/WindowSize.h:7` 的 `0x240000000ULL`。
+  - 审阅：
+    - 每个任务做完都由另一个子代理审阅。Task 3 的审阅查出两处要紧的，都修了（`60a61ba`）并复审过：输入文件恰好叫 `OUT.tmp` 时会被工具删掉；`data-reset` 的检查只看 `args` 行，而生成器是用 `confirm_args` 送它的。
+    - 四个任务做完后、构建之前做了一次整体审阅：可以构建，没有 Critical；补丁、生成器、加载器、板级的值都不用改。两条 Important 都是计划的毛病：没有哪一步核对"哪份载荷进了哪个镜像"（现在每份打完都用 `bootimg-contents.py --payload` 核对）；设计里"把压缩器钉到 4 GiB"那份诊断镜像用原来的工具做不出来（工具现在有 `--replace-arg`）。
+    - 那一轮修补的复审见本条最后。
+  - 上游：`upstream/main`（`0c1bac3`）仍是 16 页，没有可对齐的东西，没有合并。
+  - 构建产物（`<output>` 是 `/Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos`）：
+    - 内核：`<output>/kernel/kernel.macho.bigwin-6e3cfce7`，143753216 字节，sha256 `6e3cfce7a80ce84c78131ae83ed8596d1c52ab3d317f7522529f177e6d8a48ba`（同后缀的 `kernel.json`、`kernel.map.json` 在旁边）。`_bootstrap_pagetables` 到下一个符号相差 `0x16000`，就是 22 页。
+    - 新固件：`out/flash/SILICIUM_UEFI.bigwin-8407c84f.fd`，3145728 字节，sha256 `8407c84f0d6287ca6610f30a40e8103a39d63cf2f851f66e9ca1705b6d3b4f08`。构建前后子模块都是 `bdb6ff7` 且没有改动；`DarwinBoot.efi` 是这次构建重编的（09:36:59）。
+    - 带新固件的 v0 镜像：`<output>/boot/boot-bigwin.img`，210903040 字节，sha256 `5c926a3fd28cf7a13dfd6e941cff3b9dfd936ef97c43dadf62282cf4353ea333`。现成固件（`e168abab`）的 v0 镜像仍是 `<output>/boot/boot-topwin.img`（`85f9dbf8…`）。
+    - 六份载荷，都在 `<output>/payload/` 下，各 209715200 字节（计划里写"七份"是把 `s1` 数了两次）：
+      - `payload.bigwin-base.img`（只读）：窗口 `0x240000000`（9 GiB），下限 `0x8C0000000`，参数行就是板级的那一行。sha256 `9d3b3004a68da52cd8f7f2057b97c51a00c64702621771278fa696c8a9e5f4d9`。
+      - `payload.bigwin-s1.img`：`0x1E0000000`（7.5 GiB），`0x920000000`，加 `memory-outside=0`。sha256 `ccd883c6634c10286f78f820064890d6004f3a471830b045fad38e8236113311`。
+      - `payload.bigwin-s2.img`：9 GiB，`0x8C0000000`，加 `memory-outside=0`。sha256 `2b7471107c7548608175ba2447eefd143a6bec9e13940226619553e8376ea3aa`。
+      - `payload.bigwin-ctl6.img`（对照）：`0x180000000`（6 GiB），`0x980000000`，加 `memory-outside=0`。sha256 `f1338e96e26956af1ca6d736a4904c922b50bdd75d2d31fe12054d4341630312`。
+      - `payload.bigwin-split.img`（备用）：7.5 GiB，`0x8C0000000`，加 `memory-outside=0`。sha256 `4d9f365e3e4ac99ce29a20f7e5bda9d9a3f55c03c88461e1b920f759d2ca32c7`。
+      - `payload.bigwin-8g.img`（备用）：`0x200000000`（8 GiB），`0x900000000`，加 `memory-outside=0`。sha256 `440a3df9c6c6c2f55cf0d2f662007e76713a6ad2db781da6b994ce170e0acd25`。
+    - 五份镜像，都在 `out/flash/` 下，各 210903040 字节，都只从内存启动：
+      - `boot-v4-payload.bigwin-s1.img`（第 1 步）：现成固件加 `payload.bigwin-s1.img`。sha256 `8bc7b897dddbfa4f9afe849381f5f00f811f402defa99583ff17458664088a92`。
+      - `boot-v4-payload.bigwin-s1b.img`（第 1b 步）：新固件加 `payload.bigwin-s1.img`。sha256 `f356cae56352bbb480c9e91143551174b1d6873401bbf0f10692659bf5609bcb`。
+      - `boot-v4-payload.bigwin-s2.img`（第 2 步）：新固件加 `payload.bigwin-s2.img`。sha256 `e373b41a779e7331258eeec9ac69883e821231b071f507b84591dcc21ffdae1f`。
+      - `boot-v4-payload.bigwin-s3.img`（第 3 步）：新固件加 `payload.bigwin-base.img`。sha256 `6b663facda158b2badf877dbebd974eb6ef4a535bd81309c07405bdef6eaf774`。
+      - `boot-v4-payload.bigwin-ctl6.img`（对照）：现成固件加 `payload.bigwin-ctl6.img`。sha256 `e9b250753e2ae9a42885f24e4c674d326b5096a22079a3d81c2d26342e8196bf`。
+  - 载荷和镜像是怎么核对的（都没有只信工具自己打印的那一行）：
+    - 每份变体用 `local-tools/adt-chosen.py` 读回设备树的 `/chosen`：窗口大小和下限是上面的值，另外四个 `darwinboot-*` 属性和基准一样。
+    - 每份变体的卷里 8 个文件逐个和基准比哈希：只有 `kernel.macho.adt` 和 `unixnu.toml` 不同（`s2` 只有 `unixnu.toml` 不同）。
+    - 每份变体的 `unixnu.toml` 只有一行 `args`，等于 `memory-outside=0`、一个空格、再接基准那一行（923 字节 59 个参数；基准 906 字节 58 个）；文件其余部分和基准一样；没有 `data-reset`，没有 `confirm_args`。
+    - 每份镜像跑 `bootimg-contents.py --payload`：第二行是 `ramdisk is <载荷路径>`，退出码 0，也就是镜像里的 ramdisk 和载荷文件逐字节相同。
+    - 用现成固件的两份（`s1`、`ctl6`）里固件那一段是 1180573 字节、sha256 `6d40d584…`，和昨晚跑过的 `boot-v4-payload.topwin.img`、`boot-v4-payload.topwin-adopt3g-diag-report0.img` 里的是同一段；用新固件的三份是 1180698 字节、sha256 `610fa1f6…`。
+    - 打包期间把 `out/flash/` 下 23 份旧镜像（`boot-v4-flash*.img`、不带 `bigwin` 的 `boot-v4-payload*.img`、`boot-v4-install.img`）设成只读，打完改回 644；前后各算一次 sha256，完全一样。
+  - 日常文件没有动：`<output>/kernel/kernel.macho` `33d294c8`，`<output>/payload/payload.img` `8a36fe56`，`<output>/boot/boot.img` `35f03ec4`，`boot.json` 和 `boot.good.json` 相同；`out/flash/` 下 `boot-v4-flash.img` `c244f53d`、`.prev` `40234c20`（`boot_a` 里的那份）、`.prev2` `4cb441e0`、`.prev3` `ae0d4179`、`.topwin` `40fb63bd`，`boot-v4-payload.img` `a9cb0b31`，`boot-v4-install.img` `75fb800a`（带 `data-reset`，这次没有启动也没有刷）。
+  - 现在的状态里要记住的：
+    - 固件构建目录（`../uefi-sheng/Build/`）停在新固件 `8407c84f` 上，之后直接跑 `./unixnu bootimg` 得到的是带新固件的镜像。
+    - `<output>/boot/boot.json` 已从 `boot.good.json` 复制回去；OS 镜像已卸载。
+    - 计划文档在整体审阅后加了几处做法（基准载荷先设只读、固件构建前后记子模块的提交、每份镜像核对载荷、诊断镜像用 `--replace-arg` 做），都标了日期。
+  - 没做的和已知的缺口：
+    - QEMU 的加载器测试 `scripts/test-darwinboot.py` 没跑（本机没有 `qemu-system-aarch64`）；加载器的五个主机测试和 `Test/window-size.c` 跑过。
+    - `scripts/check-darwinboot-window-parser.py` 现在跑不起来，没有跟着改。
+    - `patches/xnu/native-4k-bootstrap-capacity.patch`（另一个 XNU 版本的那份）仍是 16 页。macOS 27.3 用的是 `patches/xnu-12377/` 那份（`<output>/xnu-patches.list` 第 8 行）。用 `patches/xnu` 的 profile 配 6 GiB 以上的窗口会停在内核入口。
+    - 变体工具拒绝名字是 `data-reset` 的参数，基准载荷里出现这几个字时任何调用都拒绝；但 `--arg=-data-reset`、`--arg=x=data-reset`、`--replace-arg=debug=data-reset` 这三种写法不会被拒绝，产物的 `unixnu.toml` 里会出现 `data-reset` 这几个字。计划里用到的参数是固定的几条，都不沾边；没有改，记在这里。
+    - `local-tools/boot-sheng.py` 不检查镜像里有没有 `data-reset`。可以以后加，这次没做。
+  - 基线（用户在日常系统里做，Task 6 的第一项，还没做完）：
+    - 平板怎么起来的：09:46:28 在 fastboot 里只读查询（一台设备；`current-slot` a；`slot-retry-count:a` 5；`slot-successful:a` no；`slot-unbootable:a` no；`battery-voltage` 3794；`unlocked` yes），09:46:40 `fastboot reboot`，之后 60 秒 bootloader 没有再出现。
+    - 用户约 09:50 的原话："进系统后，使用内存在3g+卡了一会，然后跳到4.72g使用内存之后，卡顿，鼠标指针闪烁，视频放到mp4路径下了"。
+    - 录屏 `data/mp4/IMG_6402.MOV`（不入库；23724175 字节，文件时间 09:48:30，3.63 秒，218 帧）。文件时间离重启不到两分钟，所以这是刚登录之后的事；程序坞里很多应用带着运行的小点。
+    - 我从录屏里读到的（全片每 4 帧取一帧，前 48 帧逐帧，内存面板另取一张原分辨率的截图）：
+      - 活动监视器内存页（上半被一个"信息"窗口挡住）：物理内存 5.95 GB（这一行只露出下半），已使用 4.72 GB，缓存文件 1.21 GB，交换 0，App 内存 1.44 GB，联动内存 2.83 GB，已压缩 456.3 MB；压力图露出来的一段是绿色。
+      - 指针画在相距不远的两个位置上，每一到三帧换一次位置，中间的帧两个位置各有一个淡的；窗口内容在看过的帧里没有变化。
+      - 平板自己的时钟不准：菜单栏显示周五 11 月 13 日 10:07，主机当时是 11 月 15 日 09:48。录屏里的时间不能当时间戳用。
+    - 按设计的叫法，这是"卡顿"加"闪烁"（指针抖动），出在**日常系统**上（6 GiB 窗口，不收编）。当时内存是占满的：已用加缓存 5.93 GB，物理 5.95 GB；已用占 79%（设计里"填满"的线是 80%）。压力是绿的。
+    - 它说明的：内存占满时的卡顿和指针抖动不是"窗口变大"或"收编"才有的，日常系统自己就有。
+    - 它还不说明的：不能说昨晚收编那几版的闪烁就是这个（昨晚有一次是进桌面之前就闪，那时内存不会是满的）；也还不知道抖动是不是跟着"内存占满"走，所以请用户退出几个应用看一下。
+    - 顺带看到的一个数：联动内存 2.83 GB，占了已用的六成。今天留给应用和缓存的只有约 3.1 GB（5.95 减 2.83）。如果联动内存大致不随窗口变，7.5 GiB 窗口留给应用和缓存的约 4.6 GB，9 GiB 约 6.1 GB。这是估计：联动内存会随窗口略增，而且它为什么有 2.83 GB 没有查过。
+    - 10:02 请用户趁系统还在那个状态做的：退出几个应用，让已用加缓存掉到 5 GB 以下，看指针还抖不抖；拍 `sysctl hw.memsize vm.pages vm.pages_excluded` 的输出和整个内存页；之后重新填满，计时到 30 分钟。结果还没回来。
+  - 等用户定的一件事。设计写的是"闪烁、定住、自己重启出现一次，这一步就不过"。照这条，日常系统自己也不过，没法拿来比。我的建议（用户没答之前不算数）：
+    1. 内存没占满时出现闪烁：照旧，这一步不过。
+    2. 内存占满时（已用加缓存离物理内存不到 0.5 GB）出现闪烁：和这份基线一样，记录下来，不单凭它判不过。
+    3. 每一步上机先重复基线的负载（登录后恢复出来的同一批应用），看同样的负载下现象是不是没了，再往上填。如果 7.5 GiB 的窗口在同样的负载下、内存还空着 1 GB 多的时候照样抖，那抖动就不是内存占满带来的，要另查。
+    4. 定住和自己重启照旧，出现一次就不过。
+  - 第 1 步怎么开始（用户说可以之后）：平板进 fastboot；只读查询 `current-slot`（应为 a）、`slot-retry-count:a`、`battery-voltage`；核对镜像的 sha256 是 `8bc7b897…`；`python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.bigwin-s1.img --serial <序列号>`。通过线是 `hw.memsize` 不低于 7784628224。其余照计划的 Task 6。
+  - 整体审阅后那一轮修补的复审：写这一条时还没回来。
 - **启动页上的 `SetupKeypad: Failed to Locate STI Device Path! Status = Not Found`（用户 2026-11-15 问有没有影响）**
   - 没有影响，已这样答复用户。这一行是 Silicium 固件的启动管理器打的：`../uefi-sheng/Silicon/Silicium/SiliciumPkg/Library/BootManagerLib/BootManager.c:114` 调 `RegisterKeyCallback`，它在 `KeyCallback.c:103` 调 `SetupKeypad`，找不到按键输入设备时在 `KeyCallback.c:55` 打这一行并返回，启动管理器继续往下走。
   - 本机的固件里没有可用的按键输入设备，所以每次开机都有这一行；11-13 的录屏 `data/mp4/IMG_6358.MOV` 里就有。
