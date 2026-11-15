@@ -737,6 +737,22 @@
   - 要往下做，得有 root。我不碰密码，请用户二选一：
     - 在 Mac 自己的终端里用 `ssh -t` 逐条输 sudo；
     - 或者临时加一个 sudoers 文件，只放行 `/bin/launchctl`、`/usr/bin/log`，以及删这个文件本身。试完删掉。
+- **约 20:33 用户："最好还是使用修复gpu渲染，cpu先看下是否可行，以及是否能恢复部分功能"**（还没选哪种 root 方式）
+  - 20:34 不用 root 又从日志里读到一条公开的。每次图标服务启动后不到一秒都有：
+    - "(Metal) /AppleInternal/…/MetalPerformanceShaders/MPSImage/Filters/MPSImageUnaryKernel.mm, line 335: error '<private>'"；
+    - 时间：11:31:07、11:31:28、11:32:09、11:33:30、04:24:15、04:25:20。
+    - 这是 MPS 一元图像核（模糊属于这一类）报错，接着断言 abort。错误原文被隐去了。
+  - 同一份日志里还有 SkyLight 的 "On-demand launch of the Window Server is allowed for root user only"、"This user is not allowed access to the window system right now"、"Invalid display 0x00000000"。是否相关不知道。
+  - 修 GPU 要先知道我们的 Metal 实现在哪一步拒绝了 MPS 的核。
+    - 插件 `drivers/AdrenoMetal/NativeBridgeMetalFrontend.mm:566-574`：拒绝的原因走 `NBLOG`。
+    - 只有设了 `SHENG_LOG_GPU` 时，才作为公开字符串写进系统日志（插件读启动参数 `log-gpu=1`，`NativeAdrenoMetalPlugin.mm:389-390`）。
+    - 设了 `NMB_LOG_STDERR` 时也写标准错误。
+  - 20:36 做了只多一个启动参数的测试镜像（只从内存启动）：
+    - 载荷 `payload.cd2-s1-loggpu.img`（`ac42cf3a…`，在 `payload.cd2-s1.img` 上 `--arg log-gpu=1`，参数行 933 字节）；
+    - 镜像 `out/flash/boot-v4-payload.bigwin-cd2-s1-loggpu.img`（`691717af…`）；
+    - 22 份日常镜像没变。
+    - 用它开机后，经 SSH 读日志就能看到插件拒绝的原因，不用 root。
+  - CPU 那条路仍要 root（`launchctl debug --environment`），或者开机后趁终端还能用，由用户在平板终端里 `launchctl setenv` 再 `killall iconservicesagent`。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
