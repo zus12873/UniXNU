@@ -907,6 +907,17 @@
       - 抢占和调频是 Adreno 移植里最常见的两个挂起来源，这只是经验判断，没有证据。
     - 触发：已知三次卡住都发生在大量画图标的时候（打开系统设置、程序坞画图标、图标服务画图）。可以经 SSH 用 JXA 连续取一批程序图标来压，也可以请用户反复开关系统设置，再数日志里的 `MadeBeforeRecovery`。
     - WindowServer 在 GPU 复位后自己重启这一条，作为兜底照样要做。
+- **约 22:27 用户："可以"**（同意三件事：兜底改动，A `gpu-preempt=0`，B `gpu-dcvs=0`）
+  - 插件子模块 `local/sheng-ci-mps` 上提交 `2b9a743`（`NativeBridgeMetalFrontend.mm`）：
+    - `- (void)refuse:` 遇到含 `MadeBeforeRecovery` 的拒绝原因时，调 `endRenderServerAfterGpuLoss()`；
+    - 那条日志改成按 `NATIVE_RENDER_SERVER` 写进程名（macOS 上是 WindowServer）。
+  - 核心仓库 `d3e5fe4`：子模块指针和 `components.toml` 的 AdrenoMetal `revision` 改到 `2b9a743f…`。
+  - 22:29 cd3 内核放回原位，OS 镜像挂上，后台跑 `./unixnu build payload`。
+  - 压测脚本 `local-tools/tablet-icon-stress.js`：把系统和 /Applications 里每个程序的图标按 16 到 512 六种大小取成位图，逼图标服务画图。
+  - 打算从这次的载荷做三份镜像，共同的参数是 7.5 GiB、`memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1 ci-mps=0`：
+    - 基线；
+    - A：再加 `--arg gpu-preempt=0`；
+    - B：`--replace-arg gpu-dcvs=0`（参数行里本来是 `gpu-dcvs=1`）。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
