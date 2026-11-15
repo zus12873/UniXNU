@@ -753,6 +753,10 @@
     - 22 份日常镜像没变。
     - 用它开机后，经 SSH 读日志就能看到插件拒绝的原因，不用 root。
   - CPU 那条路仍要 root（`launchctl debug --environment`），或者开机后趁终端还能用，由用户在平板终端里 `launchctl setenv` 再 `killall iconservicesagent`。
+- **约 20:38 用户："可以"**（日志镜像上机，暂记 LG-1）
+  - 20:39 数到 0 台。我起了一个最多等 150 秒的等待，被用户打断（用户说"continue"）。
+  - 20:40:38 数到 1 台：a 7、b 7，都是 unbootable no；电压 3805 mV。
+  - 20:40:43 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd2-s1-loggpu.img`（`691717af…`）：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
