@@ -964,6 +964,19 @@
     - 指针：转换函数拿到每帧的时间，离上一帧超过约 60 ms（移动中约 5 个帧间隔）就当成新的一次触摸，从当前位置起算。先在 `package/tests/wn8030_host.c` 加用例：同一编号、中间没有抬手帧、隔 150 ms、位置差很多 → 不动；隔 13 ms → 照常动。
     - 掉线：把那 17 个计数（阶段、读到的帧、I2C 失败、最后的错误、贴附次数）再加一个重载次数，每秒挂到注册表上一次，SSH 里用 `ioreg` 就能读，下次掉线时当场看是哪一步失败。
     - 不用改代码的试验：一边录日志一边请用户轻按、轻晃保护套和平板接缝处约 20 秒，看会不会出现删设备、重建。
+      - 23:01:44 起在平板上录了 10 分钟（`/tmp/cover-wiggle.log`），用户还没做这个试验，就先合上了保护套（下一条）。
+- **约 23:08 用户："看下造成当前desktop桌面卡死的原因，记录问题，我刚刚把键盘壳合上了一会，没做其他操作"**（CD5-BASE-1，开机约 33 分钟，只经 SSH 读；日志拷在 `data/tablet-logs/20261115-cover-close-freeze/`，不入库）
+  - **原因：保护套合上后压在触摸屏上，触摸屏一直在报触点，WindowServer 的手势处理卡死，不是 GPU 卡住**。
+    - 平板时间 07:02:2x 到 07:08:01，WindowServer 每 10 秒记 900 到 1300 条 "hid_event_callback: Invalid event type: 11"（11 是触控 digitizer 事件），约每秒 130 条，和触摸屏 120 Hz 的报点频率相符。
+    - 同一段里 BackBoard 记了触点 1 到 10 一个个"touching"又"none"：十个触点全用上了，忽有忽无，像是盖子贴在玻璃上。
+    - 07:02:42.946 起 WindowServer 主线程（26e）开始记 "[com.apple.Gestures:Critical] [!] … has been in … phase for …"：有个手势一直停在某个阶段。触点 07:08 停了以后这条还在涨（07:08 那一分钟 658 条，07:10 前一分钟 752 条）。
+    - 07:10:24：WindowServer（PID 173，没重启过）CPU 99.7%，问它一次指针位置 5 秒没回；整机别的进程正常，SSH 正常。
+    - 这 12 分钟里没有 `MadeBeforeRecovery`、`GpuRecoveryVictim`、"GPU context is lost"，只有 07:02 两条 "timed out fence"。所以兜底（WindowServer 遇 GPU 复位自己重启）不会管这种卡死。
+    - 保护套设备 07:06:40 被删、07:06:46 重建（`cover-events.log`），多半是打开或挪动保护套的时候。
+  - **缺的那一块（读代码确认）**：盖子霍尔传感器（GPIO 171）只有键盘驱动在读，合上时只停键盘和触控板的输入（`../UniXNU-sheng/package/KeyboardProbe.cpp:474-486`）。触摸屏驱动 `package/TouchProbe.cpp` 不看盖子，屏幕也不熄。iPadOS 上合盖会关触摸和屏幕；macOS 的 WindowServer 本来就不收触摸屏事件（"Invalid event type: 11"），它的手势识别碰上十个忽有忽无的触点就卡住了。
+  - 打算的修法（驱动改动，要用户同意）：盖子合上时触摸屏驱动先发一次"全部松开"，之后丢掉报点，打开后再恢复；只看盖子（lid），不看折到背后（tablet），折到背后还要用屏幕。能不能顺便把背光关掉另说。
+  - WindowServer 现在这样多半自己好不了，只能重启（SIP 不让杀它）。
+- 同一时间暂停的事：Core Image 修复的 PR。查过没人做过（AdrenoMetal#37 改的是纹理优化设置，它自己在 sheng 上的图标测试是 FAIL，崩溃原因写着"待分析"）。打算走 sheng 仓库自己的路：macOS 启动参数加 `exec-env=iconservicesagent:CI_ENABLE_MPS=0`（内核补丁 `profiles/os/macos-27.3-26C5035r/patches/xnu-12377/macos-droidvm-k27-parity.patch` 的 exec-env，上游已有），不碰插件；插件那份在 AdrenoMetal 仓库，进不了 sheng 的 PR。提交前要上机验证一次；外置构建盘 `/Volumes/UniXNUBuild` 现在没挂上。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
