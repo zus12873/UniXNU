@@ -793,6 +793,9 @@
   - 测试载荷 `payload.cd3-s1-ssh.img`（`85e28889…`）：7.5 GiB（`0x1e0000000`、`0x920000000`），加 `memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1`，参数行 962 字节。
   - 镜像 `out/flash/boot-v4-payload.bigwin-cd3-s1-ssh.img`（`c02657ed…`，新固件），`bootimg-contents.py` 核对过。22 份日常镜像没变。
   - 只从内存启动，要用户说可以。开机后 SSH 应该不用手动开（公钥已经在平板的用户数据里）。
+- **约 21:11 用户："进入fastboot了"**（cd3 第一次上机，暂记 CD3-1）
+  - fastboot（21:12:20）：a 7、b 7，都是 unbootable no；电压 3742 mV；sha256 `c02657ed…` 相符。
+  - 21:12:35 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd3-s1-ssh.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
