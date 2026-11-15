@@ -845,6 +845,24 @@
 - **约 21:54 用户："可以"**（cd4 第一次上机，暂记 CD4-1）
   - fastboot（21:55:03）：a 7、b 7，都是 unbootable no；电压 3798 mV；sha256 `4ba1bede…` 相符。
   - 21:55:10 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+  - **约 21:57 用户："看下ssh是否可连接，当前鼠标指针闪烁，画面卡住"**
+    - SSH 能连（21:57:45，开机 2 分钟）。`kern.bootargs` 有 `ci-mps=0`、`enable-jobs=com.openssh.sshd`。
+    - **`ci-mps` 这一处起作用了**：
+      - 21:58:34 在平板上跑 `local-tools/tablet-ci-blur-probe.js 2 20`，128、512、1024 px 全部 "ok"，退出码 0。之前的镜像上同一个脚本在第一张就断言。
+      - 用户那一份图标服务 05:58:06（平板时间）启动的 [880]，到 21:58:49 还活着，没有 MPS 报错。`runs = 3`、`successive crashes = 2` 不再涨。那两次崩溃在这之前，日志里没取到原因。
+    - **新问题：画面卡住是 GPU 复位后 WindowServer 恢复不过来**：
+      - WindowServer 一直占约 185%-200% CPU。日志从平板时间 05:57:08 起，两分钟里有：
+        - 3591 条 "native-metal: command buffer refused: renderCommandEncoder: render encoder: NotImplemented(MadeBeforeRecovery)"；
+        - 几千条 "[com.apple.SkyLight] Detected command buffer completion failure. Error code = 0xffffffffffffffff"；
+        - 以及 CoreAnimation 的 "MTLCommandBuffer … error = … MadeBeforeRecovery"。
+      - `MadeBeforeRecovery`（metal2vulkan 运行时 `crates/metal2vulkan-runtime/src/error.rs:2032-2036`、`detach.rs:19-22`）：VkDevice 丢了又恢复了，恢复前建的对象在新设备上一律拒绝，要重新建。WindowServer 一直拿旧对象画，所以一直失败。
+      - 设备丢失来自内核的 hangcheck（`drivers/Adreno740/NativeAdrenoPublish.cpp:271-300`）：每 500 ms 看一次环有没有进展，没进展就复位 GPU，"only the client whose submission hung sees its device lost"。它用 `IOSleep` 和栅栏值，不看墙钟。
+      - 也就是说，平板时间 05:57:08 前后 WindowServer 的一次提交真的卡住了，GPU 被复位，WindowServer 没能重建自己的对象。插件在 iPadOS 上遇到这种情况会结束 backboardd 让它重启（`NativeBridgeMetalFrontend.mm:575-583`），macOS 上没人重启 WindowServer。
+      - 时间上的巧合：平板时间 05:57:02.548，连上 Wi-Fi 后系统对时，"Time Change: accumulated change of 66485.520 seconds"（往前跳了约 18.5 小时），6 秒后开始出错。hangcheck 不看墙钟，所以多半只是巧合，没坐实。
+      - 跳之前，`com.apple.dock.extra` 有 "binary archive refused: … IconRendering.framework/Resources/binary.metallib" 和两次 "heap texture refused: OutOfMemory(Heap)"（这个会退回到单独建纹理）。
+      - 内核的 GPU 恢复计数（`native_adreno_recovery`）不在 sysctl 里，读不到复位了几次。
+      - 和 `ci-mps` 有没有关系分不清：CD2-2（没有 `ci-mps`）一进桌面也是指针闪。
+    - 这时 WindowServer 是 `_windowserver` 用户的进程，SSH 的账户杀不了；`launchctl kickstart` 系统服务会被 SIP 拒绝。只能重启。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
