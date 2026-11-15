@@ -817,6 +817,15 @@
       - 打算加启动参数 `ci-mps=0`，只放进测试载荷，不覆盖环境里已有的值。
       - 这是驱动改动，要用户同意。
     - 根因（为什么 RGBAh 中间图交给 MPS 时是空的）还没找到。上面这个是绕开它的办法，图标仍由 GPU 画。
+- **约 21:28 用户："可以，开始改"**（同意改 Metal 插件）
+  - 插件子模块 `drivers/AdrenoMetal`：在本地分支 `local/sheng-ci-mps` 上提交 `74ec0ff`。
+    - 改的是 `NativeAdrenoMetalPlugin.mm`，在 `log-gpu` 那几行后面加 `#if TARGET_OS_OSX` 段：`if (bootArgSet("ci-mps=0")) setenv("CI_ENABLE_MPS", "0", 0);`，不覆盖环境里已有的值。
+  - 核心仓库 `bc40cd0`：子模块指针和 `components.toml` 里 AdrenoMetal 的 `revision` 一起改到 `74ec0ffa…`。
+    - 构建开始时 `update_submodules` 会把子模块拉回记录的版本（`scripts/unixnu/feeds.py:208-228`），所以记录的版本必须跟着改。
+  - 没有写主机测试：这一行在插件的进程初始化里，没有现成的测试架子。用平板上的行为来验证：
+    - 改前：探测脚本必定断言，图标服务一直崩；
+    - 改后：带 `ci-mps=0` 的镜像里，探测脚本要出图，`launchctl print` 里的 successive crashes 不再涨。
+  - 21:31 把 cd3 内核（`347fa01f`，带 `enable-jobs`）放回原位，OS 镜像只读挂上。后台跑 `./unixnu build payload`。完了要另存载荷、还原日常文件。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
