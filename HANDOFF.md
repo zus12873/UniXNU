@@ -424,6 +424,23 @@
       1. 内存满正是内核开始回收、也开始按空闲退出杀它的时候，之后再拉起来的那一份卡住（推测）；
       2. Wired 一分钟里涨了 0.19 GB，Wired 不能回收，一直涨下去就真没东西可回收了。
     - 要分清，得在卡住时看图标服务的内核栈和 launchd 对它的记录（`launchctl print`），这些都要能用的终端。
+- **约 17:35 用户："Show window title icons默认是关着的"**：辅助功能那一项本来就关着，这条路不通。
+- **17:43 做好了不带图标服务的测试镜像（只从内存启动，还没启动，等用户说可以）**
+  - 载荷 `<output>/payload/payload.bigwin-s1-noicon.img`，sha256 `b14c6424…`。从 `payload.bigwin-s1.img`（`ccd883c6…`）做出来，和它只差两处：
+    - `disable-jobs=com.apple.cameracaptured,com.apple.iconservices.iconservicesagent`：命令行盖过内置参数，所以照机也照旧关着；
+    - `debug=0x14e` 写成 `debug=334`：同一个值，短 2 字节，因为参数行超了上限 2 字节。
+    - 参数行正好 1000 字节，工具的上限是不超过 1000。没有 `data-reset`，没有 `lite`。
+    - 菜单文件 `EFI/UniXNU/unixnu.toml` 里只有默认项 `xnu` 有参数行。镜像里另外两行 `args = …` 是空闲簇里的旧数据。
+  - 镜像 `out/flash/boot-v4-payload.bigwin-s1b-noicon.img`：新固件（`boot-bigwin.img`，`5c926a3f…`）加这份载荷，210903040 字节，sha256 `61cff115…`。`bootimg-contents.py` 核对过装的是这份载荷。
+  - 打包时没给 22 份日常镜像加上只读保护：文件清单写进了沙箱的临时目录，不在沙箱里跑的打包命令读不到。打包前后算的 sha256 完全一样，日常镜像没有被动过。
+  - 注意：这条策略写的是系统域的 `disabled.plist`，可能管不到每个用户自己那一份 iconservicesagent。所以启动后要看活动监视器里还有没有它，是谁的身份。
+  - 启动后要做的：
+    1. 活动监视器搜 icon，拍一张；
+    2. 打开终端，看能不能用；
+    3. 能用就在终端的 设置 → Profiles → Window 里取消 "Working directory or document"，这样以后正常镜像里终端也不会因为标题栏图标卡住；
+    4. `launchctl print system/com.apple.iconservices.iconservicesagent | head -30`，再把 `system` 换成 `gui/$(id -u)` 各拍一张；
+    5. `cd /Library/Logs/DiagnosticReports`，`less Terminal_2026-11-14-082152_MacBook-Pro.spin`，输入 `/iconservicesagent` 回车跳过去，拍那一屏；
+    6. 照常用 20 分钟，看内存满了以后新开程序还卡不卡。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
