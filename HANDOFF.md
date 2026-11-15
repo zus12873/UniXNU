@@ -576,13 +576,13 @@
 - **18:39 用户："进fastboot了，帮我开始执行"**：批准了设计。
   - fastboot（18:39:45）：a 7、b 7，都是 unbootable no；电压 3772 mV。
   - 计划 `docs/superpowers/plans/2026-11-15-community-v0-wrap.md`（`9de4d61`），由我自己执行。
-  - Task 1（18:44）：`git merge --no-ff crossdarwin/boot/sheng-firmware-compat`，合并提交 `4ad8cab`，没有冲突。
+  - Task 1：`git merge --no-ff crossdarwin/boot/sheng-firmware-compat`，合并提交 `4ad8cab`，没有冲突。
     - 社区带来的 `test_boot_template.py` 10 个测试 OK。
     - 这次合并把 `drivers/AdrenoMetal` 和 `drivers/RamBlock` 两个子模块的指针改到了社区的版本，工作区里还是旧的检出（`git status` 显示 `M`）。第二阶段重编之前要 `git submodule update` 这两个。
-  - Task 2（18:50）：`local-tools/make-bootimg-v0-template.py` 加测试 `local-tools/test_make_bootimg_v0_template.py`，`8dc1b5d`。
+  - Task 2：`local-tools/make-bootimg-v0-template.py` 加测试 `local-tools/test_make_bootimg_v0_template.py`，`8dc1b5d`。
     - 先写的测试，5 个都失败；实现后 5 个 OK，端到端那个也真跑了，不是跳过。
     - 和计划的小差别：先查载荷里有没有 `data-reset`，再查模板校验值，这样两个拒绝的测试互不依赖。
-  - Task 3（18:53）：用模板 `8fed0304…`、加载器取自 `SILICIUM_UEFI.bigwin-8407c84f.fd`，打了两份：
+  - Task 3（18:45 前做完）：用模板 `8fed0304…`、加载器取自 `SILICIUM_UEFI.bigwin-8407c84f.fd`，打了两份：
     - `out/flash/boot-v0-cd.bigwin-ctl6.img`：载荷 `payload.bigwin-ctl6.img`（`f1338e96…`，6 GiB），214626304 字节，sha256 `d1dfe732…`；
     - `out/flash/boot-v0-cd.bigwin-s1.img`：载荷 `payload.bigwin-s1.img`（`ccd883c6…`，7.5 GiB），214626304 字节，sha256 `5e747915…`。
     - 两份的 kernel 都是 4904432 字节，ramdisk 209715200 字节，换进去的加载器 sha256 都是 `717d5649…`。
