@@ -826,6 +826,12 @@
     - 改前：探测脚本必定断言，图标服务一直崩；
     - 改后：带 `ci-mps=0` 的镜像里，探测脚本要出图，`launchctl print` 里的 successive crashes 不再涨。
   - 21:31 把 cd3 内核（`347fa01f`，带 `enable-jobs`）放回原位，OS 镜像只读挂上。后台跑 `./unixnu build payload`。完了要另存载荷、还原日常文件。
+  - 21:34 前构建成功：
+    - 插件 `<output>/tree/build/adreno-metal-plugin-macos27/NativeAdrenoMetal.bundle` 21:33:48 重编，二进制里有 `ci-mps=0`；
+    - 载荷 `0df8f588`，另存为 `payload.cd4-base.img`（只读）。
+    - 日常文件已还原（`33d294c8`、`8a36fe56`、`35f03ec4`），OS 镜像已卸载。
+  - 测试载荷 `payload.cd4-s1-ssh-cimps.img`（`9c58d5c1…`）：7.5 GiB，加 `memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1 ci-mps=0`，参数行 971 字节。
+  - 镜像 `out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`（`4ba1bede…`，新固件），`bootimg-contents.py` 核对过。22 份日常镜像没变。只从内存启动，要用户说可以。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
