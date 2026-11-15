@@ -609,6 +609,9 @@
       - 崩溃报告会写在数据卷的 `/Library/Logs/DiagnosticReports/WindowServer-*.ips`，重启后还在。
       - 下一步：做 v4 对照（同一载荷，我们自己的旧固件）。能进桌面的话，在控制台的崩溃报告里打开 v0 这次留下的 WindowServer 报告，拍第一屏：异常类型、终止原因、崩溃的线程。
       - 我的推测（没证据）：社区外壳里的板级固件是按他们机器做的，内存保留区或显示设置和本机对不上。
+- **约 19:03 用户："进fastboot了先试我们的"**（v4 对照，暂记 C6-1）
+  - 19:01 两次都数到 0 台。用户说屏幕上是 FASTBOOT，19:04:48 再查数到 1 台：a 7、b 7，都是 unbootable no；电压 3833 mV。
+  - sha256 `e9b25075…` 相符。19:04:57 `boot-sheng.py out/flash/boot-v4-payload.bigwin-ctl6.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
