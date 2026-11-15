@@ -832,6 +832,16 @@
     - 日常文件已还原（`33d294c8`、`8a36fe56`、`35f03ec4`），OS 镜像已卸载。
   - 测试载荷 `payload.cd4-s1-ssh-cimps.img`（`9c58d5c1…`）：7.5 GiB，加 `memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1 ci-mps=0`，参数行 971 字节。
   - 镜像 `out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`（`4ba1bede…`，新固件），`bootimg-contents.py` 核对过。22 份日常镜像没变。只从内存启动，要用户说可以。
+- **约 21:37 用户："看下仓库最新的pr是不是已经有修复方案了"**（21:37-21:39 用 `gh` 查，只读）
+  - 没有修这个问题的 PR。在 UniXNU 组织下搜 PR 和 issue：`MPSImage`、`source may not be nil`、`CI_ENABLE_MPS`、`CoreImage` 都是 0 条。`iconservicesagent` 只搜到 11-09 及以前已合并的诊断类 PR（AdrenoMetal#15、UniXNU-sheng#62、UniXNU#176，以及 10-22 的两条 GPU 权限）。
+  - 相关但不是同一个修复：
+    - **AdrenoMetal#36**（OPEN，CrossDarwin 的 `metal/function-lookup-errors`）："Return MTLLibraryErrorFunctionNotFound when a requested function name is absent, allowing clients such as Core Image to continue searching other libraries"。
+      - 就是我们合并进来的 `6d4a3f3`。带着它，模糊照样断言，所以不是这个。
+    - **UniXNU#250**（OPEN，filipnavara）："launchd job environment without the Wi-Fi or Bluetooth runtime"。
+      - 让 board 里 `launchd_job_environment` 的值在不带 Wi-Fi、蓝牙运行时时也生效：合并、签名后的 OS launchd 缓存放进附加包的 `xpc/`。
+      - 这是给系统任务加环境变量的正路（比如给 iconservicesagent 加 `CI_ENABLE_MPS=0`），但它验证的是 iPadOS 27（asteroids），macOS 的覆盖把 `payload.runtime.launchd_job_environment` 整个去掉了，能不能用在 macOS 上没验证。
+    - **UniXNU#249**（OPEN，filipnavara）："bootstrap page tables for windows up to 9 GiB on native 4 KiB"，16 页改 22 页，在 Nothing Phone (3a) 8 GiB 上验证。和我们路线 A 的 Task 1 是同一件事、同一个数字。
+  - AdrenoMetal 的分支（CrossDarwin、leoforney、lss717、FFT-infra）最近的提交里都没有和 MPS、CoreImage 模糊有关的。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
