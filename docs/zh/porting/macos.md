@@ -35,7 +35,7 @@ macOS 构建在装有 Xcode 的 Mac 上进行。除[通用前置条件](/zh/guid
 | Kernelcache | 从 IPSW 提取，并按 `kernelcache_sha256` 校验 |
 | 信任缓存 | `[payload.runtime] trust_components` 指定进入 owner 信任包的 IPSW 成员 |
 | Data seed | 以 root 身份从系统卷制作一次，见[步骤 4](#data-seed) |
-| root 权限 | 制作 Data seed 需要 `sudo` |
+| root 权限 | 制作 Data seed 需要 `sudo`，只读枚举 Metal 库需要非交互 `sudo` |
 
 ## 2. 在设备仓库加入 macOS 的值 {#device}
 
@@ -191,7 +191,7 @@ sheng 的 macOS 配置使用固定 SHA-256 的固件模板完成 ABL 封装。
 | `--real-name NAME` | 设置管理员的显示名称，短用户名与 `/Users/NAME` 路径保持不变 |
 | `--user-stdin` | 从标准输入的 JSON 对象读取 `name`、`password` 和可选的 `real_name` |
 | `--interactive-user` | 交互输入账户名、显示名称和密码 |
-| `--auto-login` | 开机自动登录指定账户，供无人值守测试使用 |
+| `--auto-login` | 开机自动登录指定账户。供无人值守测试使用，需要 `--user`、`--user-stdin` 或 `--interactive-user` |
 | `--keyboard-type PRODUCT-VENDOR-COUNTRY=TYPE` | 记录键盘布局类型，键盘设置助理不再询问 |
 | `--volume-uuid UUID` | 为 Data 卷指定固定 UUID，新 seed 可以替换旧 seed 而无需重新构建内核 |
 

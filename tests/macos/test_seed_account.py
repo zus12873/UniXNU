@@ -27,13 +27,13 @@ class AccountTest(unittest.TestCase):
         return argparse.Namespace(user=user, user_stdin=stdin, real_name=real_name)
 
     def test_private_input_and_colon_password(self):
-        args = self.options(stdin=True, real_name='RinnRei')
-        with patch.object(sys, 'stdin', io.StringIO(json.dumps({'name': 'rinnrei', 'password': 'a:b c'}))):
+        args = self.options(stdin=True, real_name='UniXNU')
+        with patch.object(sys, 'stdin', io.StringIO(json.dumps({'name': 'unixnu', 'password': 'a:b c'}))):
             SEED.read_account(argparse.ArgumentParser(), args)
-        self.assertEqual(args.user, 'rinnrei:a:b c')
+        self.assertEqual(args.user, 'unixnu:a:b c')
 
     def test_invalid_accounts_and_redacted_errors(self):
-        for user in ('../escape:secret', 'root:secret', 'rinnrei:', 'rinnrei', 'rinnrei:a\0b'):
+        for user in ('../escape:secret', 'root:secret', 'unixnu:', 'unixnu', 'unixnu:a\0b'):
             with self.subTest(user=user), contextlib.redirect_stderr(io.StringIO()) as errors:
                 with self.assertRaises(SystemExit):
                     SEED.read_account(argparse.ArgumentParser(), self.options(user=user))
@@ -48,7 +48,7 @@ class AccountTest(unittest.TestCase):
 
     def test_display_name_requires_account(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            SEED.read_account(argparse.ArgumentParser(), self.options(real_name='RinnRei'))
+            SEED.read_account(argparse.ArgumentParser(), self.options(real_name='UniXNU'))
 
     def test_record_display_name_and_auto_login_use_separate_fields(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(SEED.os, 'chown'):
@@ -57,18 +57,18 @@ class AccountTest(unittest.TestCase):
             (node / 'groups').mkdir(parents=True)
             for group in ('admin', 'staff'):
                 (node / 'groups' / (group + '.plist')).write_bytes(plistlib.dumps({'users': ['existing']}))
-            SEED.add_user(node, 'rinnrei', 'test-only-password', real_name='RinnRei')
-            SEED.add_auto_login(root, 'rinnrei', 'test-only-password')
-            user = plistlib.loads((node / 'users/rinnrei.plist').read_bytes())
-            self.assertEqual(user['name'], ['rinnrei'])
-            self.assertEqual(user['realname'], ['RinnRei'])
-            self.assertEqual(user['home'], ['/Users/rinnrei'])
+            SEED.add_user(node, 'unixnu', 'test-only-password', real_name='UniXNU')
+            SEED.add_auto_login(root, 'unixnu', 'test-only-password')
+            user = plistlib.loads((node / 'users/unixnu.plist').read_bytes())
+            self.assertEqual(user['name'], ['unixnu'])
+            self.assertEqual(user['realname'], ['UniXNU'])
+            self.assertEqual(user['home'], ['/Users/unixnu'])
             login = plistlib.loads((root / SEED.LOGINWINDOW_PREFS).read_bytes())
-            self.assertEqual(login['autoLoginUser'], 'rinnrei')
-            self.assertNotIn(b'test-only-password', (node / 'users/rinnrei.plist').read_bytes())
+            self.assertEqual(login['autoLoginUser'], 'unixnu')
+            self.assertNotIn(b'test-only-password', (node / 'users/unixnu.plist').read_bytes())
             for group in ('admin', 'staff'):
                 record = plistlib.loads((node / 'groups' / (group + '.plist')).read_bytes())
-                self.assertEqual(record['users'], ['existing', 'rinnrei'])
+                self.assertEqual(record['users'], ['existing', 'unixnu'])
             self.assertEqual((root / SEED.KCPASSWORD).stat().st_mode & 0o777, 0o600)
 
 

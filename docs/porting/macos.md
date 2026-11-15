@@ -39,7 +39,7 @@ A macOS build runs on a Mac with Xcode. In addition to the
 | Kernelcache | Extracted from the IPSW and checked against `kernelcache_sha256` |
 | Trust caches | `[payload.runtime] trust_components` names the IPSW members that go into the owner trust bundle |
 | Data seed | Made once as root from the system volume, see [step 4](#data-seed) |
-| Root access | `sudo` for the Data seed |
+| Root access | `sudo` for the Data seed; noninteractive `sudo` for read-only Metal-library enumeration |
 
 ## 2. Add the macOS values to the device repository {#device}
 
@@ -205,7 +205,7 @@ Seed creation options:
 | `--real-name NAME` | Sets the displayed administrator name; the short account name and `/Users/NAME` remain unchanged |
 | `--user-stdin` | Reads `name`, `password` and optional `real_name` from a JSON object on standard input |
 | `--interactive-user` | Prompts for the account name, display name and password |
-| `--auto-login` | Logs the selected account in at boot. For unattended tests |
+| `--auto-login` | Logs the selected account in at boot. For unattended tests; requires `--user`, `--user-stdin` or `--interactive-user` |
 | `--keyboard-type PRODUCT-VENDOR-COUNTRY=TYPE` | Records a keyboard layout type, so Keyboard Setup Assistant does not ask |
 | `--volume-uuid UUID` | Gives the Data volume a fixed UUID, so a new seed replaces an older one without a kernel build |
 

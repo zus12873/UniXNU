@@ -38,6 +38,7 @@ class RangeHandler(BaseHTTPRequestHandler):
         self.send_response(206)
         self.send_header('Content-Range', f'bytes {start}-{end}/{len(self.body)}')
         self.send_header('Content-Length', str(len(chunk)))
+        self.send_header('Content-Range', f'bytes {start}-{end}/{len(self.body)}')
         self.end_headers()
         self.wfile.write(chunk)
 
