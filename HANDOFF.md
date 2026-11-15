@@ -786,6 +786,13 @@
     - `package/BootWatchdogPolicy.c` 加 `enable_jobs[200]`、`append_job_state(cursor, disabled)`，字符检查和 `disable-jobs` 相同。只给了 `enable-jobs` 时也写这个文件。
     - `scripts/check-boot-watchdog-policy.py` 加了三条测试：只启用；和禁用并存；非法字符返回 EINVAL。先跑过一遍是失败的（第 245 行的断言），实现后整份通过（"PASS: production policy initializer…"）。
   - 20:55 构建前日常文件 `33d294c8`、`8a36fe56`。OS 镜像只读挂到 scratchpad 的 `os-mount`。20:55 起后台跑 `./unixnu build kernel payload`。
+  - 20:58 前构建成功：
+    - 内核 `347fa01f…`：字符串里有 `enable-jobs`，`nm` 里 `_cs_text_fixup_hash`、`_cs_text_fixup_restore` 都在；
+    - 载荷 `ae7ab7ea`：菜单 3 秒、只有 Boot、Restart、Power off。
+    - 另存为 `kernel.macho.cd3-347fa01f`（`json`、`map.json` 同后缀）和 `payload.cd3-base.img`（只读）。日常文件已还原，核对 `33d294c8`、`8a36fe56`、`35f03ec4`。OS 镜像已卸载。
+  - 测试载荷 `payload.cd3-s1-ssh.img`（`85e28889…`）：7.5 GiB（`0x1e0000000`、`0x920000000`），加 `memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1`，参数行 962 字节。
+  - 镜像 `out/flash/boot-v4-payload.bigwin-cd3-s1-ssh.img`（`c02657ed…`，新固件），`bootimg-contents.py` 核对过。22 份日常镜像没变。
+  - 只从内存启动，要用户说可以。开机后 SSH 应该不用手动开（公钥已经在平板的用户数据里）。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
