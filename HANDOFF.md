@@ -686,6 +686,16 @@
       - 下一步：
         1. 控制台崩溃报告里这次的 iconservicesagent，拍断言原文；
         2. 不改镜像先试：终端能用时 `launchctl setenv CI_ENABLE_METAL_GPU 0`、`launchctl setenv FORCE_SOFTWARE_RENDERER 1`、`killall iconservicesagent`，再开系统设置看图标。这是让 CoreImage 改走 CPU 的推测，不一定生效；重启就失效。
+- **约 20:05 用户："我要怎么构建你连接我新macos测试环境的隧道，ssh可以么，我让设备进fastboot，帮我重启当前系统，我去用terminal配置sshd"**
+  - 做法：走局域网 SSH。
+    - macOS 上 Wi-Fi 由 en0 承载，上游写着"Association, DHCP and traffic are verified on the device"（`docs/zh/devices/sheng.md:805`）。本机上没试过。
+    - 平板连上和 Mac 同一个 Wi-Fi，开 sshd，用一把专用密钥登录。
+  - 20:07 在 `out/ssh/` 生成专用密钥 `tablet_ed25519`（ed25519，无口令，注释 `unixnu-tablet-test`）。`out/` 不入库，`git check-ignore` 确认过。不碰 `~/.ssh`。
+  - sshd：这台 Mac 的 `/System/Library/LaunchDaemons/ssh.plist` 是 `com.openssh.sshd`，`Disabled = true`，按 socket 启动。
+    - 开启用 `sudo launchctl load -w /System/Library/LaunchDaemons/ssh.plist`。
+    - 注意：我们的内核每次开机都会重写 `/private/var/db/com.apple.xpc.launchd/disabled.plist`（`BootWatchdogPolicy.c:123-133`，O_TRUNC），开启的记录重启后就没了，每次开机要重新运行一次。
+  - 公钥由用户在 Mac 自己的终端里用 `ssh-copy-id` 装上去（要输一次平板的登录密码）。我连的时候用 `-o IdentitiesOnly=yes` 和单独的 `out/ssh/known_hosts`。平板的 IP 不写进入库的文件。
+  - fastboot（20:07）：a 7、b 7，都是 unbootable no；电压 3793 mV。20:07:42 再次从内存启动 `boot-v4-payload.bigwin-cd2-s1.img`（`aaa4e60c…`），`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
