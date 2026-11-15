@@ -58,3 +58,7 @@ arch:../../../patches/xnu-12377/darwin26-shared-region.patch
 ../xnu-12377/macos-4k-zone-va-budget.patch
 ../xnu-12377/macos-swapin-io-priority.patch
 ../xnu-12377/cshash-signed-text-revalidation.patch
+# 12 GiB integration branch: ../xnu-12377/cshash-compressed-text-revalidation.patch (rponeawa 1fb6dee) is left out. The
+# sheng board's sheng-text-fixup-verified-pagein.patch changes the same compressed page-in path of decmpfs.c and adds its
+# helper beside it in ubc_subr.c (original bytes restored in a copy instead of a signed-byte snapshot); the two do not
+# apply together, and the board patch has run on this unit.

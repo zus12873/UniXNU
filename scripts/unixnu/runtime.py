@@ -31,6 +31,23 @@ def seed_uuid(tree, path):
     return identities.pop()
 
 
+def bind_seed(ctx, seed, kernel_build=False):
+    """Bind the compiled Data UUID to the selected installation seed."""
+    identity = seed_uuid(ctx.tree, seed)
+    config = ctx.need_config()
+    if identity != config.get('XNU_OWNER_DATA_VOLUME_UUID'):
+        if not kernel_build:
+            raise Error('Data seed UUID differs from the compiled configuration; rebuild the kernel with this seed')
+        text = ctx.config_path.read_text()
+        text, count = re.subn(r'^CONFIG_XNU_OWNER_DATA_VOLUME_UUID=.*$',
+                             f'CONFIG_XNU_OWNER_DATA_VOLUME_UUID="{identity}"', text, flags=re.M)
+        if count != 1:
+            raise Error('runtime Data requires exactly one CONFIG_XNU_OWNER_DATA_VOLUME_UUID')
+        ctx.config_path.write_text(text)
+        ctx.need_config()
+    return identity
+
+
 def prepare(ctx, kernel_build=False):
     spec = ctx.board.get('payload', {}).get('runtime')
     if not spec or not spec.get('enabled', True):
@@ -92,6 +109,11 @@ def prepare(ctx, kernel_build=False):
         source = Ipsw(ctx)
         if not seed.is_file() or (want_addon and not addon) or spec.get('wifi_launchd_cache') or spec.get('bluetooth_tool') or spec.get('appsync'):
             request['os_image'] = str(source.disk_image('OS'))
+        if want_addon and not addon and spec.get('target') == 'macos27':
+            prefixes = {'OS': '/', 'SystemOS': '/System/Cryptexes/OS', 'App': '/System/Cryptexes/App'}
+            request['prime_images'] = [dict(name=window['name'], image=str(source.disk_image(window['component'])),
+                                          prefix=prefixes[window['name']])
+                                       for window in ctx.board['userdata']['windows']]
         if not trust:
             request['trust_modules'] = [str(source.extract(name)) for name in spec['trust_components']]
         request_path = out / 'request.json'
@@ -106,18 +128,7 @@ def prepare(ctx, kernel_build=False):
         seed = Path(generated['data_ramdisk'])
         trust, addon = generated['trust_cache'], generated['gpu_addon']
         owner = trust
-    identity = seed_uuid(ctx.tree, seed)
-    config = ctx.need_config()
-    if identity != config.get('XNU_OWNER_DATA_VOLUME_UUID'):
-        if not kernel_build:
-            raise Error('Data seed UUID differs from the compiled configuration; rebuild the kernel with this seed')
-        text = ctx.config_path.read_text()
-        text, count = re.subn(r'^CONFIG_XNU_OWNER_DATA_VOLUME_UUID=.*$',
-                             f'CONFIG_XNU_OWNER_DATA_VOLUME_UUID="{identity}"', text, flags=re.M)
-        if count != 1:
-            raise Error('runtime Data requires exactly one CONFIG_XNU_OWNER_DATA_VOLUME_UUID')
-        ctx.config_path.write_text(text)
-        ctx.need_config()
+    identity = bind_seed(ctx, seed, kernel_build)
     args.data_ramdisk, args.gpu_addon = str(seed), (str(addon) if addon else None)
     if owner:
         args.owner_trust_cache = str(trust)
