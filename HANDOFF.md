@@ -842,6 +842,9 @@
       - 这是给系统任务加环境变量的正路（比如给 iconservicesagent 加 `CI_ENABLE_MPS=0`），但它验证的是 iPadOS 27（asteroids），macOS 的覆盖把 `payload.runtime.launchd_job_environment` 整个去掉了，能不能用在 macOS 上没验证。
     - **UniXNU#249**（OPEN，filipnavara）："bootstrap page tables for windows up to 9 GiB on native 4 KiB"，16 页改 22 页，在 Nothing Phone (3a) 8 GiB 上验证。和我们路线 A 的 Task 1 是同一件事、同一个数字。
   - AdrenoMetal 的分支（CrossDarwin、leoforney、lss717、FFT-infra）最近的提交里都没有和 MPS、CoreImage 模糊有关的。
+- **约 21:54 用户："可以"**（cd4 第一次上机，暂记 CD4-1）
+  - fastboot（21:55:03）：a 7、b 7，都是 unbootable no；电压 3798 mV；sha256 `4ba1bede…` 相符。
+  - 21:55:10 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd4-s1-ssh-cimps.img`：`Booting OKAY`，45 秒内引导程序没有回来。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
