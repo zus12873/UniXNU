@@ -1059,6 +1059,25 @@
   - 11-16 00:05 推送做完：新建 fork `zus12873/AdrenoMetal`（子模块 remote `mine`）。
     - 核心、sheng、AdrenoMetal 各推了 `integrate/others-20261115` 和原来的工作分支，uefi-sheng 推了 `local/sheng-12g-memory-map`；远端哈希都核对过。
     - 不 force，不推 main，不建 PR。
+- **约 00:10 用户："现在在fastboot状态"，00:12 "磁盘连上了"**（Task 5）
+  - fastboot（00:10:37）：a 7、b 7，都是 unbootable no；电压 3875 mV。
+  - 构建盘：`UniXNU-build.sparsebundle` 同时挂着两份设备（`disk6` 是上次拔盘留下的，`disk8` 是新的），卷都没挂上。两份都 detach，重新 attach 一次，`diskutil verifyVolume` 通过。日常文件 `33d294c8`、`8a36fe56`、`35f03ec4`、`boot.json` `aeaf38ac` 都在。
+  - 00:13 第一次 `./unixnu build kernel payload` 53 秒就失败，日常文件没动。
+    - 原因：核心 `scripts/build-adreno-metal-bridge.py` 还列着旧的桥接补丁（`0002-…`），而 rponeawa 的新运行时只有一个 `0044-unixnu-runtime-on-development-d9236a8a.patch`。
+    - 配套的核心改动在 **rponeawa 自己的核心 fork**（`rponeawa/UniXNU`，之前对比时漏了）的 `fix/sync-metal-development-d923`，提交 `176b93e`：改补丁列表，metal2vulkan 从 `400efe79` 改到 `d9236a8a`。
+  - 合了这个分支（`1ad16c2`；里面还有他的 bringup 和 Data 身份两条分支，共 38 个提交）。
+    - 他"要求导出的工具链"那几条只改 `run-local-kernel.py`、`relocate-xnu-cache.py`，正常构建不走。
+    - `drivers/Adreno740` 两边分叉：我们的 `462dd74`（大窗口要的页归属表修正），他的 `eb6d5af`（"Preserve pending jobs during context-switch recovery"）。在子模块里合成 `0848123`（干净），`components.toml` 也指过去。
+    - macOS 内核补丁列表没要他的 `cshash-compressed-text-revalidation.patch`：和本机板级的 `sheng-text-fixup-verified-pagein.patch` 改的是 `decmpfs.c` 同一处，两个打不到一起；本机的那个在本机跑过。列表里写了注释。
+    - `bootimg.py` 两边的功能都留：他的 ramdisk 分块压缩，加 CrossDarwin 的限额检查和"验证后再发布"。
+    - 两个测试取他的版本，是我们的超集。
+    - `check-unixnu.py` 和 `tests/` 都过。
+  - 推送要补：`drivers/Adreno740` 的 `462dd74`、`0848123` 只在本地，用户没有 Adreno740 的 fork，GitHub 上的核心分支指向的提交别人取不到。
+  - 00:19:57 第二次构建，00:21:06 失败，日常文件没动。
+    - 这次卡在 rponeawa 的 `260cb6b`（"enumerate protected macOS library paths with root access"）：建 macOS GPU 插件前要列出 OS 镜像里所有 `.metallib`，给着色器预热用。
+    - 不是 root 时用 `sudo -n` 跑 `scripts/list-metal-libraries.py`，没有免密 sudo 就失败。
+    - 那个脚本只读：遍历只读挂载的 OS 镜像，打印路径；要 root 是因为镜像里有普通用户读不了的目录。
+    - 我这边的命令没有终端，输不了密码，`sudo -v` 也带不过来（sudo 的凭据按终端记）。请用户在自己的终端里先 `sudo -v`、再跑构建。
   - 11-16 补推（用户："帮我将有贡献价值的都推到我线上库"）：核心两个分支钉住的 `drivers/DarwinBoot` `bdb6ff7` 和 `drivers/Adreno740` `462dd74` 之前只在本地。
     - 新建 fork `zus12873/DarwinBoot`、`zus12873/Adreno740`（`--default-branch-only`），子模块 remote 都叫 `mine`。
     - DarwinBoot 推了 `local/window-floor`（`3cd02b2`）和 `local/window-9g`（`bdb6ff7`），Adreno740 推了 `local/owned-map-below-window`（`462dd74`）。远端哈希核对一致。
