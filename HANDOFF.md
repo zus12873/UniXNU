@@ -518,6 +518,23 @@
     1. 一登录就开终端，趁内存还没满，取消 "Working directory or document"；
     2. `sysctl vm.cs_native4k_stats` 和 `sysctl vm.swapusage` 各拍一张；
     3. 照常用到内存满，或者用 `memory_pressure -l warn`，再拍一次这两条，看程序卡不卡。
+- **约 18:15 用户："用社区最新的镜像打包方法进行测试"**（18:19 查完，给了做法，等用户选；没有改代码）
+  - 社区最新的是 CrossDarwin 两个仓库的 `boot/sheng-firmware-compat`（11-15 15:55 到 16:00）。拉到了核心仓库的 `refs/remotes/crossdarwin/*`，以及 `../UniXNU-sheng` 的 `refs/remotes/crossdarwin/*`。
+    - 打包："The sheng macOS profile uses a SHA-256-pinned firmware template for its ABL transport. `unixnu bootimg` replaces only DarwinBoot with the loader from the current firmware build, preserving the qualified shim, board firmware, DTB and Android header settings."（`docs/porting/macos.md`，`3181584`）
+    - 结果：报告 `reports/macos-desktop-20261115.md` 是 8 GiB 的机器，用模板镜像临时启动，选数据初始化后进了桌面。重启后的保持、Wi-Fi、蓝牙、长时间 GPU 都没测。
+    - 这个分支已经合进了代码页重新校验的修复 `3be2a10`。
+    - 核心仓库比我们多 20 个提交：修复、Metal 和蓝牙的源码版本、种子工具、IPSW 下载、各组件的源码版本、模板打包。`git merge-tree` 试合并到我们的 HEAD 没有冲突。
+    - 设备仓库比我们多 14 个：SoC feed、触摸和存储的源码版本、Wi-Fi 和蓝牙、数据初始化、模板传输。`git merge-tree` 报 "failure to merge"，要手动合。
+  - 原样用不了：
+    - 模板里的固件是按 8 GiB 机器的内存布局做的，本机的受保护内存位置更低（`../uefi-sheng` 里没提交的那处改动）；
+    - 本机引导程序只认 v4 头，他们的是 v0。
+  - 给用户的三个做法：
+    - **A（推荐先做）**：只把 `cshash-signed-text-revalidation.patch` 加进我们的内核补丁序列。重编内核，做 7.5 GiB 载荷，用新固件打包，只从内存启动。
+      - 我们的 `cshash-native4k-lazy/parallel/stats`、`native-text-fixup` 四个补丁和它父提交里的逐字节一样，能直接接上。
+      - 设备补丁 `sheng-text-fixup-verified-pagein.patch` 也改 `ubc_subr.c`（7186 行附近），新补丁在 7141 行附近加 52 行，要试打一遍确认。
+    - **B**：把两个仓库的社区分支整个合进来，保留本机的固件、v4 头和 7.5 GiB 设置，重编内核、载荷和固件。一次改很多。
+    - **C**：原样用他们的镜像。不做，理由见上。
+  - A 和 B 都是内核改动，要用户点头。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
   1. 基线剩下的结果：不动它等几分钟之后指针还抖不抖；退出几个应用之后还抖不抖；`sysctl hw.memsize vm.pages vm.pages_excluded` 和活动监视器内存页的照片；重新填满后计时到 30 分钟，有没有变成定住或自己重启。
