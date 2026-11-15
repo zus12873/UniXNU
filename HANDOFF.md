@@ -612,6 +612,33 @@
 - **约 19:03 用户："进fastboot了先试我们的"**（v4 对照，暂记 C6-1）
   - 19:01 两次都数到 0 台。用户说屏幕上是 FASTBOOT，19:04:48 再查数到 1 台：a 7、b 7，都是 unbootable no；电压 3833 mV。
   - sha256 `e9b25075…` 相符。19:04:57 `boot-sheng.py out/flash/boot-v4-payload.bigwin-ctl6.img`：`Booting OKAY`，45 秒内引导程序没有回来。
+  - **约 19:18 用户发来照片 #18、#19、#20："现在这份是好的可以正常进桌面，切屏之后activity monitor卡住了"**
+    - #19（这次 v4 对照，平板时钟 1:45）：
+      - 内存页：物理 **6.00 GB**；已用 4.74 GB = 程序 0.9684 + Wired 3.13 + 压缩 0.6638；缓存 1.25 GB；交换 0；压力绿。已用加缓存 5.99 GB，又满了。
+      - 墙纸是静态图片。进程表里 JournalWidget 那一行上有彩色转圈的指针。
+    - #20，控制台的崩溃报告列表（由新到旧）：
+      - 1:47 WindowServer ×2；
+      - 1:46 iconservicesagent ×2、spotlightknowledged.updater；
+      - 1:39 mds_stores、ReportCrashService、iconservicesagent ×2、WindowServer、iconservicesagent；
+      - 1:38 iconservicesagent ×2（User）……
+      - 图标服务在反复崩溃。
+    - #20 打开的 **WindowServer 报告**：
+      - WindowServer [3287]，User ID 88；Date/Time 2026-11-14 01:47:17.3156，Launch Time 01:47:11.8445（起来 6 秒就崩）；Time Awake Since Boot 1100 秒。
+      - "Exception Type: EXC_BAD_ACCESS (SIGKILL (Code Signature Invalid))"，"Exception Subtype: UNKNOWN_0x32 at 0x00000001a2319048"，"Termination Reason: Namespace CODESIGNING, Code 2, Invalid Page"。
+      - VM Region：`0x1a2319048` 落在 `/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore` 的 `__TEXT`（`0x1a1f5c000-0x1a23ed000`，r-x，SM=COW）。
+      - "Kernel Triage: VM - (arg = 0x0) A memory corruption was found in executable text"。
+    - 这正是开机时改过的那一页。`../UniXNU-sheng/board.toml:237-242` 的 `text_fixups` 改的就是 QuartzCore 的 `IOMFBDisplay::framebuffer_pixel_format`，在 `dyld_shared_cache_arm64e.03` 文件偏移 `0x5de1134`。注释里写着："a write into the mapped page … made the page invalid and code signing killed WindowServer"。
+      - 崩溃地址在它那个 16 KiB 块里的偏移是 `0x1048`，补丁点是 `0x1134`，都在块里的第 2 个 4 KiB 页，相差 236 字节。地址和文件偏移的对应关系没核对，但多半就是同一页。
+      - 社区的 `cshash-signed-text-revalidation.patch` 修的正是这件事："Signed-text fixups leave resident vnode pages different from their signed bytes"。这次合并已经把它带进了核心仓库，但现在跑的内核是合并前编的，没有它。
+    - #18 打开的 **iconservicesagent 报告**：
+      - iconservicesagent [1555]，User ID 501（用户那一份）；Launch 01:44:41.5806，崩于 01:46:55.7476。
+      - "Triggered by Thread: 1, Dispatch Queue: com.apple.iconservices.cleanup"；"EXC_CRASH (SIGABRT)"，"Namespace SIGNAL, Code 6, Abort trap: 6"。
+      - 崩溃线程：`__pthread_kill` ← `abort` ← `__assert_rtn` ← `MTLReportFailure.cold.1` ← `MTLReportFailure + 840`（Metal）← Metal `0x1d7f91000 + 119176` ← MPSImage `+[CIBlurProcessor processWithInputs:arguments:output:error:]_block_invoke.219` ← CoreImage `CIImageProcessorKernel applyWithExtent` ← `CI::ProcessorNode::render` ← `CI::MetalContext::render_node` … `CI::Context::render`。
+      - 也就是 CoreImage 用 MPS 做模糊时，Metal 的校验断言失败，图标服务被 abort。崩了以后 launchd 按"exponential throttling"推迟重启（这台 Mac 上 `launchctl print` 能看到这个属性），这段时间里要图标的程序就一直等。这就是终端卡住的那一层。
+      - 断言的具体文字没拍到。
+      - 社区合并带进来的 AdrenoMetal 有一个提交 `6d4a3f3 fix(metal): Distinguish missing library functions from specialization errors`，是否相关不知道。
+    - 两份报告的 Time Awake 都是 1100 秒。这次 v4 是 19:04:57 启动的，19:20 才 15 分钟，所以这几份崩溃多半出自上一次 v0 那一趟（18:45 启动，18 分钟后约 19:03，正是用户说 WindowServer 循环崩溃的时候）。平板的时钟不可信，这一点没有坐实。
+    - 结论：要的两个修复都已经在合并进来的社区代码里，是设计的第二阶段（设备仓库合并、全部重编）。
     - 下一步的对照：同一份 6 GiB 载荷的 v4 镜像 `out/flash/boot-v4-payload.bigwin-ctl6.img`（我们自己的旧固件，sha256 `e9b25075…`）。
       - 它能进桌面：问题在社区外壳里的固件；
       - 它也卡：问题在载荷或新数据卷上。
