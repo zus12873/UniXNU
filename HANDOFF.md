@@ -1059,6 +1059,11 @@
   - 11-16 00:05 推送做完：新建 fork `zus12873/AdrenoMetal`（子模块 remote `mine`）。
     - 核心、sheng、AdrenoMetal 各推了 `integrate/others-20261115` 和原来的工作分支，uefi-sheng 推了 `local/sheng-12g-memory-map`；远端哈希都核对过。
     - 不 force，不推 main，不建 PR。
+  - 11-16 补推（用户："帮我将有贡献价值的都推到我线上库"）：核心两个分支钉住的 `drivers/DarwinBoot` `bdb6ff7` 和 `drivers/Adreno740` `462dd74` 之前只在本地。
+    - 新建 fork `zus12873/DarwinBoot`、`zus12873/Adreno740`（`--default-branch-only`），子模块 remote 都叫 `mine`。
+    - DarwinBoot 推了 `local/window-floor`（`3cd02b2`）和 `local/window-9g`（`bdb6ff7`），Adreno740 推了 `local/owned-map-below-window`（`462dd74`）。远端哈希核对一致。
+    - 用 `.gitmodules` 里的上游地址按哈希取这两个提交，取得到（GitHub 的 fork 网络），所以从 `zus12873/UniXNU` 克隆后 `git submodule update` 能拉下来，不用改 `.gitmodules`。
+    - 没推的：`verification.json` 三处（本机根卷钥匙的哈希）；sheng 的 stash `pre-cd2`（三处版本号已经在 `integrate/others-20261115` 里）；`data/`；`../UniXNU-sheng-pr-mps` 的 Core Image 修复（用户 11-15 23:20 定了先上机验证再提交）。
   - 还没做：构建和上机（Task 5，等构建盘，00:06 仍没挂上）；CrossDarwin 的 8 GiB ABL 内存表和 `test_27` 没合（见计划"这次不合的"）。
 - 电：**macOS 开着、接充电头能充（11:30 量到电池 +2 A）；接 Mac 的口只进 0.45 A，电池每小时掉约 7%；停在 fastboot 基本不充**（见"11:24 上机 D2"一条；之前写的"macOS 下不充电"是错的，那只是接 Mac 的口）。关机插线充电在本机做不到（见"槽位 a 的重试次数"一条）。fastboot 里接 Mac 的口基本不涨：10:48:40 是 3746，10:54:36 和 10:55:19 都是 3761，其中一部分只是负载撤掉后的回升。fastboot 里接充电头能不能充还没量过。macOS 在 10:46 的照片里显示电量 23%。电压 09:46 是 3794，10:08 是 3776，10:13 是 3774（在 fastboot 里插着线五分钟没有涨），是有记录以来最低的。每次上机前读一次；电不够时一次上机中途断电会被当成"自己关机"，30 分钟的那一次要等充过电再做。
 - 等用户的三样东西：
