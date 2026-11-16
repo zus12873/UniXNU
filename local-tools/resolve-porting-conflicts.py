@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Resolve merge conflicts in a device repository's porting.toml key by key (integration of other branches, 2026-11-15).
 
-    resolve-porting-conflicts.py REPO [--file porting.toml] [--dry-run]
+    resolve-porting-conflicts.py REPO [--file porting.toml] [--base COMMIT] [--dry-run]
 
 Run during a merge that stopped on porting.toml. The record keeps each area's lists on one line (`findings = [...]`), so two
 branches that both add a finding conflict on the whole line. For every conflict hunk whose lines are all `key = value` of one
@@ -61,10 +61,17 @@ def main():
     parser.add_argument('repo')
     parser.add_argument('--file', default='porting.toml')
     parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--base', help='commit whose file is the base, when the merge has several bases and git\'s '
+                                       'virtual base (index stage 1) still holds conflict markers')
     args = parser.parse_args()
     path = f'{args.repo}/{args.file}'
     text = open(path, encoding='utf-8').read()
-    base, ours, theirs = (areas(stage(args.repo, n, args.file)) for n in (1, 2, 3))
+    if args.base:
+        base = areas(tomllib.loads(subprocess.run(['git', '-C', args.repo, 'show', f'{args.base}:{args.file}'], check=True,
+                                                  capture_output=True, text=True).stdout))
+    else:
+        base = areas(stage(args.repo, 1, args.file))
+    ours, theirs = (areas(stage(args.repo, n, args.file)) for n in (2, 3))
     out, last, left = [], 0, 0
     for match in HUNK.finditer(text):
         out.append(text[last:match.start()])
