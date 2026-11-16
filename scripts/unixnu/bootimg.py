@@ -94,7 +94,8 @@ def build(ctx, uefi, fd, dtb, ramdisk=None, output=None):
     with tempfile.TemporaryDirectory(prefix='unixnu-bootimg-') as scratch_name:
         scratch = Path(scratch_name)
         if template:
-            shim, firmware, tree, image, compatibility = boot_template.prepare(ctx, template, firmware)
+            shim, firmware, tree, template_image, compatibility = boot_template.prepare(ctx, template, firmware)
+            image.update(template_image)
             log('bootimg: using qualified firmware transport with the current DarwinBoot loader')
         else:
             shim = compile_shim(uefi, base, size, requires_header, scratch)
@@ -182,7 +183,8 @@ def verify(path, combined, tree, ramdisk_path, image, compression='gzip'):
             raise Error('boot image header does not match the requested parameters')
         if kernel_address != image['base'] + image['kernel_offset'] or tags != image['base'] + image['tags_offset']:
             raise Error('boot image load addresses do not match the requested offsets')
-        if ramdisk_address != image['base'] + image.get('ramdisk_offset', 0x1000000):
+        expected_ramdisk_address = image['base'] + image.get('ramdisk_offset', 0x1000000) if ramdisk_size else 0
+        if ramdisk_address != expected_ramdisk_address:
             raise Error('boot image ramdisk address does not match the requested offset')
         if 'encoded_os_version' in image and encoded_os != image['encoded_os_version']:
             raise Error('boot image OS metadata differs from the qualified template')

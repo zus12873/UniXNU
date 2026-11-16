@@ -111,7 +111,7 @@ bluetooth_target = "ios27"
 
 ```sh
 python3 UniXNU-<device>/scripts/check-bluetooth-platform.py
-python3 UniXNU-<device>/scripts/check-bluetooth-shared.py
+python3 UniXNU-<device>/scripts/check-bluetooth-shared.py --tree <resolved-tree>
 python3 UniXNU-<device>/scripts/check-wcn-power.py
 ```
 
@@ -137,7 +137,7 @@ sheng 的 macOS 配置从组件目录选择 `QcaBluetooth`，内核与运行时�
 使用标准命令构建诊断镜像：
 
 ```sh
-./unixnu build kernel payload --os macos-27 -D ../UniXNU-sheng --kernel-arg=log-bluetooth=3
+./unixnu build kernel payload --os macos-27 -D ../UniXNU-sheng --uefi ../uefi-sheng --kernel-arg=log-bluetooth=3
 ./unixnu bootimg --os macos-27 -D ../UniXNU-sheng --uefi ../uefi-sheng
 ```
 

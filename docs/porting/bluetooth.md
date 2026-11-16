@@ -115,7 +115,7 @@ From the workspace root:
 
 ```sh
 python3 UniXNU-<device>/scripts/check-bluetooth-platform.py
-python3 UniXNU-<device>/scripts/check-bluetooth-shared.py
+python3 UniXNU-<device>/scripts/check-bluetooth-shared.py --tree <resolved-tree>
 python3 UniXNU-<device>/scripts/check-wcn-power.py
 ```
 
@@ -145,7 +145,7 @@ The kernel and runtime use the same device submodule. Build the diagnostic image
 with the standard commands:
 
 ```sh
-./unixnu build kernel payload --os macos-27 -D ../UniXNU-sheng --kernel-arg=log-bluetooth=3
+./unixnu build kernel payload --os macos-27 -D ../UniXNU-sheng --uefi ../uefi-sheng --kernel-arg=log-bluetooth=3
 ./unixnu bootimg --os macos-27 -D ../UniXNU-sheng --uefi ../uefi-sheng
 ```
 
