@@ -184,6 +184,16 @@
     - 日常文件哈希都对：`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`39f9ad3f`、`5c926a3f`。
     - OS 镜像只读挂到 scratchpad 的 `os-mount`（`/dev/disk9s1`）。
     - 下一步：用户在自己的终端里 `sudo -v` 后跑 `./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。构建完我另存 cd8 产物、还原日常文件、卸载 OS 镜像，再打 9 GiB 的 `cd8-s2`。
+  - **cd8 构建完成（用户在自己的终端里跑，内核 18:57）**：
+    - 内核 `643f4bfe`，有 `_wn8030_pointer_report_at`、`_native_keyboard_lid_closed`。另存 `kernel.macho.cd8-643f4bfe`，json、map 同后缀，只读。
+    - 载荷 `964c92c9`，参数 915 字节，有 `ci-mps=0` 和 `vm_compression_limit=1572864`。另存 `payload.cd8-base.img`、`.json`，只读。运行时那一步 18:55 重新生成。
+    - 来源记录：`out/provenance/cd8-build.json`（还原日常文件之前记的）、`cd8-images.json`。
+    - 日常文件已还原，6 个哈希都对：`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`39f9ad3f`、`5c926a3f`。OS 镜像已卸载。
+    - 试验镜像，只从内存启动，固件 `boot-bigwin.img`：
+      - `payload.cd8-s2.img`（`3bbc5fef`）：`cd8-base` 加 `enable-jobs=com.openssh.sshd log-gpu=1`，窗口按本地 `board.toml`，9 GiB。
+      - `out/flash/boot-v4-payload.bigwin-cd8-s2.img`（`6fba6190`），`bootimg-contents.py --payload` 核对过。
+      - 对照用的还是 `…-cd7-s2-cimps.img`（`39ee6fa4`）：只有 `ci-mps=0`，没有指针修复。
+    - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
     - `payload.cd7-s2-cimps.img`（`251e93eb`，只读）：`payload.cd7-s2.img` 加 `--arg ci-mps=0`，设备树不变。
