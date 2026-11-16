@@ -87,6 +87,11 @@
        - 没了这张表，macOS 退回用 iPadOS 27 的 `archives`：里面没有 SoftwareAES，根卷策略也指向 iPadOS 的目录。上游核心加上游 sheng 就是这个结果，上游 macOS 构建眼下也会停在这里。
        - sheng `0ae7ceb` 原样恢复这张表（取自 `6056637^`），配置区加一条描述性 finding；porting 记录检查 PASS。
        - cd7 构建通过后，值得给上游提 PR；提之前照规则再查一次有没有人修过。
+    3. ShengUfs 组件编不过，`SourceStorage.cpp:291: error: expected '}'`：上游 main 的 `package/SourceStorage.cpp` 被截断了。
+       - 它只有 291 行，停在 `native_source_storage_start` 里的 `attempted = true;`。这 291 行正好是 rponeawa `fix/sheng-startup-diagnostics`（`14192f3`）那份 353 行完整版的开头；后面加载存储框架、验证根卷策略、注册存储类、启动 UFS 和 Data 盘的部分被截掉了。也是 `6056637` 造成的。
+       - 扫过三个整合提交（sheng `6056637` 76 个文件、核心 `db9cd2e` 30 个、AdrenoMetal `57a1adc` 19 个）：拿上游版本和 rponeawa 原分支、cd6 整合分支的版本比，只有这一个文件是被截掉的。
+       - sheng `406931d` 恢复成完整版（大括号配对，用到的函数在上游代码和 ShengUfs 里都有），存储区加一条描述性 finding；porting 记录检查 PASS。
+       - 和第 2 条一起，cd7 构建通过后给上游提 PR。
   - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
