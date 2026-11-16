@@ -2,7 +2,6 @@
 """Compile the generic platform expert against the actual source-kernel ABI."""
 import argparse
 import json
-import shutil
 import tomllib
 from pathlib import Path
 import subprocess
@@ -55,13 +54,6 @@ if args.verified_root:
     if args.verified_root_bundle:
         out = ROOT / 'build/virtio-mmio-block-verified-bundle'
 out.mkdir(parents=True, exist_ok=True)
-if identifier == 'ArmDTPlatform':
-    # Apply the sheng fork's power support to the pinned public source.
-    staged = out / source.name
-    shutil.copyfile(source, staged)
-    subprocess.run(['patch', '--batch', '--forward', '-p1', '-i',
-                    ROOT / 'scripts/data/armdt-platform-psci.patch'], cwd=out, check=True)
-    source = staged
 if args.negative_aes_kat:
     if component != 'NativeAES':
         parser.error('The own-source KAT control requires NativeAES')

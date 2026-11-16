@@ -51,6 +51,8 @@ def main():
                 files = [item for item in files if item[0] != entry[0]] + [entry]
             continue
         base = Path(directory)
+        if prefix.startswith('--') or not base.is_dir():
+            sys.exit('Expected a directory for addon prefix ' + prefix + ': ' + directory)
         for p in sorted(x for x in base.rglob('*') if x.is_file()):
             name = prefix.rstrip('/') + '/' + p.relative_to(base).as_posix()
             mode = 0o755 if os.access(p, os.X_OK) else 0o644

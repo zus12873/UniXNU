@@ -120,8 +120,6 @@ def build(ctx, uefi, fd, dtb, ramdisk=None, output=None):
         else:
             ramdisk_path = scratch / 'ramdisk'
             ramdisk_path.write_bytes(b'')
-        # The board may store the ramdisk as UEFI-compressed chunks (rponeawa); the image is built in scratch, checked against
-        # the qualified size limit and verified, and only then published (CrossDarwin), so a failed repack keeps the old one.
         decoded_size = ramdisk_path.stat().st_size
         encoding = image.get('ramdisk_compression', 'none')
         if encoding == 'uefi-chunks' and decoded_size:
