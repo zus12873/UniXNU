@@ -209,6 +209,31 @@
           - 大于 150 px 的 5 步都是快速起手或快划中途，前后几步方向一致。比如 9.3 s 静止后 175、351、46、41、72 px 连着往右下。没有掉头式的跳。
           - 两次合计 77 秒，没出现 11-15 那种停顿后掉头的大跳（修之前 16 秒 3 次）。用户体感还没说。
           - 还在的：快划时指针隔 40 到 80 ms 才更新一次，一步 180 到 350 px。分不清是 WindowServer 合并了事件，还是控制器或驱动的报文本身隔这么久。如果是报文本身，几帧的位移攒成一帧，macOS 的加速曲线会把它放得更大。要分清得在驱动里数报文间隔和新规则触发的次数，挂到 ioreg 上，属于驱动改动。
+    - **用户 19:1x："不跳了，快，慢划都有点顿，加上计数查一下，合盖不熄屏，修下icon显示的问题"**；图标是"空白或透明"，合盖第 2 步"现在就做"：
+      - 合盖第 0 步（不改代码）：
+        - `pmset -g` 里 sleep 1（被 powerd 阻止），displaysleep 10。
+        - 03:17:19 `pmset displaysleepnow`：WindowServer 记 `IOMFBDisplay::set_display_state … target_state=off`，用户看到**全黑、背光也灭**。所以靠 macOS 自己熄屏就行。
+      - 合盖会不会去睡：
+        - XNU 的 `IOPMrootDomain` 收到 `kIOPMClamshellClosed` 后走 `privateSleepSystem` → `checkSystemSleepEnabled` → `gSleepDisabledFlag`。这个标志来自 `PE_get_default("sleep-disabled")`，即 `/defaults`。
+        - cd8 载荷里的 macOS 设备树 `/defaults` 有 `sleep-disabled = 1`、`kern.maxvnodes = 0x13400`。平板上 `kern.maxvnodes` 正是 78848，说明 XNU 读的就是这个节点。所以告诉它合盖不会去睡。
+        - `receivePowerNotification` 只是把消息排进 `pmPowerStateQueue`，从键盘线程调不会卡住。
+        - 上游查过，没有做合盖或 clamshell 的；`dby-w09` 只在电池驱动里用了 `receivePowerNotification`。
+      - sheng `bb0d65b`（合盖第 2 步）：
+        - `package/LidClamshell.h`：只在盖子状态变化时发消息，开机时盖子开着不发。
+        - `KeyboardProbe.cpp` 的 `publishLid` 在 macOS 上调 `getPMRootDomain()->receivePowerNotification(kIOPMClamshellClosed/Opened)`，并记一行 `sheng keyboard: clamshell closed/open sent to the power manager`。
+        - 主机测试 `scripts/check-lid-clamshell-host.py` 30 项，先失败后通过。`KeyboardProbe.cpp` 用 `build-gop-legacy-display-27.py` 的板级参数编过；新头文件加进了该脚本的键盘源文件表。
+      - sheng `eaa95d5`（触控板计数）：
+        - `wn8030_pointer_report_at` 记录：报文数、发出的指针报文数、60 ms 规则重新起算的次数；手指按着时两份报文的间隔，分 8 档（<10、20、30、45、60、100、250 ms，其余）。
+        - `KeyboardCover.cpp` 在第一份触控板报文时、之后最多每秒一次，把这些和控制器的 17 个计数一起挂成 `ShengTouchpadTiming`（32 位小端），用 `ioreg -r -c ShengKeyboardCover` 读。
+        - 主机测试：WN8030 5222 项，键盘 HID macOS 5119、iPadOS 5199 项；内核参数编过。
+      - **图标空白**：
+        - 用 rponeawa 的 `scripts/macos-lab/icon-probe.m`（照 `prepare-sheng-gpu-lab.py` 的参数编，ad-hoc 签名）在平板上跑，结果在 `data/tablet-logs/20261116-icons-cd8/`（不入库）。
+        - 默认模式：`/System/Applications` 56 个 App 图标都正常；偏好设置面板是通用的 PREF 图标。
+        - `--settings-icons` 模式（系统设置侧栏的 28 项，每项两张）：左边走 NSWorkspace，白色符号都在；右边是图标服务新渲染的（`ISIcon getCGImageForImageDescriptor`、ignoreCache、24pt@2x），28 项里 21 项**只有彩色底、没有白色符号**。正常的只有 @、锁、铃、月亮、开关。
+        - 也就是 SF Symbol 那一层在图标服务的 GPU 渲染里出来是透明的。
+        - 上游：rponeawa 11-16 在 AdrenoMetal `fix/runtime-development-d923` 上有 `8f350aa`（"capture the sampled inputs of blank icon renders"）、`3efc76a`（隔离图标绘制、重放 alpha 输入）、`a2c34d6`（`icon-cb=FIRST:COUNT` 把图标命令缓冲区写进日志），只是诊断，没有修复，也没写原因。
+        - 在 Mac 的 dyld 缓存里没找到能让图标服务改走软件渲染的开关。下一步用他的 `icon-cb` 和 RenderBox alpha 重放，抓出符号那一层的着色器和输入。
+      - cd9 构建准备：日常文件 6 个哈希都对；OS 镜像只读挂到 scratchpad 的 `os-mount`（`/dev/disk9s1`）。等用户在自己的终端里构建。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
