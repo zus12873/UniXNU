@@ -40,6 +40,23 @@
     - 这次没带 `log-gpu=1` 和 `keyboard-backlight=50`，所以键盘灯是暗的。
   - 打成 `out/flash/boot-v4-payload.bigwin-cd11-sleep.img`（`7b60a68b`）。内核块是 `610fa1f6`（同 cd7–cd10 的大窗口固件），`bootimg-contents.py` 核对过。
   - 下一步：用户在平板上 `sudo pmset -a sleep 0` 并进 fastboot，然后从内存启动，做第 1 级：SSH 里 `pmset sleepnow`，60 秒后应自己醒。
+- **CD11 第 1 级上机（11-17 00:0x–00:2x，只从内存启动 `cd11-sleep`，槽位 a 6 次、b 7 次，始终没变）**
+  - 第一次睡眠（开机时空闲睡眠计时器 1 分钟触发）被系统自己取消了：
+    - WindowServer 启动时上报用户活动（"ws.initialize"），根域判 `userActivityAtSleep 1`；loginwindow 30 s 没回应，之后回到完整唤醒。
+    - 能确认的：`PMRD: sleep enabled by platform-sleep` 生效；"wakes by lid yes, power key yes"；背光随睡眠熄灭，唤醒后恢复。
+    - ArmCpu 的 `phase 0`，CPU 睡眠没开始。和我们的代码无关。
+  - 第二、三次（`pmset sleepnow`）屏幕全黑（背光已关），60 s 定时器没叫醒，按电源键也没反应，只能长按强制重启进 fastboot。强制重启没扣槽位次数。
+  - 卡住时的痕迹：
+    - 统一日志里没有：上一趟 07:57 之后的日志都还在内存里，强制重启后丢了；
+    - 板级 UFS 日志也读不到：Linux 读取器是 v0 镜像，本机引导程序只认 v4；改成 v4 后用的是 vendor_boot 里小米的设备树，主线内核起不来。再开一次 macOS 又会把日志窗口盖掉。`NativeUfs` 只有写日志窗口的接口，没有读的。
+  - 第三次开着 SSH 实时 `log stream`（`scratchpad/sleep3-stream.txt`，本地）：
+    - 08:17:33 开始（Software Sleep），第一段 f→9 正常。这次 loginwindow 马上回应了，主要是等 powerd 等应用（powerd 回应用了 1.5 s）。
+    - 08:18:04.608 第二段（`tellChangeDown ON_STATE->SLEEP_STATE`，trace point 0x12）：内核客户、DriverKit 都应答了，`disk_sync_callout` 也完成了。
+    - 08:18:04.647 到 trace point **0x13**（SleepWillChangeInterests），之后网络断，日志流停。所以卡在 0x13 之后，具体在哪一步看不到。
+  - 嫌疑最大：0x14（各驱动断电）里的 `NativeLegacyDisplay`。
+    - 它是我们驱动里唯一实现了 `setPowerState` 的（启动参数 `offline-legacy-pm=1` 打开的逻辑电源模型），断电时调原厂 `IOMobileFramebufferLegacy::setPowerState(0)`。
+    - 平时熄屏只走 WindowServer，从没调过它的 0 状态（熄屏前后 CurrentPowerState 都是 1），所以这条路在本机上从没跑过。
+  - 准备好的对照镜像：`out/flash/boot-v4-payload.bigwin-cd11-sleep-nolpm.img`（`9af7623f`，载荷 `payload.cd11-sleep-nolpm.img` `08187642`），在 cd11-sleep 的基础上只改 `offline-legacy-pm=0`。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
