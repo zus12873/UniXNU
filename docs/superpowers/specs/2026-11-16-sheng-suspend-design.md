@@ -38,11 +38,11 @@
 
 - 睡眠被故意关掉：设备树 `/defaults` 有 `sleep-disabled = 1`。XNU 在开机完成时读它，置 `gSleepDisabledFlag`（`IOPMrootDomain.cpp:8502`），之后所有系统睡眠都被 `privateSleepSystem` 拒绝。cd8 的载荷设备树核对过。
 - XNU 的睡眠路径（`iokit/Kernel/IOCPU.cpp` `IOCPUSleepKernel`）：
-  1. 依次对每个非启动核调 `haltCPU()` 和 `processor_sleep()`。后者由调度器让那个核从自己的上下文进入 `cpu_sleep` → `ml_arm_sleep`。
+  1. 依次对每个非启动核调 `haltCPU()` 和 `processor_sleep()`。后者由调度器让那个核从自己的上下文进入 `cpu_sleep`。本配置没有 `USE_APPLEARMSMP`，`cpu_sleep`（cpu.c:320-365）只调 `PE_cpu_machine_quiesce` → CPU 驱动的 `quiesceCPU()`；它返回内核就 panic（"zombie processor"）。`ml_arm_sleep` 只有 Apple 的 `AppleARMSMP` 会调，本配置不会自己走到。
   2. 最后对启动核做同样的事。
   3. 启动核在 `ml_arm_sleep`（`osfmk/arm64/cpu.c:1056`）里等其他核都进入睡眠路径，记下 `wake_abstime`，然后调 `arm64_prepare_for_sleep(true)`。
 - 这个配置下的 `arm64_prepare_for_sleep`（`machine_routines_asm.s` 的非 Apple 分支）是 `dsb; isb; wfi; b` 的死循环，没有恢复路径。现在真去睡就是一去不回。
-- XNU 的 VM 平台有一条"睡完立刻恢复"的路：`ml_arm_sleep` 里 `test_sleep_in_vm` 时直接调 `arm_init_cpu(cpu_data_ptr, 0)`（cpu.c:1145-1152）。`arm_init_cpu`（`arm64/sptm/arm_init_sptm.c:1155`）认出"启动核在 quiescing 中"就走唤醒路径。这条路在本配置里没编进去，但 `arm_init_cpu` 的唤醒分支在。
+- XNU 的 VM 平台有一条"睡完立刻恢复"的路：`ml_arm_sleep` 里 `test_sleep_in_vm` 时直接调 `arm_init_cpu(cpu_data_ptr, 0)`（cpu.c:1145-1152）。本配置 SPTM 关着（`NCONFIG_SPTM 0`），用的是 `osfmk/arm/arm_init.c:720` 的 `arm_init_cpu`，复位入口是 `start_cpu_paddr`（`cpu_sleep` 写进 `cpu_reset_handler`）。VM 那条路没编进去，但 `arm_init_cpu` 的唤醒分支在，`ml_arm_sleep` 也导出了（`Private.arm64.exports`）。
 - CPU 驱动 ArmCpu（`drivers/ArmCpu/ArmCpu.cpp`）：
   - `haltCPU()` 在**调用它的那个核**上关计时器、关 Group 1 中断，然后死循环 WFI。睡眠时调用者是启动核，第一个非启动核的 `haltCPU()` 就会把启动核挂死。
   - `initCPU(boot=false)` 直接 panic（"secondary resume is unsupported" / "resume CPU startup is unsupported"）。唤醒后 XNU 会对启动核和每个重新启动的核以 `boot=false` 调它。
@@ -80,9 +80,9 @@
 2. 背光：`AppleARMBacklight` 登记系统睡眠通知。收到 `kIOMessageSystemWillSleep` 就写 0，收到 `kIOMessageSystemHasPoweredOn` 就写回。（菜单"睡眠"时盖子开着，也要灭。）
 3. `IOCPUSleepKernel`：
    - 对每个非启动核调 `haltCPU()`，新行为是只记下"准备睡眠"并返回。
-   - `processor_sleep()` 让该核自己进入 `ml_arm_sleep` 的非启动核分支。补丁让这里调平台钩子 `platform_sleep(false)`：ArmCpu 关这个核的计时器和 Group 1 中断，然后 PSCI `CPU_OFF`。正常不返回；失败就记下错误码，退回原来的 WFI 死循环。
-4. 启动核在 `ml_arm_sleep` 里等所有核都进了睡眠路径（原逻辑），记下 `wake_abstime`，然后补丁让它调平台钩子 `platform_sleep(true)`，即等唤醒（见第 3 节）。钩子返回后调 `arm_init_cpu(cpu_data_ptr, 0)`，走 XNU 自己的唤醒分支（同 VM 路径）。
-5. 唤醒分支：恢复启动核 → `PE_cpu_machine_init` → `ArmCpu::initCPU(boot=false)` → `IOCPUSleepKernel` 从 `processor_sleep(bootCPU)` 之后继续 → 对每个非启动核 `processor_wake()` → `ArmCpu::startCPU` → `CPU_ON`（这时那个核确实是关的）→ 那个核走复位向量 → `initCPU(boot=false)`。
+   - `processor_sleep()` 让该核自己进入 `cpu_sleep` → `quiesceCPU()`。`quiesceCPU()` 在 `ml_is_quiescing()` 为真时调 `ml_arm_sleep()`（不返回），进入它的非启动核分支。补丁让这里调平台钩子 `platform_sleep(false)`：ArmCpu 关这个核的计时器和 Group 1 中断，然后 PSCI `CPU_OFF`。正常不返回；失败就记下错误码，退回原来的 WFI 死循环。
+4. 启动核同样经 `cpu_sleep` → `quiesceCPU()` → `ml_arm_sleep()`，在里面等所有核都进了睡眠路径（原逻辑），记下 `wake_abstime`，然后补丁让它调平台钩子 `platform_sleep(true)`，即等唤醒（见第 3 节）。钩子返回后调 `arm_init_cpu(cpu_data_ptr, 0)`，走 XNU 自己的唤醒分支（同 VM 路径）。
+5. 唤醒分支（`arm_init.c` 的 `arm_init_cpu`）：恢复启动核 → `PE_cpu_machine_init` → `ArmCpu::initCPU(boot=false)` → `IOCPUSleepKernel` 从 `processor_sleep(bootCPU)` 之后继续 → 对每个非启动核 `processor_wake()` → `ArmCpu::startCPU` → `CPU_ON`（这时那个核确实是关的）→ 那个核走复位向量 → `initCPU(boot=false)`。
 6. 根电源域通知各驱动和程序唤醒，powerd 让 WindowServer 打开显示，背光写回。
 
 ### 3. 启动核等唤醒（ArmCpu，平台钩子 `platform_sleep(true)`）
@@ -112,12 +112,15 @@
   - PMIC：电源键的中断本来就开着（ButtonProbe），其他 APID 不动。
 - `should_wake(intid)`：
   - SPI 208：读 GPIO 171 的电平，盖子开着才醒；否则清 GPIO 171 的中断状态，继续睡（去抖的抖动）。
-  - SPI 481：读 PON 的 RT_STS 第 7 位，电源键按着才醒；否则清掉触发的那个 APID，继续睡（充电器插拔等其他 PMIC 事件不叫醒）。
+  - SPI 481：读 PON 的 RT_STS 第 7 位和锁存状态，电源键按过才醒；否则清掉触发的那个 APID，继续睡（充电器插拔等其他 PMIC 事件不叫醒）。
+  - 叫醒系统的那一下电源键（按下和松开）**不传给 macOS**：macOS 把短按电源键当作"睡眠"，传过去会立刻又睡。由 `ButtonProbe` 在唤醒后吞掉这一次按下和随后的松开。（实现者的决定，审阅时提出。）
   - 计时器 PPI：超时到了，醒。
 - `restore`：把 TLMM 各脚的使能写回。
 - 判定和寄存器计算写成能在主机上测的纯函数（参照 `LidClamshell.h` 的做法）。寄存器读写留在 `.cpp` 里。
 
 ### 5. ArmCpu 的改动（核心仓库的组件 `drivers/ArmCpu`）
+
+- `quiesceCPU()`：`ml_is_quiescing()` 为真（系统睡眠）时调 `ml_arm_sleep()`，不返回；否则保持原行为。
 
 - `haltCPU()`：睡眠时只把状态记为 Stopped 并返回，不在调用者核上死循环。原来的停机行为（关机、单核停用时）保留成单独的路径。实现时先确认 `haltCPU` 在本内核里还有哪些调用者。
 - `initCPU(boot=false)`：
@@ -183,7 +186,7 @@
 ## 风险和未知
 
 - Gunyah 的虚拟 GIC：分发器的使能位筛选、关中断下 WFI 的唤醒、`ICC_HPPIR1_EL1` 的读法，都要在真机上验证。第 1 级测试就能看出来。
-- 直接从 `ml_arm_sleep` 调 `arm_init_cpu` 在 SPTM 版的初始化代码里是否完整；VM 平台用过，但不是这个配置。补丁实现前通读 `arm_init_cpu` 的唤醒分支。
+- 直接从 `ml_arm_sleep` 调 `arm_init_cpu`（非 SPTM 版，`osfmk/arm/arm_init.c:720`）是否完整；VM 平台用过，但不是这个配置。补丁实现前通读它的唤醒分支。
 - 非启动核 `CPU_OFF` 之后再 `CPU_ON`：开机时已经走过 `CPU_ON` 的复位路径，但"关掉再开"没走过。
 - 某个驱动醒后状态错乱（GPU 最可疑）。
 - powerd 在醒后可能马上又要睡（盖子还合着时被电源键叫醒）：这是 macOS 正常行为，记录即可。

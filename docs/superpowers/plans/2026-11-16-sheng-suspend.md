@@ -63,7 +63,7 @@
 ### Task 2：ArmCpu 驱动：停核、恢复、等唤醒、钩子
 
 **Files:**
-- Modify: `drivers/ArmCpu/ArmCpu.cpp`（`haltCPU` 982-990、`initCPU` 686-727、`quiesceCPU` 973-980；新增睡眠函数和登记）
+- Modify: `drivers/ArmCpu/ArmCpu.cpp`（`haltCPU` 982-990、`initCPU` 686-727、`quiesceCPU` 973-980；新增睡眠函数和登记）。本配置没有 `USE_APPLEARMSMP`：`cpu_sleep` 只调 `quiesceCPU`，它返回就 panic（"zombie processor"）。
 - Modify: `drivers/ArmCpu/README.md`（描述现在的行为和两个启动参数）
 
 **Interfaces:**
@@ -74,6 +74,7 @@
   - 钩子函数 `static void armcpuPlatformSleep(boolean_t bootCpu)`，在 `ArmCpu::start`（启动核）里、`platform-sleep=1` 时登记给 `arm64_platform_sleep_hook`。
 
 - [ ] **Step 1：`haltCPU`**：`kIOCPUStateStopped` 记下即返回（不关中断、不死循环）。先 `grep -rn haltCPU` 核对 xnu-work 里的调用者；只有 `IOCPUSleepKernel` 的话，原死循环删掉；有别的调用者就保留成 `parkSelf()` 给那条路径。
+- [ ] **Step 1b：`quiesceCPU()`**：`ml_is_quiescing()` 为真时，关计时器后调 `ml_arm_sleep()`（`extern "C" void ml_arm_sleep(void) __attribute__((noreturn));`，已导出），不返回；否则保持原行为（`diagnosePower` 的 panic 只在非睡眠时保留）。
 - [ ] **Step 2：`initCPU(boot=false)`**：
   - 启动核：`enableGic()` 只开本核接口和 Group 1，`enableCPUTimeBase(true)`，`setCPUState(kIOCPUStateRunning)`，不调 `initDistributor`。
   - 副核：走第一次启动的同一组步骤（`wakeRedistributor(true)`、`enableGic()`、`ml_install_interrupt_handler`、计时器、Running），`armcpu_smp_running` 不重复加。
@@ -109,7 +110,7 @@
 - [ ] **Step 1**：在 `xnu-work` 的副本里改：
   - `ml_arm_sleep`：启动核分支在 `arm64_prepare_for_sleep(true)` 前 `if (arm64_platform_sleep_hook) { arm64_platform_sleep_hook(TRUE); arm_init_cpu(cpu_data_ptr, 0); }`；非启动核分支在 `arm64_prepare_for_sleep` 前 `if (arm64_platform_sleep_hook) arm64_platform_sleep_hook(FALSE);`。
   - `IOPMrootDomain.cpp` 读 `sleep-disabled` 之后：`gSleepDisabledFlag` 非 0、`arm64_platform_sleep_hook` 非空、启动参数 `platform-sleep` 为 1 → 清零并 `IOLog("PMRD: sleep enabled by platform-sleep\n")`。
-- [ ] **Step 2**：先通读 `arm_init_sptm.c` 的 `arm_init_cpu` 唤醒分支（`ml_is_quiescing()` 为真时的路径），确认在 MMU 已开、从 `ml_arm_sleep` 直接调用时不会重复做只在复位时才做的初始化；有就加条件跳过，写进补丁注释。
+- [ ] **Step 2**：先通读 `osfmk/arm/arm_init.c:720` 的 `arm_init_cpu` 唤醒分支（本配置 SPTM 关着，复位入口是 `start_cpu_paddr`），确认在 MMU 已开、从 `ml_arm_sleep` 直接调用时不会重复做只在复位时才做的初始化；有就加条件跳过，写进补丁注释。
 - [ ] **Step 3**：用 `git diff` 生成补丁；在干净的 `xnu-work` 副本上 `git apply --check`，并照 `series` 顺序整体应用一次确认不冲突。
 - [ ] **Step 4**：porting.toml 记现在的行为；`python3 -I -B scripts/porting-record.py check --device ../UniXNU-sheng --base upstream/main` → PASS。
 - [ ] **Step 5：提交**（sheng 整合分支）：`git add patches/xnu-12377/sheng-platform-sleep.patch patches/xnu-12377/series porting.toml`。
@@ -133,7 +134,8 @@
     - `void sheng_sleep_tlmm_keep(const uint32_t cfg[SHENG_SLEEP_GPIO_COUNT], uint32_t out[SHENG_SLEEP_GPIO_COUNT])`：除盖子脚外清掉 INTR_CFG 第 0 位（使能），其余位不动；盖子脚原样。
     - `int sheng_sleep_lid_wakes(uint32_t lid_io)`：IO 寄存器第 0 位是电平，低电平为合上 → 高电平（开）返回 1。
     - `int sheng_sleep_power_wakes(uint8_t rt_sts, uint8_t latched)`：第 7 位任一为 1 → 1。
-  - `ButtonProbe.cpp`：`extern "C" int sheng_buttons_sleep_check(void)`：读 PON 的 RT_STS 和锁存状态，返回电源键是否按过；**不清**电源键的状态；把别的 APID 的中断清掉（同 `buttonsIrq` 的做法）。
+  - `ButtonProbe.cpp`：`extern "C" int sheng_buttons_sleep_check(void)`：读 PON 的 RT_STS 和锁存状态，返回电源键是否按过；把别的 APID 的中断清掉（同 `buttonsIrq` 的做法）。叫醒系统的那次按下和松开不报给 macOS：它返回 1 时置 `gSwallowPower`，唤醒后的线程第一次看到电源键按下和随后的松开时不发 HID 报文，然后清掉标志。
+  - 测试：`ShengSleep.h` 里加 `int sheng_sleep_swallow(int *pending, int pressed)`：pending 时吞掉按下和随后的松开，之后照常；主机测试 `wake_press_and_release_swallowed`、`next_press_reported`。
   - `ShengSleep.cpp`：`extern "C" void sheng_sleep_probe(void)`：映射 TLMM 的 0..209 脚（`TB_TLMM_BASE`、步长 `TB_GPIO_STRIDE`），`platform-sleep=1` 时向 ArmCpu 登记 {prepare, should_wake, restore, {208, 481}}，并登记系统睡醒通知：唤醒原因是盖子或电源键时 `getPMRootDomain()->requestUserActive(...)`，避免停在 dark wake。
 
 - [ ] **Step 1：写失败的测试** `sheng_sleep_host.c`：
