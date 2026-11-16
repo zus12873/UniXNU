@@ -5,7 +5,21 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-16）：**用户调整了方向，计划是 `docs/superpowers/plans/2026-11-16-lid-safari-memory-charging.md`（用户已批准）。** 顺序：工作流 0（整合分支跟上上游 main，构建 cd6，上机 CD6-1，顺带验 Safari、合盖熄屏的第 0 步、第一组充电读数）→ 合盖熄屏 → 充电 → 内存 → 真睡眠的设计。要点：
+当前阶段（2026-11-16 晚）：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）的代码写完，等整条分支的审查，然后构建上机。** 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
+- 已提交：
+  - ArmCpu `local/platform-sleep`：`6062866`（唤醒判定，主机测试）和 `a26ef5d`（副核 PSCI CPU_OFF、启动核屏蔽中断等唤醒、`initCPU(false)` 恢复）。核心 `3bec015` 指向它。
+  - sheng：`97df6fa`（XNU 补丁 `sheng-platform-sleep.patch`，放在 series 最后）、`0fdf9db`、`35858cc`（盖子和电源键唤醒、吞掉叫醒系统的那次按键）、`c35f3bc`（睡眠时关背光）。
+  - 主机检查全过；改过的内核和板级源文件都用构建参数单独编过（`local-tools/kernel-compile-check.py`）。
+- 下一步：审查意见处理完后，请用户在自己的终端里构建（cd11），然后按计划 Task 6 分五级上机：
+  1. 60 秒定时自动醒；
+  2. 电源键叫醒；
+  3. 开合盖；
+  4. 连续 10 次；
+  5. 拔电合盖 1 小时，以及插电睡眠时能不能充电。
+  - 上机前要用户在平板上 `sudo pmset -a sleep 0`。
+- Task 0（cd11 只关背光、拔电合盖 1 小时的对照）还没做。
+
+上一阶段（2026-11-16）：**用户调整了方向，计划是 `docs/superpowers/plans/2026-11-16-lid-safari-memory-charging.md`（用户已批准）。** 顺序：工作流 0（整合分支跟上上游 main，构建 cd6，上机 CD6-1，顺带验 Safari、合盖熄屏的第 0 步、第一组充电读数）→ 合盖熄屏 → 充电 → 内存 → 真睡眠的设计。要点：
 - 合盖：真睡眠在这块板子上不存在（`../UniXNU-sheng/board.toml:138` 的 `sleep-disabled = 1` 是故意的，没有挂起和恢复）。先做"合盖熄屏、停触摸、告诉 macOS 盖子合上了"，之后再写真睡眠的设计。上游没有现成的。
 - Safari：用户的现象是图标是问号、点了没反应，正是上游 ShengUfs#12（11-15 合并）修的；它已经在 sheng 整合分支里，日常镜像里没有。不改代码，随 cd6 验证。
 - 内存：引导程序只交出 11.68 GiB，扣掉固件占的部分，上限约 10.8 GiB，12 GiB 做不到。用上游 uefi-sheng #6 的内存表方案，放开它只认 8 GiB 的门槛，再把窗口分步推到 9 GiB、10 GiB。
