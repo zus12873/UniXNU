@@ -252,6 +252,12 @@
         - 日常文件已还原，6 个哈希都对。OS 镜像还挂着，留给 cd10。
         - `payload.cd9-s2.img`（`9a6f7b7f`）：`cd9-base` 加 `enable-jobs=com.openssh.sshd log-gpu=1 keyboard-backlight=50`。打成 `out/flash/boot-v4-payload.bigwin-cd9-s2.img`（`3b5401e2`），核对过；记录在 `cd9-images.json`。
       - 下一步：cd9-s2 上机测合盖熄屏、触控板计数、键盘灯。同时用户可以跑 cd10 构建（带掉线日志）。
+      - **CD9-1 已开始（用户 20:15："我进fastboot了，可以"）**：20:15:55 只读查询，槽位 a 剩 6 次、b 剩 7 次，都可启动，没补；电压 4332 mV。`cd9-s2` 哈希 `3b5401e2` 相符。20:16:04 `boot-sheng.py`：`Booting OKAY`，45 秒内引导程序没有回来。
+        - 20:20:27 SSH 通（Wi-Fi 又是从控制中心手动连的）。`hw.memsize` 10142334976；启动参数有 `keyboard-backlight=50`、`ci-mps=0`。
+        - 图标服务还是开机先崩 2 次再稳住（`runs = 3`），日志里 4 条 MPS。GPU 没有复位，代码签名 0。
+        - 根电源域还没有 `AppleClamshellState`：开机时盖子开着，按设计不发消息。
+        - **触控板计数（新工具 `local-tools/touchpad-timing.py` 解码）**：开机到 04:20（平板时间），共 2378 份报文，发出指针报文 1193 份，60 ms 规则重新起算 6 次。手指按着时的报文间隔：<10 ms 867（37%），10–20 ms 1432（61%），20–30 ms 24，30–100 ms **0**，100–250 ms 4，≥250 ms 2。控制器：中断 2598、帧 2621、I2C 失败 0、认证 4。
+        - 所以在驱动这一侧，报文是稳定的 10 到 20 ms 一份，没有 cd8 采样里那种 30 到 80 ms 的间隔。"顿"不在键盘壳、控制器或驱动读取这一段，在报文交给 macOS 之后（HID 事件驱动、hidd、WindowServer）。04:21:56 开了同时段的指针采样（`pointer-cd9.csv`）来核对。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
