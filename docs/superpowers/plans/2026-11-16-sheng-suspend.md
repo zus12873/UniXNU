@@ -6,7 +6,7 @@
 
 **Architecture：** XNU 板级补丁在 `ml_arm_sleep` 里调一个平台钩子：非启动核由 ArmCpu 用 PSCI `CPU_OFF` 关掉；启动核在关中断状态下只留唤醒源的 SPI，WFI 等待，由 sheng 板级回调判定真唤醒；返回后走 `arm_init_cpu(cpu_data_ptr, 0)` 的唤醒分支，再 `CPU_ON` 开回副核。启动参数 `platform-sleep=1` 才清掉 `gSleepDisabledFlag`；默认一切照旧。
 
-**Tech Stack：** XNU（xnu-12377，BCM2837 配置，SPTM 版 `arm_init_cpu`）、IOKit C++、GICv3（Gunyah 虚拟）、PSCI 0.2、主机测试用 C11/C++17 + ASan/UBSan。
+**Tech Stack：** XNU（xnu-12377，BCM2837 配置，SPTM 关着，用 `osfmk/arm/arm_init.c` 的 `arm_init_cpu`）、IOKit C++、GICv3（Gunyah 虚拟）、PSCI 0.2、主机测试用 C11/C++17 + ASan/UBSan。
 
 **Spec：** `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`
 
@@ -92,7 +92,7 @@
   5. `icc_igrpen1_el1 = 0`、计时器关；`board->restore()`；ICENABLER 全关后按 `saved` 写回 ISENABLER。挂起着的唤醒中断不清。
   6. 记 `last_intid`、`last_reason`、`asleep_ticks`，`entries++`。
   - 没登记板级时，只认计时器；计时器也没设，就记一次错误并立即返回（等于不睡，避免挂死）。
-- [ ] **Step 5：唤醒后的日志**：在 `initCPU(boot=false)` 的启动核分支末尾 `IOLog("armcpu sleep: woke by %s intid %u after %llu ms, spurious %u, cpu_off failures %u\n", ...)`。
+- [ ] **Step 5：唤醒后的日志**：（取舍见 ledger）不在 `initCPU` 里打，改由 Task 4 的睡醒通知打 `sheng sleep: woke by …`，带上 `armcpu_sleep_stats`。
 - [ ] **Step 6：编译**：用构建树的内核参数单独编 `ArmCpu.cpp`（同 KeyboardCover 的做法：从 `IOPlatformExpert.cpo.json` 取参数，替换源文件，`-o` 到 scratchpad），rc 0，`nm` 里有 `_armcpu_sleep_register`、引用 `_arm64_platform_sleep_hook`。
 - [ ] **Step 7：主机测试仍通过**：`python3 tools/check-sleep-host.py` → PASS。
 - [ ] **Step 8：提交**（ArmCpu 仓库 `local/platform-sleep`）：`git add ArmCpu.cpp README.md`；然后核心仓库整合分支 `git add drivers/ArmCpu` 提交 gitlink（构建按 gitlink 取代码）。
@@ -179,9 +179,9 @@
 
 - [ ] **Step 1**：用户在自己的终端里 `sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。之前我核对日常文件哈希、只读挂 OS 镜像。
 - [ ] **Step 2**：确认内核里有 `armcpu sleep:`、`sheng sleep:` 字符串和 `_arm64_platform_sleep_hook`；另存产物（`.cdN-<哈希>`），还原日常文件，`record-build-provenance.py`。
-- [ ] **Step 3**：`make-payload-variant.py ... --arg enable-jobs=com.openssh.sshd --arg log-gpu=1 --arg keyboard-backlight=50 --arg platform-sleep=1 --arg platform-sleep-wake-after=60`，打 v4 镜像，`bootimg-contents.py --payload` 核对；参数行不超过 1000 字节。
+- [ ] **Step 3**：`make-payload-variant.py ... --arg enable-jobs=com.openssh.sshd --arg log-gpu=1 --arg keyboard-backlight=50 --arg platform-sleep=1 --arg platform-sleep-wake-after=60 --arg darkwake=1`（`darkwake=1`：DEVELOPMENT 内核上每次唤醒都直接是完整唤醒，见审查 Critical 2），打 v4 镜像，`bootimg-contents.py --payload` 核对；参数行不超过 1000 字节。
 - [ ] **Step 3b**：请用户在平板上关掉空闲睡眠（用户 2026-11-16 定的）：`sudo pmset -a sleep 0`（Data 盘上，重启后仍在）；SSH 里 `pmset -g | grep -E '^ *sleep'` 应为 0。
-- [ ] **Step 4：第 1 级**（用户同意后从内存启动）：SSH 里 `pmset sleepnow`，期望 60 秒后醒、SSH 重连、`log show` 有 `armcpu sleep: woke by timer`；`pmset -g log | tail` 看到 Sleep/Wake。醒不来：等 3 分钟，请用户长按电源键重启，进 fastboot 读槽位，再用 Linux 日志启动读板级日志。
+- [ ] **Step 4：第 1 级**（用户同意后从内存启动）：SSH 里 `pmset sleepnow`，期望 60 秒后醒、SSH 重连、`log show` 有 `sheng sleep: sleeping …; wakes by lid yes, power key yes` 和 `sheng sleep: woke by timer`；`pmset -g log | tail` 看到 Sleep/Wake；记下 `spurious`、`masked`、`ticks`、`cpu_off failures`（应为 0）。醒不来：等 3 分钟，请用户长按电源键重启，进 fastboot 读槽位，再用 Linux 日志启动读板级日志。
 - [ ] **Step 5：第 2 级**：`pmset sleepnow` 后按电源键，期望醒并且显示打开（不是 dark wake）。
 - [ ] **Step 6：第 3 级**：合盖，`log` 里看到睡眠；开盖醒。
 - [ ] **Step 7：第 4 级**：连续 10 次睡醒；每次后检查 Wi-Fi、键盘壳、触控板、触摸、显示、`ioreg -rc ShengBattery`、GPU 恢复计数。
