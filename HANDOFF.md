@@ -308,6 +308,17 @@
           - `KeyboardProbe` 的 `publishLid` 在每个 clamshell 消息旁边调它（弱链接，只在 macOS 上）。
           - 主机测试 34 项；两个文件都用板级参数编过；记录检查 PASS。
         - cd11 构建准备：日常文件 6 个哈希都对，OS 镜像只读挂好（`/dev/disk9s1`）。等用户构建。
+      - **用户 20:5x："拉上游对于睡眠问题的修复"——查过，上游没有**：
+        - 21:0x 拉取了核心、sheng、uefi-sheng、UniXNU_macOS 和全部组件仓库。CrossDarwin、rponeawa 的 fork 用 `ls-remote` 查过，没有本地没有的分支。
+        - 搜了 11-15 以来所有分支的提交（sleep、suspend、clamshell、lid、resume、wake、hibernate、display off、backlight、psci），只有本机自己的提交。UniXNU_macOS 那几条是 "valid" 之类的字面误中。
+        - GitHub 上 UniXNU 和 CrossDarwin 的 PR、issue（sleep、suspend、clamshell、lid、display off、backlight、hibernate）：只有旧的亮度和键盘 PR、#101（关机和重启接 PSCI，已在树里）、我们的 #111。没有挂起或恢复的实现。
+        - 上游的新内容：
+          - 核心 main 到 `4a654d1`（三个文档提交）。
+          - sheng main 到 `4d9dcff`（三个文档提交，记录 CI 的 macOS 桌面构建）。
+          - 两边都有 rponeawa 的 `fix/sheng-main-build-parity`，没合进 main：
+            - sheng 的 `b69faf1` 恢复了 `SourceStorage.cpp`（和 zus12873/UniXNU-sheng#1 只差 11 行），也恢复了 macOS 的内核表。
+            - 它的 macOS `kernel_args` 里也有 `ci-mps=0`，还有实验室参数（autoreset、uefi-watchdog、diag 等）。
+            - 等它合进 main 再整合，PR #1 和 #112 那时可以撤。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
