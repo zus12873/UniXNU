@@ -84,10 +84,12 @@ def make_prime_list(request, work, os_root):
         if Path(image['image']).resolve() == Path(request['os_image']).resolve():
             found = collect(os_root, image['prefix'])
         else:
-            directory = work / ('prime-' + image['name'])
-            directory.mkdir()
-            with os_mount(image['image'], directory) as mount:
-                found = collect(mount, image['prefix'])
+            # A user cannot attach a disk image inside a volume that is itself a user-attached image (an output directory on
+            # a sparse bundle: "hdiutil: attach failed - Permission denied"), so the mount point is in the system temporary
+            # directory, not in the work directory.
+            with tempfile.TemporaryDirectory(prefix=f'unixnu-prime-{image["name"]}-') as scratch:
+                with os_mount(image['image'], Path(scratch)) as mount:
+                    found = collect(mount, image['prefix'])
         counts[image['name']] = len(found)
         paths.update(found)
     if not paths:
