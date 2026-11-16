@@ -60,6 +60,26 @@
     - 原因：上游 `1be2950`（rponeawa，已在 `upstream/main`）新加的检查只认 PATH 里的 bison（`/usr/bin/bison` 是 2.3）和 Homebrew 的两个路径。`<output>/tree/.cache/mesa-tools/bin/bison` 里 11-13 放的 3.8.2 它不认。
     - 11:21 装了 Homebrew 的 bison 3.8.2 后就过了。脚本把 `mesa-tools/bin/bison` 换成指向 `/opt/homebrew/Cellar/bison/3.8.2/bin/bison` 的链接。不改代码。
     - 验证（11:53）：单跑 `build-turnip-darwin.py --target macos27` 输出 PASS，`libvulkan_freedreno.dylib` 18437176 字节，Meson 读到 `bison 3.8.2`。下一步：用户在自己的终端里 `sudo -v` 后重跑整条构建。
+- **cd7：按最新的上游 main 重新整合（11-16 下午，用户："先按最新的上游 main 重新整合，打 cd7，再上机"）**
+  - 为什么：上游三个仓库 10:04 前后都进了 rponeawa 的整合提交（sheng `6056637`、核心 `db9cd2e`、AdrenoMetal `57a1adc`），Adreno740 也合了 #29。主线 GPU 运行时定为 metal2vulkan `555b13d5` 加 `0046` 补丁。cd6 用的是 rponeawa 分支上的 `d9236a8a` 加 `0044`，测出来的不能当上游 main 的证据。sheng 的 main 在 `bc05635` 之后没有新提交。
+  - 新分支都叫 `integrate/upstream-20261116`，从 `integrate/others-20261115` 开，cd6 的状态留在旧分支上：
+    - **核心 `b35c738`**：合上游 `21d683d`。
+      - 运行时、AdrenoMetal `26d4902`（#39，里面已经有我们的 `ci-mps=0` 和 WindowServer 重启兜底）、ArmCpu `acba4ee`、`components.toml`，都取上游的。
+      - 删掉 `scripts/data/armdt-platform-psci.patch` 和它在 `build-arm-driver.py` 里的用法，和上游一样。
+      - 只留这些：Adreno740 `fd7a0ca`；DarwinBoot `bdb6ff7`（上游目录里记的 `3c75734` 是 10-28 的旧值，比它自己用的子模块还旧）；22 页引导页表；窗口外收编补丁；`devicetree.py` 的 9 GiB；`build-boot-runtime.py` 的挂载修复。
+      - `check-unixnu.py` 和三组测试都过。
+    - **Adreno740 `local/owned-map-on-main`（`fd7a0ca`）**：上游 `1c9029b` 加上 `462dd74` 的内容。上游没有这个修复，能干净打上；`test_owned_below_window` 和 `test_memory` 都过。只在本地。
+    - **sheng `e5a87a8`**：合上游 `bc05635`。
+      - 除了下面几样，全取上游：合盖（和 #111 逐字节相同）、测试桩和 `enable-jobs`（和 #109、#110 相同）、`board.toml` 的 12 GiB 设置。
+      - `porting.toml` 整份取上游的，再只给保留的改动加描述性 findings（输入、键盘、诊断、配置、USB、打包）。
+      - 本机的板级补丁文件删掉；`board.toml` 注释里那句带日期的话改成描述行为。
+      - porting 记录检查 PASS（18 个区）；合盖、键盘壳、键盘服务、wn8030、看门狗策略、电池、充电认证、启动日志、GENI I2C 的主机检查都 PASS。
+      - 子模块都更新到钉的版本：QcaBluetooth `effe4ec`，ShengUfs `9d527ae`（和 `2b6638b` 同一棵树），QcomDwc3 `d4e96f3`。
+  - **根卷策略文件**：上游现在把 rponeawa 的钥匙（`896b3246`）提交进了仓库。
+    - 合并提交里这 6 个文件和上游完全相同。
+    - 本机的钥匙（`74eace58`）、header 和 `verification.json` 合并前备份在 `out/policy-backup-cd7/`（git 忽略），合并后原样放回工作区，显示为"已修改"。**这 9 个文件的本地改动永远不提交。**
+  - 缓存：cd6 的 metal2vulkan 留作 `tree/.cache/gpu-reference/metal2vulkan.d9236a8-cd6-20261116`，让 cd7 重新取 `555b13d5`。OS 镜像已只读挂到 scratchpad 的 `os-mount`。
+  - 构建前日常文件：`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`39f9ad3f`。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
     - metal2vulkan 缓存重新取到 `d9236a8`；
