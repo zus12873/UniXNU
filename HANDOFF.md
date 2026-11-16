@@ -71,6 +71,10 @@
       - sheng 的 main 里，macOS 默认启动参数（`board.toml:239`）没有 `ci-mps=0`；只有上游的实验镜像脚本 `prepare-sheng-gpu-lab.py:216` 加它。
       - 上游报告里的 `coreimage_blur_mps_1: passed` 是 `agent.sh:80` 显式设了 `CI_ENABLE_MPS=1` 时的结果，插件不会覆盖已有的值。所以他们的新运行时（`ce8986f`）下强制走 MPS 也通过了；但那是他们的机器、他们的探测程序。
       - 结论：`exec-env` 的写法不提。sheng 要不要提"默认加 `ci-mps=0`"的一行 PR，看 cd6 上我们的复现脚本：不带 `ci-mps`、走 MPS 时还崩不崩。
+      - 用户 11-16："先提draft"。**UniXNU-sheng#112**（draft）`fix(macos): keep Core Image's blurs off MPS by default`：
+        - 分支 `fix/macos-ci-mps-default`（`9cd1c2a`，工作树 `../UniXNU-sheng-pr-cimps`），从 `upstream/main` `bc05635` 开；
+        - macOS 载荷的启动参数末尾加 `ci-mps=0`，871/1000 字节；`porting.toml` 的配置、USB、打包、GPU 四个区各一条描述性 finding。
+        - cd6 上机按这个分：不带 `ci-mps` 跑 `tablet-ci-blur-probe.js` 还 abort，就把 #112 转成正式 PR；通过就关掉 #112。
     - 之前那条（已被上面更正）：上游的 `reports/sheng-macos27-coreimage.json` 显示，rponeawa 的新 Metal 运行时下，MPS 开和关两种模糊都 `passed`，`iconservicesagent_fresh_crash` 是 false。
       - 所以 cd6 的第一份试验载荷不带 `exec-env`，先验证上游这个修复在本机有没有效（经 SSH 跑 `local-tools/tablet-ci-blur-probe.js`，它走 MPS）。
       - 不行再加 `exec-env` 对照。`zus12873/UniXNU-sheng` 的 `fix/macos-icon-agent-mps` 分支先留着，没删。
