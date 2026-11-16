@@ -66,7 +66,12 @@
     - rponeawa 的那批改动今天上午已由他压扁合进上游（`6056637`）；CrossDarwin 的 #101 到 #105 上游也已合并。照规则不重复提交。
     - 12 GiB 机型的内存窗口、200 MiB 载荷、测试菜单：直接写进 `board.toml` 会让 8 GiB 机型坏掉，要先做按内存大小分机型的配置（内存第 1 步的固件内存表做完后再看）。
     - 本机的代码页校验板级补丁已被上游 #268 取代。
-    - **Core Image 的 `exec-env` 绕开办法不提了**：上游的 `reports/sheng-macos27-coreimage.json` 显示，rponeawa 的新 Metal 运行时下，MPS 开和关两种模糊都 `passed`，`iconservicesagent_fresh_crash` 是 false。
+    - **Core Image（更正，11-16 稍后核对）**：
+      - 本机插件那一处 `ci-mps=0`（`19d6bcf`，作者 huanmeng）和 WindowServer 重启兜底（`adddc7b`），rponeawa 带进了 `fix/runtime-development-d923`，今天随 **UniXNU/AdrenoMetal#39** 合进了 AdrenoMetal 的 main（`26d4902`；`origin/main` 里能搜到 `ci-mps=0` 和 `MadeBeforeRecovery`）。
+      - sheng 的 main 里，macOS 默认启动参数（`board.toml:239`）没有 `ci-mps=0`；只有上游的实验镜像脚本 `prepare-sheng-gpu-lab.py:216` 加它。
+      - 上游报告里的 `coreimage_blur_mps_1: passed` 是 `agent.sh:80` 显式设了 `CI_ENABLE_MPS=1` 时的结果，插件不会覆盖已有的值。所以他们的新运行时（`ce8986f`）下强制走 MPS 也通过了；但那是他们的机器、他们的探测程序。
+      - 结论：`exec-env` 的写法不提。sheng 要不要提"默认加 `ci-mps=0`"的一行 PR，看 cd6 上我们的复现脚本：不带 `ci-mps`、走 MPS 时还崩不崩。
+    - 之前那条（已被上面更正）：上游的 `reports/sheng-macos27-coreimage.json` 显示，rponeawa 的新 Metal 运行时下，MPS 开和关两种模糊都 `passed`，`iconservicesagent_fresh_crash` 是 false。
       - 所以 cd6 的第一份试验载荷不带 `exec-env`，先验证上游这个修复在本机有没有效（经 SSH 跑 `local-tools/tablet-ci-blur-probe.js`，它走 MPS）。
       - 不行再加 `exec-env` 对照。`zus12873/UniXNU-sheng` 的 `fix/macos-icon-agent-mps` 分支先留着，没删。
     - 上游那份报告里还记着："Icon float components are nonfinite"，图标缺失、颜色错误。
