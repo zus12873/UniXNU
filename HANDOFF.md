@@ -294,6 +294,20 @@
         - 日常文件已还原，6 个哈希都对；OS 镜像已卸载。
         - `payload.cd10-s2.img`（`467fdc1d`）：加 `enable-jobs=com.openssh.sshd log-gpu=1 keyboard-backlight=50`，打成 `out/flash/boot-v4-payload.bigwin-cd10-s2.img`（`dd79bca5`），核对过。
         - 用法：键盘壳失灵时先别动，告诉我；我先读日志，再请用户断开接上，然后读 detach 那一行。
+      - **用户 20:4x："按键和触控板都不灵，合盖，没有熄屏，当前是合盖状态"**：
+        - 04:23 那次失灵，按键和触控板都不灵。
+        - cd9 合盖（平板时间 04:40:03 合、04:40:06 开、04:40:06.442 又合）：
+          - 驱动每次都记了 `clamshell closed/open sent to the power manager`。根电源域 `AppleClamshellState = Yes`、`AppleClamshellCausesSleep = Yes`。
+          - powerd 记 "ClamshellState. Closed : 1. ClamshellSleepState: isSleepDisabled : 0"。
+          - WindowServer 记 `clamshell state:2 sent to IOMFB`，它自己的显示电源状态机 `Work (D/C/W/S/P/R): 0/0/0/0/0/0`，什么也没做。
+          - 屏幕没熄。也没看到系统睡眠的尝试或报错。
+        - 原因：在 Mac 上合盖、没有外接屏时，是随后的系统睡眠把屏关掉的，这块板子拒绝睡眠。显示驱动是 Apple 原来的 `IOMobileFramebufferLegacy`（GopFramebuffer 的 `NativeLegacyDisplay` 子类），它收到 clamshell 状态不关屏。`pmset displaysleepnow` 走的是 `set_display_state`，那条路能关。
+        - sheng `d66ef66`（照计划的退路：盖子合着时关背光）：
+          - `AppleARMBacklight.cpp` 新增 `sheng_backlight_lid(bool)`：记下盖子状态，用工作循环上的定时器重新写一次当前亮度，键盘线程不等待。
+          - `setLevel` 写给两颗 KTZ8866 的是 `lid_backlight_level`（`LidClamshell.h`：合着为 0）。`IODisplayParameters` 里仍发布 CoreBrightness 要的亮度，开盖后写回。背光服务发布之前就合上的，发布时补一次。
+          - `KeyboardProbe` 的 `publishLid` 在每个 clamshell 消息旁边调它（弱链接，只在 macOS 上）。
+          - 主机测试 34 项；两个文件都用板级参数编过；记录检查 PASS。
+        - cd11 构建准备：日常文件 6 个哈希都对，OS 镜像只读挂好（`/dev/disk9s1`）。等用户构建。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
