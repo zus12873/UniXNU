@@ -50,12 +50,16 @@
     - 合上时以前只停键盘和触控板，触摸屏、屏幕、macOS 的电源管理都不知道。
     - 开机时读一次初始值；之后的中断和轮询要等键盘控制器的固件加载成功才开始。
   - 下一步：用户在自己的终端里 `sudo -v` 后跑构建（命令见对话），我再另存 cd6 产物、还原日常文件。
-- **cd6 构建中途修的两处（11-16，用户在自己的终端里跑）**
+- **cd6 构建中途修的三处（11-16，用户在自己的终端里跑）**
   - Metal 库清单要挂 SystemOS、App 两个 cryptex，脚本把它们挂在 `<output>/runtime/prepare-*/` 下面，`hdiutil attach` 报 Permission denied：普通用户不能在用户挂载的映像卷里再挂映像。
     - 核心 `d4da38c` 把挂载点改到系统临时目录。这段代码是 rponeawa 的（`make_prime_list`），上游的 `feat/manual-shader-cache-app` 分支也是同样写法，没人修过。
     - 之后清单列出来了：434 个路径，OS 406、SystemOS 28、App 0。
   - 缓存的 `<output>/tree/.cache/gpu-reference/metal2vulkan` 在 `555b13d`，有 65 个文件的改动，和新钉的 `d9236a8a` 对不上，构建停下。
     - 整个目录改名留作备份 `metal2vulkan.555b13d-preserved-20261116`，让脚本重新取。
+  - 之后在 Turnip 这一步停下：`Bison 3.7 or newer is required by the IR3 parser`（11:05 那次）。
+    - 原因：上游 `1be2950`（rponeawa，已在 `upstream/main`）新加的检查只认 PATH 里的 bison（`/usr/bin/bison` 是 2.3）和 Homebrew 的两个路径。`<output>/tree/.cache/mesa-tools/bin/bison` 里 11-13 放的 3.8.2 它不认。
+    - 11:21 装了 Homebrew 的 bison 3.8.2 后就过了。脚本把 `mesa-tools/bin/bison` 换成指向 `/opt/homebrew/Cellar/bison/3.8.2/bin/bison` 的链接。不改代码。
+    - 验证（11:53）：单跑 `build-turnip-darwin.py --target macos27` 输出 PASS，`libvulkan_freedreno.dylib` 18437176 字节，Meson 读到 `bison 3.8.2`。下一步：用户在自己的终端里 `sudo -v` 后重跑整条构建。
 - **开到上游的 PR（11-16，用户："将和sheng中main不同的地方全pr一下，不允许把doc写成changelog和测试记录"）**
   - 三个分支都从最新的 `upstream/main`（`bc05635`）开，工作树在 `../UniXNU-sheng-pr-harness`、`../UniXNU-sheng-pr-jobs`、`../UniXNU-sheng-pr-lid`，推到 `zus12873/UniXNU-sheng`：
     - **UniXNU-sheng#109** `test: stub POLICY_CALL in the launch policy harness`：上游 main 上 `check-boot-watchdog-policy.py` 编不过，这个修好它。
