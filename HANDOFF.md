@@ -151,6 +151,15 @@
     - 驱动这边：`package/WifiNet.cpp` 的扫描请求（类型 10、86）不会回 `EOPNOTSUPP`。回这个的只有未处理的请求类型（`:637`）和未处理的接口请求（`:721`），所以定向扫描走的是另一种请求。是哪一种要看驱动日志：日志走 `native_wifi_logf`，这次的统一日志里没有 `wifi-net` 行。
     - 驱动自带的 `wifi-aj=1/2` 是无人值守测试用的：要把网络名和密码明文编进镜像（`join.txt`），不用在日常镜像上。
     - 上游查过，没有：核心、sheng、Ath12kWifi 的历史（hidden、directed scan、ssid list、auto-join），UniXNU 和 CrossDarwin 的 PR 和 issue。
+    - 再细一层：失败的那几次，airportd 记 `(IO80211) Apple80211Scan … total time [0.000010], err[-3903]`。框架 10 微秒内就自己回了"不支持"，没有发 ioctl 给驱动。所以多半是驱动报的能力位里少了定向扫描那一项（`WifiNet.cpp:646-651` 的 `kCardCaps`），不是扫描处理写错。具体是哪一位还没查。
+  - **活动监视器"一直在加载中、无法交互"（用户 18:0x）**：
+    - 平板时间 02:04:15.187，活动监视器记 `XPC_ERROR_CONNECTION_INTERRUPTED` 和 "Failed to generate image … Code=4097"。同一刻图标服务 [1986] 崩掉（02:04:15.188，`iconservicesd` 记客户端退出）。
+    - 02:06 图标服务 `runs = 18`、`successive crashes = 18`、`state = spawn scheduled`。活动监视器的图标请求跟着图标服务一起断，所以一直在加载。
+    - 另外看到 launchd 每 5 到 10 秒重启一次 `fairplayd`、`prngseedd`、`lskdd`（exit 0 / 92），以后再看。
+  - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
+  - 下一次启动用的镜像（只打包，没启动）：
+    - `payload.cd7-s2-cimps.img`（`251e93eb`，只读）：`payload.cd7-s2.img` 加 `--arg ci-mps=0`，设备树不变。
+    - `out/flash/boot-v4-payload.bigwin-cd7-s2-cimps.img`（`39ee6fa4`），内核块和 `cd7-s2` 相同（`610fa1f6`），`bootimg-contents.py --payload` 核对过。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
     - metal2vulkan 缓存重新取到 `d9236a8`；
