@@ -319,6 +319,13 @@
             - sheng 的 `b69faf1` 恢复了 `SourceStorage.cpp`（和 zus12873/UniXNU-sheng#1 只差 11 行），也恢复了 macOS 的内核表。
             - 它的 macOS `kernel_args` 里也有 `ci-mps=0`，还有实验室参数（autoreset、uefi-watchdog、diag 等）。
             - 等它合进 main 再整合，PR #1 和 #112 那时可以撤。
+      - **用户 21:0x："帮我看下如何修复睡眠功能"——调研（没改代码）**：
+        - XNU 的睡眠路径：`IOCPUSleepKernel` 先让非启动核 `haltCPU()` + `processor_sleep`，最后让启动核 `haltCPU()` + `processor_sleep`，各核进 `ml_arm_sleep`（`osfmk/arm64/cpu.c:1056`）。启动核最后调 `arm64_prepare_for_sleep(true)`。
+        - 这个内核是 XNU 源码按 **BCM2837** 机型配置编的（`DEVELOPMENT_ARM64_BCM2837`），不是 Apple 芯片家族，也不是 `APPLEVIRTUALPLATFORM`。所以 `arm64_prepare_for_sleep` 是非 Apple 的那个版本（`machine_routines_asm.s`，`#else` 分支）：`dsb; isb; wfi; b` **死循环**，没有恢复路径。XNU 指望平台断电，再从复位向量热启动回来，本移植没有这条路。
+        - VM 平台那条"睡完立刻跳回恢复点"的捷径（`test_sleep_in_vm` → `arm_init_cpu(cpu_data, 0)`，cpu.c:1145-1152）不在这个配置里。不过 `IOPMrootDomain.cpp:8472` 的 `test_sleep_in_vm` 启动参数照样会清掉 `gSleepDisabledFlag`。
+        - `ArmCpu::haltCPU` 是关掉计时器和 Group 1 中断后的 `wfi` 死循环；`quiesceCPU` 关计时器。没有调 PSCI `CPU_OFF`。醒来时 `processor_wake` 会对还"开着"的核再发 `CPU_ON`，会失败。
+        - ArmCpu 带 `diag=1` 时会问固件 PSCI_VERSION 和 CPU_SUSPEND 的 PSCI_FEATURES（`armcpu_psci[4]`），但没在任何记录里找到答案。
+        - 所以现在一旦真去睡，就是一去不回；这正是 `sleep-disabled = 1` 存在的原因。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
