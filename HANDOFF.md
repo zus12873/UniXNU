@@ -18,6 +18,28 @@
   5. 拔电合盖 1 小时，以及插电睡眠时能不能充电。
   - 上机前要用户在平板上 `sudo pmset -a sleep 0`。
 - Task 0（cd11 只关背光、拔电合盖 1 小时的对照）还没做。
+- **审查问题已修完，cd11 已构建（11-16 23:39，用户在自己的终端里跑）**
+  - 修复的提交：ArmCpu `bdb6151`（核心 `d330225`）、sheng `4abf408`。内容：
+    - 恢复时发自我 IPI；补丁里把等 IPI 的时间限在 100 ms；
+    - 开盖用 `kIOPMSetValue` 上报，电源键调 `requestUserActive`，让唤醒变成完整唤醒；
+    - 睡眠中每 10 s 喂一次看门狗；
+    - 不唤醒的中断要应答并结束（IAR1/EOIR1），反复触发的线路会被关掉；
+    - 一个唤醒源都没开、也没有定时器时，直接返回不睡；
+    - 板级日志加 `SL` 一行；
+    - 定时器用绝对时间 `CNTV_CVAL`；
+    - 只关掉中断目标是应用处理器的 TLMM 脚。
+  - 用户报告构建里在 `kernel: patch platform-error-name-address.patch` 这一步看到 error。但 154 个补丁都在 23:35:46 打上了，含 `sheng-platform-sleep.patch`；补丁失败时构建会删掉工作目录并退出，实际构建一直跑完了。报错原文还没拿到。
+  - 内核 `e2959f54`，另存 `kernel.macho.cd11-e2959f54`（json、map 同后缀，只读）。检查过：
+    - 有 `_arm64_platform_sleep_hook`、`_armcpu_sleep_register`、`_sheng_sleep_probe`、`_boot_reset_watchdog_ping`、`_sheng_buttons_sleep_check`；
+    - 字符串里有 `PMRD: sleep enabled by platform-sleep`、`sheng sleep: woke by`、`SL st=`、`sheng keyboard: cover %s`（掉线日志）、`sheng backlight: lid`、`sheng backlight: system`。
+  - 载荷 `51274b10`，另存 `payload.cd11-base.img`（只读）。
+  - 日常文件已还原，7 个哈希都对（含 `payload.json` `4d0e0464`）；OS 镜像已卸载。来源记录：`cd11-build.json`、`cd11-images.json`。
+  - 测试载荷 `payload.cd11-sleep.img`（`723a635a`）：
+    - 加了 `enable-jobs=com.openssh.sshd platform-sleep=1 platform-sleep-wake-after=60 darkwake=1`；
+    - `debug=0x14e` 改写成同值的 `debug=334`，参数行才能压到 1000 字节以内；
+    - 这次没带 `log-gpu=1` 和 `keyboard-backlight=50`，所以键盘灯是暗的。
+  - 打成 `out/flash/boot-v4-payload.bigwin-cd11-sleep.img`（`7b60a68b`）。内核块是 `610fa1f6`（同 cd7–cd10 的大窗口固件），`bootimg-contents.py` 核对过。
+  - 下一步：用户在平板上 `sudo pmset -a sleep 0` 并进 fastboot，然后从内存启动，做第 1 级：SSH 里 `pmset sleepnow`，60 秒后应自己醒。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
