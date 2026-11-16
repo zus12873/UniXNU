@@ -115,6 +115,22 @@
       - 两处内容和 cd7 编通时用的逐字节相同；porting 记录检查 PASS，没有芯片号。
     - **zus12873/UniXNU-sheng#1**：对 fork 的 main 开，3 个文件、+71/-4，可合并，Device Test 待测。之后要不要提到上游 `UniXNU/UniXNU-sheng`，等用户定。
     - 推送时出过两次手误，都被拒，没推上任何东西：一次手打了一个不存在的完整哈希；一次 zsh 把 `"$H:refs/…"` 里的 `:r` 当成了修饰符。以后写 `"${H}:refs/heads/…"`。
+  - **查别的仓库的新提交和修复（11-16 17:00，用户："看下其他仓库的最新提交和问题修复"）**：
+    - 拉取了核心、sheng、uefi-sheng、UniXNU_macOS 和 31 个组件仓库；又用 `git ls-remote` 查了 CrossDarwin、rponeawa 的 fork（UniXNU、UniXNU-sheng、AdrenoMetal、ShengUfs、QcaBluetooth、Ath12kWifi、uefi-sheng），每个分支头本地都有。
+    - cd7 整合（上游 #272、#108、uefi-sheng #8，11-16 10:13 合并）之后，上游只多了核心的 `9931232`，内容是设备记录页的数据（`devices.toml` 和别人设备的记录），没有代码。sheng、uefi-sheng 和各组件都没有新提交。
+    - GitHub 上 11-14 以来没有新 issue。开着的 PR 只有我们的 #109 到 #112，和 mccding 的 UniXNU-sheng#106（CI 打包流程，4 个文件，没有人评审，和本机无关）。
+    - rponeawa 关掉的三个草稿（UniXNU#271、AdrenoMetal#38、UniXNU-sheng#107，Shader Cache 应用和手动会话）已经由 #272、#39、#108 合进 main。按文件比过：AdrenoMetal 那个分支动过的文件和 main 完全相同；核心那边只剩组件版本号，main 的更新。
+    - rponeawa 其余的开发分支，按文件比都已合进 main，或者被 main 后来的改动取代：AdrenoMetal 的 `fix/*-d923`、`fix/main-consumer-optimizations-555b`、半精度几支，sheng 的 `fix/fastboot-load-error-recovery`、`fix/graphics-priming-override`。Adreno740 的 `fix/cached-import-visibility`、`fix/context-switch-recovery` 在它的 main 里，本机 `fd7a0ca` 也包含它的 main（`1c9029b`）。
+    - zus12873/UniXNU-sheng#1 恢复的两处，和 rponeawa 自己的分支 `upstream/feat/manual-shader-cache-app` 逐字相同：`SourceStorage.cpp` 完全一样；`board.toml` 只差 v0 模板一节，是上游 main 故意删的。说明是整合提交 `6056637` 把这两处丢了，rponeawa 的原分支里本来是完整的。
+    - 没合进任何地方、和本机有关的只有一处：Jelly10086 的兼容 DXE 内存表（uefi-sheng `crossdarwin/fix/memory-compatible-dxe` 的 `56cfd832`，加上 UniXNU_macOS 的 `fix/compat-memory-modules`），两处都没有开 PR。
+      - 它用在保留了旧 SEC 的模板镜像上：DXE 阶段套用 #6 的 ABL 内存表，只拿还空着的页。
+      - 内存表还是调 `ShengPrepareMemoryMap`，所以只认 8 GiB 的门槛还在。
+      - 本机的固件是自己编的，SEC 里就有内存表，用不上这个模块。内存第 1 步放开门槛时可以参考它的主机测试（`Tests/ShengMemory/Host.h`）。
+    - 不是新提交，但对后面有用：
+      - rponeawa/sm8550-mainline 的默认分支叫 `suspend-hang-debug`（9-18）：在 Linux 主线上查 sheng 挂起后卡死，加了 DPM 看门狗、pstore 日志区，给 a6xx GMU 的等待加了上限。写真睡眠设计时要读。
+      - 上一条只看了提交标题。
+      - rponeawa/xiaomi-mipps-auth（Linux，7-03，只读了最后两个提交）：代码里有电量计的密钥表（`FG_KEYS`）和小米厂商号 `0x2717`。"write fast charge mode" 那个提交只写一个状态文件给通知用，不控制电流；它把第三方头里的 `PD_PPS` 归为 "PPS" 档。这是 Linux 上的行为，macOS 上没验证过。
+    - 已知、这次也不合的：uefi-sheng #6（内存第 1 步再做）、#7（看门狗，重启会扣槽位 a 的次数）。
   - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
