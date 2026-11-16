@@ -164,6 +164,26 @@
     - 02:24:15 照这个间隔拉起（[2665]），1.04 秒后又 SIGABRT。崩溃报告 `iconservicesagent-2026-11-16-022417.ips` 里有 `CIBlurProcessor`、`MPSImage`、`MPSCore`，还是 MPS 那一处。
     - 结论：靠 launchd 域的环境变量关不掉。要么没传进这个已经加载的服务，要么 Core Image 不认这样传进来的值。CD4 上验证过的是插件的 `ci-mps=0`。
     - 02:3x 已 `unsetenv`，桌面会话的环境回到只有 `SSH_AUTH_SOCK`。
+  - **用户 18:3x 的回报**：
+    - Safari 能打开网页。
+    - 合盖：屏幕没熄、没锁屏、没睡眠；打开后触摸正常。熄屏是合盖第 2 步，还没做。合着的时候有没有触点刷屏要看日志。
+    - 之后平板从网络上掉了：18:39 SSH 超时、ping 不通，也不在 fastboot。日志在 Data 盘上，下次开机再读这一趟合盖前后的 `sheng keyboard: lid` 和 "Invalid event type: 11"。
+  - **指针乱跳的修复（用户 18:3x："先把指针乱跳的驱动修复写了"），sheng `f645114`**：
+    - 上游查过，11-14 以后没人动过 `Wn8030.c` 和指针相关的代码。
+    - `Wn8030.c` 新增 `wn8030_pointer_report_at`：报文离上一份超过 `WN8030_POINTER_GAP_MS`（60 ms），就当成一次新的触摸，从手指现在的位置起算，丢掉没发完的移动和滚动；按住的点击不变。原来的 `wn8030_pointer_report` 不带时间，行为不变。
+    - `KeyboardCover.cpp` 给每份触控板报文打上到达时间（`absolutetime_to_nanoseconds(mach_absolute_time())`，毫秒）。
+    - 先写测试：`wn8030_host.c` 新加停顿、正好 60 ms、61 ms、计数回绕、两指滚动、按住点击这几种情况；`keyboard_cover_host.cpp` 经 `submit()` 送一次停顿后的大跳。给主机编译加了 `tests/keyboard-hid/kern/clock.h` 替身。两处都先看到失败（`wn8030_host.c:293`、`keyboard_cover_host.cpp:88`），实现后通过：WN8030 5208 项，键盘 HID macOS 5112、iPadOS 5199 项，键盘服务 123 项，合盖门 PASS。
+    - `KeyboardCover.cpp` 用构建里 `NativeHidInput.command.json` 那套内核编译参数单独编过，rc 0，引用 `_wn8030_pointer_report_at`。
+    - `porting.toml` 键盘区那条 finding 改成描述现在的规则。记录检查 PASS（18 个区）。
+  - **活动监视器的修复（用户："修下activity monitor，让我下次进入系统的时候不再出现当前问题"），sheng `8baf320`**：
+    - 就是 #112（`9cd1c2a`）的内容，`cherry-pick -x` 过来。macOS 的 `kernel_args` 末尾加 `ci-mps=0`，留着本机的 `vm_compression_limit=1572864`。
+    - `porting.toml` 用 `resolve-porting-conflicts.py --base 9cd1c2a^` 合并。核对过：#112 加的 4 条 finding（configuration、gpu、usb、packaging）都在，本分支原有的一条没少。
+    - 插件那边读 `ci-mps=0` 的代码已经在 AdrenoMetal main（`26d4902`）里，cd7 就有。
+  - **cd8 构建准备（18:5x）**：
+    - 构建盘第三次自己卸掉，又照下面的办法重新挂上。
+    - 日常文件哈希都对：`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`39f9ad3f`、`5c926a3f`。
+    - OS 镜像只读挂到 scratchpad 的 `os-mount`（`/dev/disk9s1`）。
+    - 下一步：用户在自己的终端里 `sudo -v` 后跑 `./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。构建完我另存 cd8 产物、还原日常文件、卸载 OS 镜像，再打 9 GiB 的 `cd8-s2`。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
     - `payload.cd7-s2-cimps.img`（`251e93eb`，只读）：`payload.cd7-s2.img` 加 `--arg ci-mps=0`，设备树不变。
