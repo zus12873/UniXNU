@@ -136,6 +136,21 @@
   - 17:38:24 只读查询：当前槽位 a；a 剩 6 次、unbootable no；b 剩 7 次、unbootable no；电压 4372 mV。a 在 4 以上，没补。
   - `cd7-s2` 的 sha256 `4e38f55f…` 相符。17:38:35 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd7-s2.img`：`Booting OKAY`，45 秒内引导程序没有回来（镜像在跑）。
   - 上机清单照 CD6-1 那条，用 cd7 的镜像；第 2 步的通过线是物理内存不低于 8.75 GB。
+  - 17:41:14 SSH 通了（开机后约两分半）。读数（17:41 到 17:48）：
+    - 内存：`hw.memsize` 10142334976（10.14 GB，9.45 GiB），过线。开机 6 分钟时 pageouts 12799、空闲 21%；联动 1027381 页（按 4 KiB 一页约 4.2 GB）。
+    - 代码签名：日志里没有 `CODESIGNING` 和 `Code Signature Invalid`；`vm.cs_native4k_stats` 的 bad 0、err 0。上游 #268 换掉板级补丁之后没出问题。
+    - GPU：WindowServer 没有 `MadeBeforeRecovery`、`GpuRecoveryVictim`，有 4 条 "timed out fence"。
+    - Safari：App cryptex 挂在 `/System/Volumes/Preboot/Cryptexes/App`（disk5s1，只读）；`/Applications/Safari.app` 的链接在；Safari 进程在跑，能不能开网页要用户说。
+    - **图标服务一直在崩**：用户那份 `gui/501/com.apple.iconservices.iconservicesagent` `runs = 15`、`successive crashes = 15`。每次跑 0.4 到 1.5 秒就 SIGABRT，日志里 30 条 `MPSImageUnaryKernel`。cd7 不带 `ci-mps=0`，所以上游 main（AdrenoMetal#37 等）在本机没有修好 Core Image 的 MPS 崩溃，#112 要做。用户说活动监视器比较卡，多半和这个有关（推测，没核对）。
+    - 充电：电量 97%，`Amperage` 1393 mA，4446 mV，33.8 °C。快充满了，比不出功率，要等电量低的时候再量。
+    - 指针乱跳还在（用户说的）。上游 11-14 以后没人动过 `Wn8030.c` 和指针相关的代码。原因和修法见 11-15 22:46 那条：抬手那一帧没收到时，下一次落指被当成同一根手指的一大步。
+  - **Wi-Fi 不自动连（用户："能不能主动连接已经连接过的wifi"）**：
+    - 这次是用户在控制中心手动连的：airportd 记 `WiFiNetworkJoinReason = ControlCenter`，驱动就绪后约 118 秒才开始连。
+    - 开机时 macOS 自己发起过自动加入（`trigger=aj_enabled`、`power_on`、`login`），存的那个网络也在列表里（1 个，wpa3-transition）。可是 airportd 把它当成**隐藏网络**（`Hidden SSIDs (1)`），每次实时扫描都按名字定向扫描。驱动回 `Operation not supported`（`-3903`），5 毫秒就失败；只读缓存的扫描结果为 0，所以一直连不上。
+    - 用户打开控制中心时，WiFiAgent 做的是普通扫描，能扫到。
+    - 驱动这边：`package/WifiNet.cpp` 的扫描请求（类型 10、86）不会回 `EOPNOTSUPP`。回这个的只有未处理的请求类型（`:637`）和未处理的接口请求（`:721`），所以定向扫描走的是另一种请求。是哪一种要看驱动日志：日志走 `native_wifi_logf`，这次的统一日志里没有 `wifi-net` 行。
+    - 驱动自带的 `wifi-aj=1/2` 是无人值守测试用的：要把网络名和密码明文编进镜像（`join.txt`），不用在日常镜像上。
+    - 上游查过，没有：核心、sheng、Ath12kWifi 的历史（hidden、directed scan、ssid list、auto-join），UniXNU 和 CrossDarwin 的 PR 和 issue。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
     - metal2vulkan 缓存重新取到 `d9236a8`；
