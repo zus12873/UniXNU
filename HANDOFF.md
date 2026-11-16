@@ -234,6 +234,24 @@
         - 上游：rponeawa 11-16 在 AdrenoMetal `fix/runtime-development-d923` 上有 `8f350aa`（"capture the sampled inputs of blank icon renders"）、`3efc76a`（隔离图标绘制、重放 alpha 输入）、`a2c34d6`（`icon-cb=FIRST:COUNT` 把图标命令缓冲区写进日志），只是诊断，没有修复，也没写原因。
         - 在 Mac 的 dyld 缓存里没找到能让图标服务改走软件渲染的开关。下一步用他的 `icon-cb` 和 RenderBox alpha 重放，抓出符号那一层的着色器和输入。
       - cd9 构建准备：日常文件 6 个哈希都对；OS 镜像只读挂到 scratchpad 的 `os-mount`（`/dev/disk9s1`）。等用户在自己的终端里构建。
+    - **用户 20:0x："还需要定位下键盘壳频繁掉线的原因……通信丢失还是固件崩溃"；"测试下键盘灯，当前键盘灯是暗的"**：
+      - 掉线现有的证据，都是统一日志里 IOKit 自己记的 `force close (ShengKeyboardCover` 和随后的 `start for ShengKeyboardCover`：
+        - 3 天里共 48 行。cd8 这一趟三次：03:10:44.99、03:25:23.16、04:01:08.34（平板时间），每次 0.6 到 0.85 s 后设备重建。
+        - 都不在合盖或开盖的时刻：03:10:44 离开盖 30.9 s；02:37:42 离开盖 61 s；03:25 和 04:01 附近没有盖子事件。
+        - 驱动只在控制器自己发来 "cover detached"（a2 帧 `attached == 0`）时删设备（`KeyboardProbe.cpp` `detachCover`）。所以这几次 WN8030 都还在 I2C 上应答。
+        - WN8030 的 RAM 固件如果崩了，表现应该是读取或命令失败，服务连续 3 次后重载固件，不会有干净的 0→1 attach 帧。所以更像是控制器到键盘壳的那段链路掉了，或者键盘壳自己复位。两者现在分不清：驱动以前不往 macOS 日志写任何掉线信息，计数只在板级日志里。
+      - sheng `e035422`（诊断，不改行为）：
+        - 每个状态变化的 attach 帧（attached、detached、changing）记一行 `sheng keyboard: cover …`，内容有：帧第 5 到 16 字节；之前 16 帧的种类（`KeyboardTrace.h`：k 键盘、c consumer、t 触控板、a attach、x 加速度计、u 认证、o 其他、- 无效）；距上一帧、上一个输入帧、上一个加速度计帧的毫秒数；帧数、中断数、I2C 失败、最后的 I2C 错误、认证、attach、重载次数。
+        - 固件重载时记原因（读和命令失败、I2C 失败、最后错误）和结果；keep-awake 命令失败时记一次唤醒。
+        - 主机测试 `scripts/check-keyboard-trace-host.py` 10 项，先失败后通过；`KeyboardProbe.cpp` 用板级参数编过。
+        - `porting.toml`：盖子相关的三个文件归到 keyboard 区；display 区记下构建脚本的键盘源文件表。记录检查 PASS。
+      - 键盘灯：驱动的亮度只来自启动参数 `keyboard-backlight=0..100`（`KeyboardProbe.cpp:679-681`），默认 0，所以是暗的。macOS 里没有调键盘亮度的通路。
+      - **用户 20:04 已经跑完一次构建**（在 `e035422` 之前，内核里有 clamshell 字符串、`_wn8030_gap_bucket`，没有 cover 日志），记作 cd9：
+        - 内核 `aa7c0355`（另存 `.cd9-aa7c0355`）。载荷 `89fc742e`，参数 915 字节，有 `ci-mps=0`，另存 `payload.cd9-base.img`。
+        - `out/provenance/cd9-build.json` 是在 sheng 已经到 `e035422` 时记的，比实际构建多一个提交；那个提交只加日志和 `porting.toml`。
+        - 日常文件已还原，6 个哈希都对。OS 镜像还挂着，留给 cd10。
+        - `payload.cd9-s2.img`（`9a6f7b7f`）：`cd9-base` 加 `enable-jobs=com.openssh.sshd log-gpu=1 keyboard-backlight=50`。打成 `out/flash/boot-v4-payload.bigwin-cd9-s2.img`（`3b5401e2`），核对过；记录在 `cd9-images.json`。
+      - 下一步：cd9-s2 上机测合盖熄屏、触控板计数、键盘灯。同时用户可以跑 cd10 构建（带掉线日志）。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
