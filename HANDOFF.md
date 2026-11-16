@@ -283,6 +283,17 @@
           - 渲染期间，用户那份 `iconservicesagent`（[513]）在统一日志里一行都没记，没有报错，符号层就是空的。每个渲染约 5 ms。
           - 插件在堆满时会退回单独建纹理（`NativeBridgeMetalFrontend.mm:4398-4415`），不会给调用方 nil，所以 "heap texture refused" 应该不是原因。
           - 下一步只能抓 GPU：rponeawa 的 `icon-cb=FIRST:COUNT` 抓图标命令缓冲区，以及 RenderBox alpha 重放。这两样在 AdrenoMetal `fix/runtime-development-d923`（`a2c34d6`、`3efc76a`、`8f350aa`），不在 main。要把它们合进插件、重编运行时，再开一个只从内存启动的镜像。
+        - **用户纠正（20:3x）**：04:23:43 那次是"发现键盘壳功能失灵之后"才主动断开再接上的。所以失灵在前，而且失灵时控制器**没有**发 detach：是一种不声不响的失灵，和那几次 0.6 秒的自动掉线不是一回事。哪项功能失灵（按键、触控板还是灯）还没问。
+          - cd9 只有 IOKit 的设备重建记录，失灵那一段看不出控制器有没有还在送帧。触控板计数只在有触控板报文时才更新，失灵时会停在旧值。
+          - cd10 的 detach 日志能回答这个问题：用户手动断开时，那一行记下距上一个输入帧和加速度计帧多少毫秒、I2C 失败次数和重载次数。
+            - 帧早就停了、I2C 没失败：键盘壳那边或链路断了。
+            - 有 I2C 失败或重载：平板里的控制器停了。
+            - 帧一直到断开前都在来：数据到了驱动，问题在交给 macOS 这一段。
+      - **cd10 构建完成**（用户在自己的终端里跑，20:20，含 `e035422` 的掉线日志和 `bb0d65b`）：
+        - 内核 `128d45e0`（另存 `.cd10-128d45e0`）。载荷 `03e8c6f9`，参数 915 字节，有 `ci-mps=0`，另存 `payload.cd10-base.img`。来源记录 `cd10-build.json`、`cd10-images.json`。
+        - 日常文件已还原，6 个哈希都对；OS 镜像已卸载。
+        - `payload.cd10-s2.img`（`467fdc1d`）：加 `enable-jobs=com.openssh.sshd log-gpu=1 keyboard-backlight=50`，打成 `out/flash/boot-v4-payload.bigwin-cd10-s2.img`（`dd79bca5`），核对过。
+        - 用法：键盘壳失灵时先别动，告诉我；我先读日志，再请用户断开接上，然后读 detach 那一行。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
