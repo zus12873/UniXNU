@@ -340,6 +340,7 @@
         - Apple 原代码里接 `request_power_change` 的是哪个虚函数，`OriginalMobileFramebufferABI.h` 里没有命名（大多是 `unclassified…`）。
         - 能用的钩子：空帧（持续一段时间）→ 关背光；再出现图层 → 恢复。
         - 合盖时 macOS 不熄屏（见上），但 `pmset displaysleepnow` 和 `caffeinate -u` 在普通用户的 SSH 里都能用。所以一个用户级 LaunchAgent 盯着 `AppleClamshellState`，合上就熄屏、打开就唤醒，就能让合盖走和自动熄屏同一条路（WindowServer 停止绘制）。
+      - **用户 21:4x："直接做真睡眠"（做法 B）**：设计草稿 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`，等用户批准。补查到：`ArmCpu::initCPU(boot=false)` 直接 panic（唤醒后启动核和每个重启的核都会这样调），`haltCPU` 会把调用它的启动核挂死；电源键走 PMIC SPMI → PDC → SPI 481，盖子、键盘帧、触摸都走 TLMM 汇总 SPI 208；`arm_init_cpu`（`arm_init_sptm.c:1155`）有启动核唤醒分支。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
