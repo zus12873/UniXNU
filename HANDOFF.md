@@ -60,6 +60,35 @@
     - 原因：上游 `1be2950`（rponeawa，已在 `upstream/main`）新加的检查只认 PATH 里的 bison（`/usr/bin/bison` 是 2.3）和 Homebrew 的两个路径。`<output>/tree/.cache/mesa-tools/bin/bison` 里 11-13 放的 3.8.2 它不认。
     - 11:21 装了 Homebrew 的 bison 3.8.2 后就过了。脚本把 `mesa-tools/bin/bison` 换成指向 `/opt/homebrew/Cellar/bison/3.8.2/bin/bison` 的链接。不改代码。
     - 验证（11:53）：单跑 `build-turnip-darwin.py --target macos27` 输出 PASS，`libvulkan_freedreno.dylib` 18437176 字节，Meson 读到 `bison 3.8.2`。下一步：用户在自己的终端里 `sudo -v` 后重跑整条构建。
+- **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
+  - 再修两处才过：
+    - metal2vulkan 缓存重新取到 `d9236a8`；
+    - Turnip 要 Bison 3.7 以上：上游 `aac6e04` 只找 `PATH` 和 Homebrew 的 Bison，不认缓存里自己编的 3.8.2。照报错 `brew install bison` 装了 3.8.2 到 `/opt/homebrew/opt/bison`（`HOMEBREW_NO_AUTO_UPDATE=1`，没碰别的包，没改 `~/.zshrc`）。
+  - 产物：
+    - 内核 `4983b3a8`，另存 `kernel.macho.cd6-4983b3a8`（json、map 同后缀，只读）。
+      - 有 `_cs_text_fixup_signed_copy`（上游 #268）、`_cs_text_fixup_hash`，没有 `_cs_text_fixup_restore`（本机板级补丁已拿掉）；
+      - 有 `_native_keyboard_lid_closed`，字符串里有 `enable-jobs`、`sheng keyboard: lid %s`、`charge-auth`；
+      - 补丁 153 个。
+    - 载荷 `ffdc7563`，另存 `payload.cd6-base.img`（只读）。插件 13:15 重编，有 `ci-mps=0`、`MadeBeforeRecovery`、`ending %s so launchd`。
+  - 日常文件已还原：`kernel.macho` `33d294c8`、`payload.img` `8a36fe56`、`payload.json` `4d0e0464`；`boot.img` `35f03ec4`、`boot.json` `aeaf38ac`、`data.dbr` `39f9ad3f` 没被动过。OS 镜像已卸载。
+  - 来源记录：`out/provenance/cd6-build.json`（构建刚结束时），`out/provenance/cd6-images.json`（加了下面的镜像）。构建期间核心只多了文档和 `local-tools/` 的提交，`scripts/` 没变。
+  - 试验载荷和镜像，都只从内存启动，固件用 `boot-bigwin.img`（`5c926a3f`）：
+    - 共同参数：7.5 GiB（`0x1E0000000`，起点 `0x920000000`），`memory-outside=0 enable-jobs=com.openssh.sshd log-gpu=1`；
+    - `payload.cd6-s1.img`（`ae4e58c7`）→ `out/flash/boot-v4-payload.bigwin-cd6-s1.img`（`91d7a39d`）：不带 `ci-mps`，验证上游的 Core Image 修复；
+    - `payload.cd6-s1-noauth.img`（`c5d09530`）→ `…-cd6-s1-noauth.img`（`78c4989c`）：加 `charge-auth=0`，充电对照；
+    - `payload.cd6-s1-cimps.img`（`6385d605`）→ `…-cd6-s1-cimps.img`（`75fc0f28`）：加 `ci-mps=0`，MPS 还崩时对照；
+    - `bootimg-contents.py --payload` 都核对过；`out/flash/` 的 8 份日常镜像哈希不变。
+  - sheng 整合分支 `837813f`：合盖那部分的注释和 findings 改成和 #111 一样的写法。
+  - **CD6-1 上机要做的**（要用户在场、说可以）：
+    1. fastboot 读两个槽位，a ≤4 就补，读电压；`boot-sheng.py out/flash/boot-v4-payload.bigwin-cd6-s1.img`。
+    2. 进桌面连 Wi-Fi 后经 SSH 看：`kern.bootargs`（有 `enable-jobs`，没有 `ci-mps`）、`hw.memsize`（约 7.50 GB）。
+    3. Core Image：拷 `local-tools/tablet-ci-blur-probe.js` 过去跑。看它出不出图；`launchctl print gui/501/com.apple.iconservices.iconservicesagent` 的崩溃次数；日志里有没有 `MPSImageUnaryKernel`。结果决定 #112。
+    4. 上游 #268 换掉板级补丁之后：日志里 WindowServer 有没有 `Code Signature Invalid` 或 `CODESIGNING`；`sysctl vm.cs_native4k_stats` 的 `bad` 是不是 0。
+    5. Safari：`mount | grep -i cryptex`、`ls -l /Applications/Safari.app`；请用户点开 Safari、开一个网页。
+    6. 合盖：先 `pmset -g`、`pmset displaysleepnow`（合盖熄屏第 0 步）；请用户合盖 1 分钟再打开，看日志里的 `sheng keyboard: lid closed/open`，确认没有 "Invalid event type: 11" 刷屏、开盖后触摸正常。结果决定 #111。
+    7. 充电：用户读充电头的瓦数，同时读 `ioreg -rc ShengBattery` 的 `Amperage`、`Voltage`、`Temperature`；下一趟换 `noauth` 镜像对照。
+    8. `tablet-icon-stress.js` 跑两轮，数 GPU 恢复次数。
+  - 插着电不要关机（槽位重试次数）；关机和重启的测试放到最后单独问。
 - **构建来源记录和日常镜像的源码还原（11-16，用户问"sheng 的 main 编出来的能不能复现本机正在跑的"，答不能；用户选"1+2"）**
   - 1，来源记录：`local-tools/record-build-provenance.py LABEL [--artifact IMG ...]`（`12a7809`，测试 `local-tools/test_record_build_provenance.py` 6 项）。
     - 每次构建完跑一次，写到 `<output>/provenance/LABEL.json` 和 `out/provenance/LABEL.json`（git 忽略）。
