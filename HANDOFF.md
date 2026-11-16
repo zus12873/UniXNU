@@ -106,6 +106,15 @@
       - `…-cd7-s1-noauth.img`（`5677a84d`）：s1 加 `charge-auth=0`。
       - `…-cd7-s1-cimps.img`（`a4698d69`）：s1 加 `ci-mps=0`。
     - 上机清单同 CD6-1 那条，用 cd7 的镜像，先 s2。第 2 步的通过线改成：s2 的物理内存不低于 8.75 GB。
+  - **把上游那两处问题的修复先提到自己的仓库（用户："先在自己仓库提pr"）**：
+    - fork `zus12873/UniXNU-sheng` 的 main 原来停在 `1108068`，落后上游 69 个、没有自己的提交。用户选"先快进"：普通推送（没加 force），`1108068..bc05635`，现在和上游 main 一样。
+    - 分支 `fix/macos-build-after-runtime-integration`（工作树 `../UniXNU-sheng-pr-restore`），从 `bc05635` 开，3 个提交：
+      - `1f0d456` 恢复 macOS 内核表；
+      - `7ade87d` 恢复 `SourceStorage.cpp`；
+      - `cc97ba7` 在 USB、打包两个区补记录。
+      - 两处内容和 cd7 编通时用的逐字节相同；porting 记录检查 PASS，没有芯片号。
+    - **zus12873/UniXNU-sheng#1**：对 fork 的 main 开，3 个文件、+71/-4，可合并，Device Test 待测。之后要不要提到上游 `UniXNU/UniXNU-sheng`，等用户定。
+    - 推送时出过两次手误，都被拒，没推上任何东西：一次手打了一个不存在的完整哈希；一次 zsh 把 `"$H:refs/…"` 里的 `:r` 当成了修饰符。以后写 `"${H}:refs/heads/…"`。
   - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
