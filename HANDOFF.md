@@ -57,6 +57,17 @@
     - 它是我们驱动里唯一实现了 `setPowerState` 的（启动参数 `offline-legacy-pm=1` 打开的逻辑电源模型），断电时调原厂 `IOMobileFramebufferLegacy::setPowerState(0)`。
     - 平时熄屏只走 WindowServer，从没调过它的 0 状态（熄屏前后 CurrentPowerState 都是 1），所以这条路在本机上从没跑过。
   - 准备好的对照镜像：`out/flash/boot-v4-payload.bigwin-cd11-sleep-nolpm.img`（`9af7623f`，载荷 `payload.cd11-sleep-nolpm.img` `08187642`），在 cd11-sleep 的基础上只改 `offline-legacy-pm=0`。
+- **读板级日志（11-17 00:2x–01:1x）**
+  - 卡死那一次的日志区（00:13 那次开机、08:17 睡眠）一直没被覆盖：之后只启动过 Linux 读取器，没进过 macOS。
+  - v0 读取器（`sheng-log-reader-v0.img`，`os_version` 改成社区模板的 `0x220001a8`）引导程序 4 秒后退回 fastboot；把主线设备树的 `board-id` 改成 `0 0` 也一样。最可能是引导程序要把 `dtbo` 分区里原厂的叠加层套到主线树上。没有擦 `dtbo`。
+  - v4 + 我们的固件 + `type = "linux"` 菜单项：`local-tools/make-linux-reader-payload.py`。
+    - 第一次报 `Access Denied`：`board.toml` 固件 `ENABLE_SECUREBOOT=1`，未签名的 EFI 程序被拒。
+    - 单独编了一份不带 Secure Boot 的固件（`board.toml` 临时改成 0，编完 `git checkout` 还原）：`<output>/boot/boot-reader-nosb.img`（`14a15bd0`）。日常固件 `8407c84f` 已放回构建目录，`boot.json` 从 `boot.good.json` 还原，日常哈希都对。
+    - 用它启动，Linux 能起来：`earlycon=efifb` 看得到内核在滚动；随后灰白屏、再黑屏，加 `nomodeset` 也一样（推测是 SMMU 被重置，固件留下的画面没了）。USB 上什么都没出现，读取脚本是否跑到、USB 设备模式能不能起来，都不知道。
+  - 用户选做法 3：让 macOS 开机时先读回上一次的日志。
+    - sheng `28ae25a`：`BootLog.c` 的 `prev_log_copy` 在写第一笔之前，用 `native_ufs_part_read` 读回上一次的头、消息区、最新 64 个 slot 和启动检查点（约 4.3 MiB）；`kern.unixnu_prev_log`（`BootDiagExport.c`）给出这份拷贝；`read-sheng-log.py --prev` 还原后解码。
+    - `check-boot-log-prev-host.py` 主机测试通过；两份源文件都用内核参数编过。`NativeUfs` 没有改。
+  - 下一步：用户构建 cd12，然后从内存启动。SSH 里 `sysctl -b kern.unixnu_prev_log > prev.bin`，取回后用 `read-sheng-log.py --prev` 解码。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
