@@ -80,6 +80,14 @@
     - 本机的钥匙（`74eace58`）、header 和 `verification.json` 合并前备份在 `out/policy-backup-cd7/`（git 忽略），合并后原样放回工作区，显示为"已修改"。**这 9 个文件的本地改动永远不提交。**
   - 缓存：cd6 的 metal2vulkan 留作 `tree/.cache/gpu-reference/metal2vulkan.d9236a8-cd6-20261116`，让 cd7 重新取 `555b13d5`。OS 镜像已只读挂到 scratchpad 的 `os-mount`。
   - 构建前日常文件：`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`39f9ad3f`。
+  - cd7 构建中途又停了两次，都已处理，日常文件都没被动过：
+    1. Mesa 缓存里是 cd6 打的 23 个补丁；上游补丁列表多了 `turnip-darwin-bo-finish-clears-under-lock.patch`（来自 `db9cd2e`），脚本只在全新取源码时才从头打补丁。
+       - 旧缓存留作 `tree/.cache/mesa-work.cd6-23patches-20261116`；重新取 `85fda3b`，打了 24 个补丁。
+    2. `[kernel] archives needs component entries for: SoftwareAES`：上游 sheng 的 `6056637` 删掉了整张 `["os_overrides"."macos-27.3-26C5035r"."kernel"]` 表（defconfig、配置片段、macOS 的 `archives`），没挪到别处。
+       - 没了这张表，macOS 退回用 iPadOS 27 的 `archives`：里面没有 SoftwareAES，根卷策略也指向 iPadOS 的目录。上游核心加上游 sheng 就是这个结果，上游 macOS 构建眼下也会停在这里。
+       - sheng `0ae7ceb` 原样恢复这张表（取自 `6056637^`），配置区加一条描述性 finding；porting 记录检查 PASS。
+       - cd7 构建通过后，值得给上游提 PR；提之前照规则再查一次有没有人修过。
+  - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
     - metal2vulkan 缓存重新取到 `d9236a8`；
