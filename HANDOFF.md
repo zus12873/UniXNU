@@ -156,6 +156,14 @@
     - 平板时间 02:04:15.187，活动监视器记 `XPC_ERROR_CONNECTION_INTERRUPTED` 和 "Failed to generate image … Code=4097"。同一刻图标服务 [1986] 崩掉（02:04:15.188，`iconservicesd` 记客户端退出）。
     - 02:06 图标服务 `runs = 18`、`successive crashes = 18`、`state = spawn scheduled`。活动监视器的图标请求跟着图标服务一起断，所以一直在加载。
     - 另外看到 launchd 每 5 到 10 秒重启一次 `fairplayd`、`prngseedd`、`lskdd`（exit 0 / 92），以后再看。
+  - **不重启、只对桌面会话关 MPS 的试验（用户 18:1x 说"可以"），没起作用，已撤回**：
+    - `sudo launchctl bsexec <Dock 的 PID> launchctl setenv …` 被拒：`141: Reentrancy avoided`，什么也没设上。
+    - `sudo launchctl asuser 501 launchctl setenv CI_ENABLE_MPS 0` 成功：`launchctl print gui/501` 的 environment 里有 `CI_ENABLE_MPS => 0`。但这个服务自己的 "inherited environment" 里仍只有 `SSH_AUTH_SOCK`。
+    - `launchctl kickstart` 在服务处于 `spawn scheduled` 时会一直等着，不会立刻拉起。
+    - launchd 对连崩的服务按 10、20、40……640 秒翻倍延后重启，第 19 次停在 1200 秒（`minimum runtime = 1200`）。
+    - 02:24:15 照这个间隔拉起（[2665]），1.04 秒后又 SIGABRT。崩溃报告 `iconservicesagent-2026-11-16-022417.ips` 里有 `CIBlurProcessor`、`MPSImage`、`MPSCore`，还是 MPS 那一处。
+    - 结论：靠 launchd 域的环境变量关不掉。要么没传进这个已经加载的服务，要么 Core Image 不认这样传进来的值。CD4 上验证过的是插件的 `ci-mps=0`。
+    - 02:3x 已 `unsetenv`，桌面会话的环境回到只有 `SSH_AUTH_SOCK`。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
     - `payload.cd7-s2-cimps.img`（`251e93eb`，只读）：`payload.cd7-s2.img` 加 `--arg ci-mps=0`，设备树不变。
