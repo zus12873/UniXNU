@@ -132,6 +132,10 @@
       - rponeawa/xiaomi-mipps-auth（Linux，7-03，只读了最后两个提交）：代码里有电量计的密钥表（`FG_KEYS`）和小米厂商号 `0x2717`。"write fast charge mode" 那个提交只写一个状态文件给通知用，不控制电流；它把第三方头里的 `PD_PPS` 归为 "PPS" 档。这是 Linux 上的行为，macOS 上没验证过。
     - 已知、这次也不合的：uefi-sheng #6（内存第 1 步再做）、#7（看门狗，重启会扣槽位 a 的次数）。
   - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
+- **CD7-1 上机（11-16 17:38，用户："我进fastboot了"）**
+  - 17:38:24 只读查询：当前槽位 a；a 剩 6 次、unbootable no；b 剩 7 次、unbootable no；电压 4372 mV。a 在 4 以上，没补。
+  - `cd7-s2` 的 sha256 `4e38f55f…` 相符。17:38:35 `boot-sheng.py out/flash/boot-v4-payload.bigwin-cd7-s2.img`：`Booting OKAY`，45 秒内引导程序没有回来（镜像在跑）。
+  - 上机清单照 CD6-1 那条，用 cd7 的镜像；第 2 步的通过线是物理内存不低于 8.75 GB。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
     - metal2vulkan 缓存重新取到 `d9236a8`；
