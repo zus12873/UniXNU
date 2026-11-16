@@ -29,6 +29,27 @@
   - 已有的不一致，没改：`components.toml` 里 ArmCpu、DarwinBoot 记的是上游旧版本，实际子模块是它的后代（rponeawa 的 CPU 汇编修复、本机 9 GiB 加载器）。构建按子模块的 gitlink 拉代码（`feeds.py` 的 `update_submodules`），cd 系列以前都是这样构建的。
   - 风险：板级补丁换成上游补丁后，cd6 上机要专门看 WindowServer 有没有被代码签名杀掉、日志里有没有 APFS 哈希不符；出问题就换回板级补丁。
   - 下一步（第 2 步）：等用户接上外置盘。
+- **工作流 0 第 2、3 步，加上合盖熄屏第 1 步（11-16）**
+  - 外置盘接上后，构建盘的 APFS 卷挂不上，`diskutil verifyVolume` 报 "Container superblock is invalid"。
+    - 原因是有一份残留的挂接。`hdiutil detach disk6` 后用 `-nomount` 重新挂接，`fsck_apfs -n /dev/rdisk6s2`（只读检查）报容器和卷都 OK，再 `diskutil mount disk7s1` 就挂上了。没做任何修复。
+    - 以后遇到同样的报错，先卸掉再重新挂接一次，不要直接修。
+  - **输出目录换了一层**：现在是 `/Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/`（下面记作 `<output>`）。
+  - 日常文件哈希都对：`kernel.macho` `33d294c8`、`payload.img` `8a36fe56`、`boot.img` `35f03ec4`、`boot.json` `aeaf38ac`、`runtime/data.dbr` `39f9ad3f`、`boot/boot-bigwin.img` `5c926a3f`。
+    - 原有的备份：`kernel.macho.daily-33d294c8`、`payload.daily-8a36fe56.img`。
+    - 这次新补的：`boot/boot.daily-35f03ec4.img`、`boot/boot.daily-aeaf38ac.json`。
+  - OS 镜像 `141-22233-021.dmg` 只读挂到了 scratchpad 的 `os-mount`，`build-boot-runtime.py` 会复用这个挂载。构建完要 `hdiutil detach`。
+  - **合盖熄屏第 1 步：用户 11-16 同意现在就写，并进 cd6**。sheng 提交 `eb4639c`：
+    - `KeyboardProbe.cpp`：把盖子霍尔传感器（GPIO 171）的状态写进 `native_keyboard_lid_closed`。只在线程进入服务循环（第 7 阶段）之后才写，控制器起不来时一直是 0；每次变化记一行内核日志 `sheng keyboard: lid closed/open`。
+    - `TouchProbe.cpp` 的 `publish()`，只在 macOS 上：盖子合上后的第一帧改成"没有触点"，让所有触点松开，之后的帧都丢掉；打开后恢复。键盘折到背后时不挡。iPadOS 不变。
+    - 判断逻辑在 `package/TouchLid.h`；主机测试 `scripts/check-touch-lid-host.py` 共 115 项，先失败、实现后通过。
+    - 两个文件都用内核的编译参数单独编过：TouchProbe 弱引用 `_native_keyboard_lid_closed`，说明 macOS 分支生效；KeyboardProbe 导出这个符号。
+    - porting 记录检查和键盘相关的主机检查都 PASS。还没上机。
+  - 合盖时怎么检测（用户问的）：
+    - 两个霍尔传感器感应键盘壳里的磁铁：GPIO 171 是盖子合在屏幕上，172 是折到背后，都是低电平有效。
+    - 两根脚都配成双边沿中断，中断只给计数加一、叫醒键盘线程；线程去抖 15 ms 后读电平，没有中断时每 1 秒也读一次。
+    - 合上时以前只停键盘和触控板，触摸屏、屏幕、macOS 的电源管理都不知道。
+    - 开机时读一次初始值；之后的中断和轮询要等键盘控制器的固件加载成功才开始。
+  - 下一步：用户在自己的终端里 `sudo -v` 后跑构建（命令见对话），我再另存 cd6 产物、还原日常文件。
 
 上一阶段（2026-11-15 16:05）：**路线 A 的主机部分做完了（四个代码任务、新内核、新固件、六份载荷、五份只从内存启动的镜像）。7.5 GiB 的第 1 步镜像今天从内存启动过两次，都进了桌面，macOS 显示 7.50 GB，大窗口本身能启动。但两次都定住了：10:13 那次登录后约两分钟指针来回跳、然后定住；10:28 那次（诊断上机 D1，不恢复上次的应用）从约 5 分钟起应用一个个未响应，再过 10 分钟整机不应答。早上日常镜像的基线也有卡顿和指针抖动。每次都是内存第一次用满之后出事，原因还没有证据。第 1 步没有通过，后面几步都没有做，`boot_a` 没有动过。平板 10:55 在 fastboot（槽位 a，重试次数掉到过 0、已补回 7，见下面"槽位 a 的重试次数"一条；电压 3761，macOS 读的电量 23%），在等用户充电和决定下一次上机。用户 11:04 另外提出给 macOS 补充电驱动：驱动已经有了，缺的是 macOS 下充不进的原因，建议先量再定，在等用户答复（见下面"用户 11:04 提出"一条）。11:24 重启进日常镜像（上机 D2）：macOS 开着、接充电头能充（电池 +2 A），接 Mac 的口只进 0.45 A、电池在掉，停在 fastboot 基本不充。D2 在 11:34 以"终端全屏后卡死、键盘壳失灵、触屏还能用、已用 4.61 G / 5.95 G"结束，用户强制重启。11:39 再次重启进日常镜像（上机 D3，全程接 Mac 的线）：约 26 分钟时拍到了证据。整机没死，终端卡在重画自己的窗口里；已用 4.91 G 里被钉住的（Wired）占 3.26 G，程序只剩 1.02 G，交换 0、压力绿。交换不是瓶颈，下一步是查谁占着 Wired、卡住的程序最底层在等什么（见"11:39 上机 D3"一条）。D4（约 12:50 开机）的取样录像读完：终端主线程在等图标服务（IconServices）回一个同步请求，要的是标题栏上的文档小图标。下一步是看图标服务自己在做什么。13:19 平板在 fastboot，槽位 a 从 1 补回 7。16:04 用户说平板没电关机了，充电头只读到 2 W；在等它充上电再开机（见"16:04 用户"一条）。**
 
