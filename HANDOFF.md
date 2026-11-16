@@ -193,6 +193,18 @@
       - `payload.cd8-s2.img`（`3bbc5fef`）：`cd8-base` 加 `enable-jobs=com.openssh.sshd log-gpu=1`，窗口按本地 `board.toml`，9 GiB。
       - `out/flash/boot-v4-payload.bigwin-cd8-s2.img`（`6fba6190`），`bootimg-contents.py --payload` 核对过。
       - 对照用的还是 `…-cd7-s2-cimps.img`（`39ee6fa4`）：只有 `ci-mps=0`，没有指针修复。
+    - **CD8-1 已开始（用户 19:02："我进fastboot了，可以"）**：19:02:30 只读查询，槽位 a 剩 6 次、b 剩 7 次，都可启动，没补；电压 4426 mV。`cd8-s2` 哈希 `6fba6190` 相符。19:02:36 `boot-sheng.py`：`Booting OKAY`，45 秒内引导程序没有回来。
+    - CD8-1 读数（19:05 起，平板时间 03:05 起）：
+      - 19:04:59 SSH 通；`hw.memsize` 10142334976；启动参数有 `ci-mps=0`。
+      - 图标服务：开机 05:17:49、05:17:52 两次 SIGABRT（都有 `MPSImageUnaryKernel`），05:17:57 第三次拉起（"because incomplete work"）后一直在跑，`runs = 3`、`successive crashes = 2`，03:09 仍是这样。和 CD4 一样，先崩两次再稳住。前两次为什么还走 MPS 没查。活动监视器开着（用户打开的）。
+      - GPU 没有复位；代码签名 0 条，`cs_native4k` bad 0、err 0。
+      - Wi-Fi 又是用户在控制中心手动连的（`WiFiNetworkJoinReason = ControlCenter`）。
+      - 上一趟（cd7-s2）的合盖：`sheng keyboard: lid closed/open` 在 02:36:38 到 41、02:38:06 到 19、02:38:24 到 27、02:38:27 到 29。这几段里 WindowServer 一条 "Invalid event type: 11" 都没有（同一时间段它记了 815 行别的）。触摸屏门起作用了，不过最长只合了 13 秒。
+      - 指针第一次采样（03:07，开机约 4 分钟，1 分钟负载约 7 到 21），数据在 `data/tablet-logs/20261116-pointer-cd8/`（不入库），用新写的 `local-tools/pointer-csv-stats.py` 和 11-15 那份比：
+        - 11-15（修之前）：停顿 117、154、444 ms 之后各一大步，511、597、258 px，方向都掉头（156 到 176 度），就是丢了抬手帧的跳法。
+        - cd8：停顿超过 100 ms 后大于 150 px 的只有两步（427 ms 后 352 px 转 102 度，621 ms 后 298 px 转 63 度），没有掉头式的大跳。分不清是快速起手还是跳。
+        - 新情况：移动中指针更新间隔变长。30 到 80 ms 的间隔有 209 次（每次约 50 到 70 px），11-15 那份几乎没有，看着会一顿一顿的。可能是开机初期负载高；也可能是控制器报文间隔变大。后者的话，超过 60 ms 的那几帧会被新规则当成新触摸丢掉位移。
+        - 03:09:46 负载降到 2.25 后开了第二次采样（`pointer-cd8b.csv`）。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
