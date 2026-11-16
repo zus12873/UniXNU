@@ -267,6 +267,22 @@
           - 长间隔后跟着大步，说明几份报文的位移是攒在一起到的。驱动一侧报文没断过，所以"顿"出在驱动之后的 macOS HID 链路上（`IOHIDInterface` → DriverKit 的 `AppleUserHIDEventDriver` → hidd → WindowServer），负载高时更明显。
           - 慢划时长间隔本来就会有：驱动只在有位移时才发报文。
           - 还没查的：DriverKit 驱动和 WindowServer 的调度、CPU 调频（`cpufreq=4`）在滑动时的频率。
+        - **用户 20:3x 的回报**：
+          - Wi-Fi 连上了。
+          - **键盘灯亮了**（`keyboard-backlight=50`）。
+          - 触控板测完了。
+          - **04:23:43 那次掉线是用户主动断开触点再接上的**，cd10 有日志后可以拿来当"触点断开"的对照样本。cd8 的 03:10、03:25、04:01 三次是不是人为的，还没问。
+          - 设置里的图标还是空白。
+          - 合盖还没测。
+        - **图标空白，接着查（cd9）**：
+          - `icon-probe --settings-icons` 在 cd9 上的结果和 cd8 完全一样：同样 21 项空白，同样 7 项正常。是确定性的。
+          - 结果图是从下往上画的（第 0 项在左下角）。
+            - 空白的：Apple 账户、跟进、Wi-Fi、蓝牙、网络、VPN、通用、墙纸、辅助功能、外观、桌面、显示器、声音、屏幕使用时间、隐私、触控 ID、用户、键盘、鼠标、游戏控制器、光盘、打印机。
+            - 正常的：控制中心（`switch.2`）、通知、专注（月亮）、锁定屏幕、互联网账户（@）。
+          - 能排除的：声明方式。通用（`ISSymbolName = gear`，灰底白符号）空白，控制中心（`switch.2`，同样灰底白符号）正常；用 `ISTypeIdentifier` 的也是有的空白（蓝牙）、有的正常（通知、专注）。差别在符号本身。
+          - 渲染期间，用户那份 `iconservicesagent`（[513]）在统一日志里一行都没记，没有报错，符号层就是空的。每个渲染约 5 ms。
+          - 插件在堆满时会退回单独建纹理（`NativeBridgeMetalFrontend.mm:4398-4415`），不会给调用方 nil，所以 "heap texture refused" 应该不是原因。
+          - 下一步只能抓 GPU：rponeawa 的 `icon-cb=FIRST:COUNT` 抓图标命令缓冲区，以及 RenderBox alpha 重放。这两样在 AdrenoMetal `fix/runtime-development-d923`（`a2c34d6`、`3efc76a`、`8f350aa`），不在 main。要把它们合进插件、重编运行时，再开一个只从内存启动的镜像。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
