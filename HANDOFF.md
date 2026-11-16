@@ -60,6 +60,26 @@
     - 原因：上游 `1be2950`（rponeawa，已在 `upstream/main`）新加的检查只认 PATH 里的 bison（`/usr/bin/bison` 是 2.3）和 Homebrew 的两个路径。`<output>/tree/.cache/mesa-tools/bin/bison` 里 11-13 放的 3.8.2 它不认。
     - 11:21 装了 Homebrew 的 bison 3.8.2 后就过了。脚本把 `mesa-tools/bin/bison` 换成指向 `/opt/homebrew/Cellar/bison/3.8.2/bin/bison` 的链接。不改代码。
     - 验证（11:53）：单跑 `build-turnip-darwin.py --target macos27` 输出 PASS，`libvulkan_freedreno.dylib` 18437176 字节，Meson 读到 `bison 3.8.2`。下一步：用户在自己的终端里 `sudo -v` 后重跑整条构建。
+- **构建来源记录和日常镜像的源码还原（11-16，用户问"sheng 的 main 编出来的能不能复现本机正在跑的"，答不能；用户选"1+2"）**
+  - 1，来源记录：`local-tools/record-build-provenance.py LABEL [--artifact IMG ...]`（`12a7809`，测试 `local-tools/test_record_build_provenance.py` 6 项）。
+    - 每次构建完跑一次，写到 `<output>/provenance/LABEL.json` 和 `out/provenance/LABEL.json`（git 忽略）。
+    - 记的内容：各仓库和子模块的提交号、未提交的文件及其哈希、`git diff HEAD` 的哈希、本地设置（芯片号只写 `present`）、工具链版本、产物和根卷策略文件和固件卷的哈希、载荷的启动参数、补丁列表。
+    - **事故，已处理**：第一版只在顶层找 `unique_chip_id`，而 `unixnu.local.toml` 把它放在 `[build]` 表里。自测时芯片号被写进了两个 git 忽略的自测文件，也出现在会话输出里。
+      - 两个文件都已删掉；`out/` 下没有别的副本，所有分支的 git 历史里也没有。没有提交，没有推送，没有发到 GitHub。
+      - 已修：任何深度的 `unique_chip_id` 都脱敏；本地配置里找不到芯片号时拒绝运行；记录里只要含芯片号就不写文件。都有测试覆盖。
+  - 2，平板 `boot_a` 里的日常镜像 `out/flash/boot-v4-flash.prev.img`（`40234c20`）的来源，按 reflog 和产物哈希还原。分支都只在本地，没推送：
+    - **固件卷 `36bd589f`**：从镜像 kernel 段解出来，和 `out/flash/SILICIUM_UEFI.good-36bd589f.fd` 逐字节相同。
+      - uefi-sheng `repro/daily-40234c20`（`82ce0110`，工作树 `../uefi-sheng-repro-daily`）：`66421cb7` 加上当时没提交的那一行，"DRAM bank 1 low" 改成 `0x20000000`。
+      - 其中 UniXNU 的 UEFI 程序和加载器来自核心 `repro/daily-40234c20-firmware`，即 `dff2765`（11-13 全天的 HEAD），DarwinBoot 是 `5243c68`。
+    - **设备树 `e0bb2ed8`、内核 `33d294c8`、载荷 `8a36fe56`**：
+      - 核心 `repro/daily-40234c20`，即 `ec761fd`（11-14 18:00:56 合了 #244、#245；18:06 编完；之后的 `51db5b2` 只改了文档）。`make-flash-bootimg.py` 等打包工具也在这个提交里。
+      - sheng `repro/daily-40234c20`（工作树 `../UniXNU-sheng-repro-daily`）：`1108068`（11-13 09:01 到 11-14 19:53 的 HEAD），加两个提交，都是当时工作区里没提交的改动：`d59a70d` 板级补丁（和 `ba18a9f` 逐字节相同），`cbbd940` 是 `feeds.toml`、`unixnu.lock`（stash `pre-cd2` 的内容）。
+    - **不在 git 里、要另外取的**：
+      - `unixnu.local.toml`：`kernel_args = ["vm-swapin-io=1"]` 和芯片号；
+      - Data 种子 `<output>/runtime/data.dbr`（`39f9ad3f`）；
+      - sheng 工作区里 `verification.json` 的三处改动，现在还在，规定不提交；
+      - 本地生成、被 git 忽略的根卷策略钥匙和 header：钥匙哈希 `74eace58…`，可以用 `local-tools/recover-root-policies.py` 从载荷里取回。据记录日常载荷用的是同一把，没单独核对。
+    - 按这些重编，功能上等于日常镜像，但不保证逐字节相同：同一份固件源码重编过一次，得到 `d187f851` 不是 `36bd589f`；工具链也可能已经更新。要原样的东西，用保存下来的二进制：`kernel.macho.daily-33d294c8`、`payload.daily-8a36fe56.img`、`SILICIUM_UEFI.good-36bd589f.fd`、`out/flash/boot-v4-flash.prev.img`。
 - **开到上游的 PR（11-16，用户："将和sheng中main不同的地方全pr一下，不允许把doc写成changelog和测试记录"）**
   - 三个分支都从最新的 `upstream/main`（`bc05635`）开，工作树在 `../UniXNU-sheng-pr-harness`、`../UniXNU-sheng-pr-jobs`、`../UniXNU-sheng-pr-lid`，推到 `zus12873/UniXNU-sheng`：
     - **UniXNU-sheng#109** `test: stub POLICY_CALL in the launch policy harness`：上游 main 上 `check-boot-watchdog-policy.py` 编不过，这个修好它。
