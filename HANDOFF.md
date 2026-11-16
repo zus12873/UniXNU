@@ -326,6 +326,20 @@
         - `ArmCpu::haltCPU` 是关掉计时器和 Group 1 中断后的 `wfi` 死循环；`quiesceCPU` 关计时器。没有调 PSCI `CPU_OFF`。醒来时 `processor_wake` 会对还"开着"的核再发 `CPU_ON`，会失败。
         - ArmCpu 带 `diag=1` 时会问固件 PSCI_VERSION 和 CPU_SUSPEND 的 PSCI_FEATURES（`armcpu_psci[4]`），但没在任何记录里找到答案。
         - 所以现在一旦真去睡，就是一去不回；这正是 `sleep-disabled = 1` 存在的原因。
+        - 用户 21:1x 回答使用场景：**"合盖装包里几个小时，打开马上能用"**。我给了 A、B、C 三种做法：
+          - A：合盖关屏，系统照常跑；
+          - B：挂起到空闲，即 PSCI `CPU_OFF` 关掉副核、主核原地等唤醒，再从 `arm_init_cpu` 恢复；
+          - C：深度睡眠。
+          - 建议先量 A 的耗电，再决定要不要上 B。用户还没选。
+      - **自动熄屏是怎么走的（用户问的，cd9 上查，21:3x）**：
+        - powerd 判定空闲（`displaysleep 10`），发 `requestDisplayState: state 3` → WindowServer `Display 1 setEnabled:0`、`IOMFBDisplay::set_display_state … off` → `Display 1 set power state 0` → 内核 `(IOMobileGraphicsFamily) request_power_change … powerstate 0`。
+        - 平板时间 05:08:52 就这样自己熄了一次（上次操作后 10 分钟）。按电源键能回到桌面；SSH 里 `caffeinate -u -t 2` 也能唤醒（05:39:42 `set power state 1`）。
+        - **熄屏时背光不灭**：用户在暗处看到"隐约有一层灰光"，`AppleARMBacklight` 的 `IODisplayParameters` 仍是 1390。之前"全黑无光"是在亮处看错了。
+        - 显示驱动这一侧：`NativeLegacyDisplay` 的 IOKit 电源状态熄屏前后都是 1（`IOPowerManagement` CurrentPowerState=1），熄屏不走 IOKit PM。`NativeLegacyDisplay.cpp:537-539` 写明 GOP 没有面板电源开关。
+        - 熄屏前后框架缓冲的属性只有 "IOMFB Debug Info" 变了：熄屏时最后一帧没有图层（surface 0、宽高 0），亮屏时是 3048 宽的桌面。
+        - Apple 原代码里接 `request_power_change` 的是哪个虚函数，`OriginalMobileFramebufferABI.h` 里没有命名（大多是 `unclassified…`）。
+        - 能用的钩子：空帧（持续一段时间）→ 关背光；再出现图层 → 恢复。
+        - 合盖时 macOS 不熄屏（见上），但 `pmset displaysleepnow` 和 `caffeinate -u` 在普通用户的 SSH 里都能用。所以一个用户级 LaunchAgent 盯着 `AppleClamshellState`，合上就熄屏、打开就唤醒，就能让合盖走和自动熄屏同一条路（WindowServer 停止绘制）。
     - CD8-1 上机要看的：图标服务的崩溃次数不涨、日志里没有 MPS 报错、活动监视器能操作；用 `tablet-pointer-probe.js` 采样指针，抬手换位置不跳；物理内存不低于 8.75 GB；先读上一趟合盖时的日志，再合盖 1 分钟；GPU 复位、代码签名、Safari 照旧。
   - 构建盘又是残留挂接（卷挂不上），照上次的办法处理：`hdiutil detach disk6`，再 `-nomount` 挂接，`fsck_apfs -n` 容器和卷 OK，然后 `diskutil mount disk7s1`。
   - 下一次启动用的镜像（只打包，没启动）：
