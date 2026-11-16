@@ -50,6 +50,27 @@
     - 合上时以前只停键盘和触控板，触摸屏、屏幕、macOS 的电源管理都不知道。
     - 开机时读一次初始值；之后的中断和轮询要等键盘控制器的固件加载成功才开始。
   - 下一步：用户在自己的终端里 `sudo -v` 后跑构建（命令见对话），我再另存 cd6 产物、还原日常文件。
+- **cd6 构建中途修的两处（11-16，用户在自己的终端里跑）**
+  - Metal 库清单要挂 SystemOS、App 两个 cryptex，脚本把它们挂在 `<output>/runtime/prepare-*/` 下面，`hdiutil attach` 报 Permission denied：普通用户不能在用户挂载的映像卷里再挂映像。
+    - 核心 `d4da38c` 把挂载点改到系统临时目录。这段代码是 rponeawa 的（`make_prime_list`），上游的 `feat/manual-shader-cache-app` 分支也是同样写法，没人修过。
+    - 之后清单列出来了：434 个路径，OS 406、SystemOS 28、App 0。
+  - 缓存的 `<output>/tree/.cache/gpu-reference/metal2vulkan` 在 `555b13d`，有 65 个文件的改动，和新钉的 `d9236a8a` 对不上，构建停下。
+    - 整个目录改名留作备份 `metal2vulkan.555b13d-preserved-20261116`，让脚本重新取。
+- **开到上游的 PR（11-16，用户："将和sheng中main不同的地方全pr一下，不允许把doc写成changelog和测试记录"）**
+  - 三个分支都从最新的 `upstream/main`（`bc05635`）开，工作树在 `../UniXNU-sheng-pr-harness`、`../UniXNU-sheng-pr-jobs`、`../UniXNU-sheng-pr-lid`，推到 `zus12873/UniXNU-sheng`：
+    - **UniXNU-sheng#109** `test: stub POLICY_CALL in the launch policy harness`：上游 main 上 `check-boot-watchdog-policy.py` 编不过，这个修好它。
+    - **UniXNU-sheng#110** `feat(launch): enable launchd jobs from the enable-jobs boot argument`：叠在 #109 上，说明里写了依赖；上机证据是 CD3-1。
+    - **UniXNU-sheng#111**（draft）`fix(input): drop macOS touchscreen reports while the cover is closed`：还没上机，上机过了再转成正式 PR。
+  - 文档按 `CONTRIBUTING.md` 和记录指南写：`porting.toml` 只加描述当前行为的 findings，没加 evidence 条目，不写日期，也不写"某天测过"。代码注释里那句带日期的话也改成描述行为。验证结果只写在 PR 说明里。
+  - 没提的差异和原因：
+    - rponeawa 的那批改动今天上午已由他压扁合进上游（`6056637`）；CrossDarwin 的 #101 到 #105 上游也已合并。照规则不重复提交。
+    - 12 GiB 机型的内存窗口、200 MiB 载荷、测试菜单：直接写进 `board.toml` 会让 8 GiB 机型坏掉，要先做按内存大小分机型的配置（内存第 1 步的固件内存表做完后再看）。
+    - 本机的代码页校验板级补丁已被上游 #268 取代。
+    - **Core Image 的 `exec-env` 绕开办法不提了**：上游的 `reports/sheng-macos27-coreimage.json` 显示，rponeawa 的新 Metal 运行时下，MPS 开和关两种模糊都 `passed`，`iconservicesagent_fresh_crash` 是 false。
+      - 所以 cd6 的第一份试验载荷不带 `exec-env`，先验证上游这个修复在本机有没有效（经 SSH 跑 `local-tools/tablet-ci-blur-probe.js`，它走 MPS）。
+      - 不行再加 `exec-env` 对照。`zus12873/UniXNU-sheng` 的 `fix/macos-icon-agent-mps` 分支先留着，没删。
+    - 上游那份报告里还记着："Icon float components are nonfinite"，图标缺失、颜色错误。
+  - 整合分支里本地的 `porting.toml` findings 和 `TouchLid.h` 注释还是带日期的旧写法；构建结束后照 PR 分支的写法改。
 
 上一阶段（2026-11-15 16:05）：**路线 A 的主机部分做完了（四个代码任务、新内核、新固件、六份载荷、五份只从内存启动的镜像）。7.5 GiB 的第 1 步镜像今天从内存启动过两次，都进了桌面，macOS 显示 7.50 GB，大窗口本身能启动。但两次都定住了：10:13 那次登录后约两分钟指针来回跳、然后定住；10:28 那次（诊断上机 D1，不恢复上次的应用）从约 5 分钟起应用一个个未响应，再过 10 分钟整机不应答。早上日常镜像的基线也有卡顿和指针抖动。每次都是内存第一次用满之后出事，原因还没有证据。第 1 步没有通过，后面几步都没有做，`boot_a` 没有动过。平板 10:55 在 fastboot（槽位 a，重试次数掉到过 0、已补回 7，见下面"槽位 a 的重试次数"一条；电压 3761，macOS 读的电量 23%），在等用户充电和决定下一次上机。用户 11:04 另外提出给 macOS 补充电驱动：驱动已经有了，缺的是 macOS 下充不进的原因，建议先量再定，在等用户答复（见下面"用户 11:04 提出"一条）。11:24 重启进日常镜像（上机 D2）：macOS 开着、接充电头能充（电池 +2 A），接 Mac 的口只进 0.45 A、电池在掉，停在 fastboot 基本不充。D2 在 11:34 以"终端全屏后卡死、键盘壳失灵、触屏还能用、已用 4.61 G / 5.95 G"结束，用户强制重启。11:39 再次重启进日常镜像（上机 D3，全程接 Mac 的线）：约 26 分钟时拍到了证据。整机没死，终端卡在重画自己的窗口里；已用 4.91 G 里被钉住的（Wired）占 3.26 G，程序只剩 1.02 G，交换 0、压力绿。交换不是瓶颈，下一步是查谁占着 Wired、卡住的程序最底层在等什么（见"11:39 上机 D3"一条）。D4（约 12:50 开机）的取样录像读完：终端主线程在等图标服务（IconServices）回一个同步请求，要的是标题栏上的文档小图标。下一步是看图标服务自己在做什么。13:19 平板在 fastboot，槽位 a 从 1 补回 7。16:04 用户说平板没电关机了，充电头只读到 2 W；在等它充上电再开机（见"16:04 用户"一条）。**
 
