@@ -92,6 +92,20 @@
        - 扫过三个整合提交（sheng `6056637` 76 个文件、核心 `db9cd2e` 30 个、AdrenoMetal `57a1adc` 19 个）：拿上游版本和 rponeawa 原分支、cd6 整合分支的版本比，只有这一个文件是被截掉的。
        - sheng `406931d` 恢复成完整版（大括号配对，用到的函数在上游代码和 ShengUfs 里都有），存储区加一条描述性 finding；porting 记录检查 PASS。
        - 和第 2 条一起，cd7 构建通过后给上游提 PR。
+  - **cd7 构建成功（第四次跑）**：
+    - 内核 `582dec09`，另存 `kernel.macho.cd7-582dec09`（json、map 同后缀，只读）：
+      - 有 `_cs_text_fixup_signed_copy`、`_cs_text_fixup_hash`，没有 `_cs_text_fixup_restore`；
+      - 有 `_native_keyboard_lid_closed`、`_native_source_storage_start`、`_boot_reset_install_platform`；
+      - 字符串里有 `enable-jobs`、`sheng keyboard: lid %s`、`charge-auth`、`SourceStorage: root policy handoff or authentication failed`；
+      - 补丁 153 个；macOS 的 `archives` 完整，SoftwareAES 单独编，根卷策略用 `scripts/policies/macos-27.3-26C5035r`。
+    - 载荷 `6e2cc0e2`，另存 `payload.cd7-base.img`（只读）。插件 14:37 重编，有 `ci-mps=0`、`MadeBeforeRecovery`。
+    - 日常文件已还原，`out/flash/` 的 8 份日常镜像哈希不变，OS 镜像已卸载。来源记录：`out/provenance/cd7-build.json`、`cd7-images.json`。
+    - 试验镜像，都只从内存启动，固件 `boot-bigwin.img`（`5c926a3f`，内存表来自 uefi-sheng `20331338`，DarwinBoot `bdb6ff7`）；都加 `enable-jobs=com.openssh.sshd log-gpu=1`：
+      - `out/flash/boot-v4-payload.bigwin-cd7-s2.img`（`4e38f55f`）：窗口完全按本地 `board.toml`，9 GiB，起点 `0x8C0000000`，按本地设置收编低位内存条。用户要"按本地摸索出来的内存配置表"，所以这是主测试。
+      - `…-cd7-s1.img`（`1617e923`）：7.5 GiB，起点 `0x920000000`，`memory-outside=0`。s2 起不来或闪烁时退回这份。
+      - `…-cd7-s1-noauth.img`（`5677a84d`）：s1 加 `charge-auth=0`。
+      - `…-cd7-s1-cimps.img`（`a4698d69`）：s1 加 `ci-mps=0`。
+    - 上机清单同 CD6-1 那条，用 cd7 的镜像，先 s2。第 2 步的通过线改成：s2 的物理内存不低于 8.75 GB。
   - 运行时那一步这次是完整编过的（`runtime.log` 13:50 到 13:58）：metal2vulkan 新取的 `555b13d`，Mesa `85fda3b`，插件 13:53，`gpuaddon.bin` 13:58。终端里只打印步骤标题，细节在 `logs/runtime.log` 里。
 - **cd6 构建完成（11-16 下午，用户在自己的终端里跑 `sudo -v && ./unixnu build kernel payload …`）**
   - 再修两处才过：
