@@ -180,11 +180,13 @@
 - [ ] **Step 1**：用户在自己的终端里 `sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk <output>/runtime/data.dbr`。之前我核对日常文件哈希、只读挂 OS 镜像。
 - [ ] **Step 2**：确认内核里有 `armcpu sleep:`、`sheng sleep:` 字符串和 `_arm64_platform_sleep_hook`；另存产物（`.cdN-<哈希>`），还原日常文件，`record-build-provenance.py`。
 - [ ] **Step 3**：`make-payload-variant.py ... --arg enable-jobs=com.openssh.sshd --arg log-gpu=1 --arg keyboard-backlight=50 --arg platform-sleep=1 --arg platform-sleep-wake-after=60`，打 v4 镜像，`bootimg-contents.py --payload` 核对；参数行不超过 1000 字节。
+- [ ] **Step 3b**：请用户在平板上关掉空闲睡眠（用户 2026-11-16 定的）：`sudo pmset -a sleep 0`（Data 盘上，重启后仍在）；SSH 里 `pmset -g | grep -E '^ *sleep'` 应为 0。
 - [ ] **Step 4：第 1 级**（用户同意后从内存启动）：SSH 里 `pmset sleepnow`，期望 60 秒后醒、SSH 重连、`log show` 有 `armcpu sleep: woke by timer`；`pmset -g log | tail` 看到 Sleep/Wake。醒不来：等 3 分钟，请用户长按电源键重启，进 fastboot 读槽位，再用 Linux 日志启动读板级日志。
 - [ ] **Step 5：第 2 级**：`pmset sleepnow` 后按电源键，期望醒并且显示打开（不是 dark wake）。
 - [ ] **Step 6：第 3 级**：合盖，`log` 里看到睡眠；开盖醒。
 - [ ] **Step 7：第 4 级**：连续 10 次睡醒；每次后检查 Wi-Fi、键盘壳、触控板、触摸、显示、`ioreg -rc ShengBattery`、GPU 恢复计数。
 - [ ] **Step 8：第 5 级**：拔掉充电器合盖 1 小时，记电量和温度，和第 0 步（cd11 只关背光）对比。
+- [ ] **Step 9：睡眠中充电**：接着充电器合盖睡 30 分钟，前后读 `CurrentCapacity`、`Amperage`；电量不升，说明睡眠中不充电，记进 HANDOFF，交给用户决定要不要加"插着电不睡"。
 
 ### Task 0（随时可做，不依赖代码）：耗电基线
 
