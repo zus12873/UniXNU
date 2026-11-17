@@ -188,6 +188,7 @@ Types are `s` for string, `x` for hex cells, `i` for decimal cells, `u` for unsi
 | `chip_id` | string | Chip ID for the ADT |
 | `owned_memory_size` | string | Contiguous window request |
 | `owned_memory_excluded_ranges` | integer | Size of the excluded-range table; the window may then span more than one run of free memory. Only for an OS profile whose XNU reads the table |
+| `owned_memory_floor` | string | Lowest address the window may start at, in 2 MiB steps; DarwinBoot picks no start below it. Places the window at the top of a DRAM bank so that a kernel which adopts memory below the window can take the rest. Needs `owned_memory_size` and `owned_memory_excluded_ranges` |
 | `loader_inputs` | boolean | Reserve the records in which DarwinBoot reports where the payload RAM disk and the initrd buffer lie |
 | `owned_memory_outside_ranges` | integer | Size of the table in which DarwinBoot lists the free memory outside the window. A kernel with `window-outside-memory-adoption.patch` adopts it as VM memory, one probed page at a time; `memory-outside=0` leaves it alone |
 | `owned_memory_outside_reserved` | array of strings | `"BASE:SIZE"` parts of that memory the kernel must not adopt: memory a board driver uses at a fixed address |
