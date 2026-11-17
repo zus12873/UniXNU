@@ -49,6 +49,16 @@
       - 只扫 1 个信道也要 7.2 s，18 个信道 9.0 s：每个信道约 0.1 s，另有约 7.1 s 的固定开销。在哪一步还不知道，要看 `scan request` → `supplicant scan` → `scan done` 三行的时间。
       - 驱动日志没读到开机那一段：`kern.unixnu_wifi_log` 是约 500 行的环，每 10 s 一组的统计行约 6 分钟就把它填满。我 16:35 才连上，开机时的扫描记录已经被冲掉。`log show --info --debug` 取那一刻的 airportd 日志，取回 0 行。
       - 为此加了 `local-tools/tablet-wifi-capture.sh`：在平板上每 2 s 读一次这个环，把新行追加到文件。16:48 已在平板上启动（`~/unixnu-capture/wifi-0048.log`，60 分钟；16:48 核对在写，530 行），用来留住睡眠唤醒后没连网时的扫描。脚本留在平板的 Data 卷上，以后开机可以先在平板终端里启动它再连 Wi-Fi。
+      - 16:50 用 `local-tools/tablet-wifi-scan-probe.js` 读了 CoreWLAN 手里的 19 条结果：要连的网络是 36 信道、-34 dBm、名字 16 个字符、信道标志 0x12，都对；`AGE` 也对；但**每条结果的 `TIMESTAMP` 都是 0**。
+      - 这台 Mac（27.2.1）上 CoreWiFi 的 `CWFFilteredScanResults` 按 15 种条件过滤，每滤掉一条都记一行调试级日志：`Filtering based on maxAge`、`minTimestamp`、`minRSSI`、`channel list`、`FILS DF`、`BG scan result`、`hidden scan result`、`SSID`、`short SSID`、`BSS type`、`network name prefix`、`incl. scan result list`、`predicate`、`duplicate`、`merge policy`。怀疑是 `minTimestamp`，没有验证。
+      - 16:53 在平板上开了调试日志采集（`~/unixnu-capture/airportd-0053.log`，`log stream --level debug`，60 分钟）。下一次没连网时的 auto-join 扫描会留下每条结果被滤掉的原因。
+    - **WindowServer 崩了 4 次**（用户 16:5x："一直在崩溃"）：16:30:04、16:31:58、16:50:41、16:52:44。报告在 `out/boot-logs/cd16-1117-1635/ws/`（本地）。
+      - 四次是同一处：主线程 `EXC_BAD_ACCESS KERN_INVALID_ADDRESS`，在 `_platform_memmove` 里。出错地址正好是一块 CoreAnimation 内存区域结束后的第一个字节（区域 184K、244K、116K、32K）。寄存器：源地址等于出错地址，目的地址在栈上，剩余长度 0x1000（16:50 那次 0x400）。
+      - 用构建目录里的调试符号翻出调用链（UUID `FB2E63C9-1A40`，和报告里的一致）：`-[NBCommandBuffer commitAndWaitUntilSubmitted]` → `waitUntilScheduled` → `CommandBuffer::settle_commit` → `commit_now`（`command_buffer/mod.rs:4785`）→ `CopiedBuffers::copy_in` → `copy_in_untagged` → `copy_in_run`（`copied.rs:1859`）。16:50 那次走 `copy_in_tagged` → `copy_in_blocks` → `tag_in_place` → `read_block`（`copied.rs:1069`）。
+      - 含义：新的 Metal 运行库（metal2vulkan development `46e7cc96`，上游今天合的 R2507，AdrenoMetal `f7b4ed1`）给"不拷贝"的缓冲区留一份副本，每次提交命令缓冲时从应用给的内存里把改过的字节读进来。读的范围超出了那块内存映射的末尾。长度是怎么算错的，还没读代码。
+      - 和睡眠改动、和 SSH 这边的操作无关：第一次崩溃在 16:30，我 16:34 才连上平板。Data 卷上只有这 4 份 WindowServer 崩溃报告，之前的镜像（旧运行库）一份都没有。
+      - 查过上游，没有修复。搜了 `UniXNU`、`CrossDarwin` 的 PR 和 issue：`WindowServer memmove`、`wait_scheduled`、`R2507`、`WindowServer crash`、`metal2vulkan 46e7cc96`、`command buffer memmove`。`UniXNU/AdrenoMetal` 的 `main`（`8c7f950`）比我们用的多 2 个提交，都是着色器缓存应用的；开着的 #65 是诊断。
+      - 16:59 第 5 个 WindowServer 已经跑了 6 分 48 秒，还在。
     - 睡眠测试还没做。16:48 平板上 `sleep 0`、`displaysleep 10`，电量 68%，在充电。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**

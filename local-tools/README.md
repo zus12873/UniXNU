@@ -195,6 +195,12 @@ python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.bigwin-cdN-s2.img
   ```
 
   脚本留在平板的 Data 卷上。开机后还没连网时，在平板的终端里跑 `sh ~/unixnu-capture/tablet-wifi-capture.sh ~/unixnu-capture/wifi-boot.log &`，再去连 Wi-Fi。
+- `tablet-wifi-scan-probe.js`：打印 CoreWLAN 手里每条扫描结果的信道、信号、有没有名字，以及扫描记录里的 `AGE`、`TIMESTAMP` 和标志（不打印名字和地址）。用法在文件开头。
+- 系统为什么滤掉扫描结果，要看调试级日志，平时不落盘。先在平板上开采集，再让它扫描：
+
+  ```sh
+  local-tools/tablet-ssh.py 'cd ~/unixnu-capture && nohup /usr/bin/log stream --level debug --style compact --timeout 60m --predicate "process == \"airportd\" AND (eventMessage CONTAINS \"Filtering\" OR eventMessage CONTAINS \"filtered out\" OR eventMessage CONTAINS \"AUTO-JOIN: Scan\")" > airportd-$(date +%H%M).log 2>&1 &'
+  ```
 
 **每次上机都看的**：
 
