@@ -30,8 +30,26 @@
   - 上机要看的：开机自动连 Wi-Fi；唤醒没有彩条；开着盖 `pmset sleepnow` 不再 3 ms 被叫醒；合盖放 15 分钟以上（定时器每 60 s 叫醒一次，超过 13 轮）不 panic；唤醒后 Wi-Fi 重连；睡眠第 4、5 级；新的 Metal 运行库（R2507）有没有画面问题。上机前要用户在平板上 `sudo pmset -a sleep 0`。
   - **cd16 第一次启动（16:18，用户说进了 fastboot）**：
     - fastboot 里：当前槽位 a，a 重试 6 次、b 7 次，都没标成功也没标不可启动，电池 4137 mV；a 大于 4，没补。`boot-sheng.py` 启动后引导程序 45 s 没再回应，镜像在跑。
-    - 16:20 起平板在老地址上能连到 22 端口（ARP 有记录），开机约 2 分钟，没等我提示：看起来是自己连上了 Wi-Fi（是不是用户手动连的，还没问到）。
-    - **SSH 连上就被对端关掉**：`kex_exchange_identification: Connection closed by remote host`，一个字节的版本串都没收到。16:20 到 16:22 试了 6 次都一样。cd15 上同一把密钥、同一个参数 `enable-jobs=com.openssh.sshd` 是通的。原因还没查，先问用户屏幕上是什么。
+    - 进了桌面，持久的 Data 卷打开了（用户的账户和终端会话都在）。`hw.memsize` 10142334976；参数行 995 字节，`enable-jobs=com.openssh.sshd platform-sleep=1 platform-sleep-wake-after=60 darkwake=1 debug=334` 都在。
+    - **SSH 一直是好的，16:20 到 16:33 是我连错了地址**（"连上就被对端关掉"不是平板的问题）：
+      - 我用的是会话记录里出现次数最多的那个地址。它在另一个网段，这台 Mac 现在把那个网段路由到隧道接口 `utun8` 上。那条路由上任何端口都连得上（22、2222、2223、59999、81 都是 open），连上马上被关掉。
+      - 平板这次的地址在 Mac 的 `en0` 网段里。16:34 用主机密钥找到的：对 `en0` 上开着 22 端口的邻居逐个 `ssh-keyscan`，密钥和 `out/ssh/known_hosts` 里那把相同的就是平板。
+      - 为此加了 `local-tools/tablet-ssh.py`：每次按主机密钥找平板再连，记住的地址不在当前网段就不问它。测试 12 项，先失败后通过；`local-tools/tests` 103 项全过；在平板上试过三种情况（没有记住的地址、有、记住的地址在别的网段）。
+      - 这段时间让用户在平板上跑了 `sudo /usr/sbin/sshd -p 2222` 和 `sudo /usr/sbin/sshd -d -p 2223`，都是白跑。16:40 核对：平板上只有 22 端口在监听，没有留下多余的 sshd。
+    - **开机后 Wi-Fi 没有自动连上**，用户从控制中心手动连的（`WiFiNetworkJoinReason = ControlCenter`）。日志在 `out/boot-logs/cd16-1117-1635/`（本地）；`this-boot-prejoin.log` 是这次开机、手动连接之前的 airportd 日志，那时平板时钟还停在 11-16 07:0x：
+      - 比 cd15 前进了一步：实时扫描在驱动的 12 s 期限内结束，结果交回了 airportd。四次实时扫描：
+        | 发起方 | 要扫的信道 | 用时 | 交回的结果 |
+        | --- | --- | --- | --- |
+        | locationd | 没指定 | 7.26 s | 12 个 |
+        | auto-join | 1 个（5g36） | 7.23 s | 13 个 |
+        | auto-join | 2 个（5g36、2g6） | 7.26 s | 15 个 |
+        | auto-join | 其余 18 个 | 8.98 s | 15 个 |
+      - 但 auto-join 每次都记 `Scan SUCCEEDED (… results=0 …)`。第三行那次还有一行 `CWFFilteredScanResults: All scan results are filtered out. mutableScanResults count: 0, scanResults count: 6`：按请求的信道留下 6 个，CoreWiFi 又把这 6 个全部滤掉。连上以后链路在 5180 MHz（36 信道）、-34 dBm，所以要连的网络应该就在这 6 个里。
+      - 滤掉的原因还不知道。auto-join 这次扫描的条件：`minRSSI=-80`、`maxCacheAge=10000`（之后是 20000）ms、名字列表（2 个存着的网络都被当成隐藏网络）。要看驱动交回去的每条结果：`wifi-net: scan result N: … MHz, … dBm, 名字`（每次实时扫描记前 24 条），以及 `fill_result` 填的 `age_ms`。
+      - 只扫 1 个信道也要 7.2 s，18 个信道 9.0 s：每个信道约 0.1 s，另有约 7.1 s 的固定开销。在哪一步还不知道，要看 `scan request` → `supplicant scan` → `scan done` 三行的时间。
+      - 驱动日志没读到开机那一段：`kern.unixnu_wifi_log` 是约 500 行的环，每 10 s 一组的统计行约 6 分钟就把它填满。我 16:35 才连上，开机时的扫描记录已经被冲掉。`log show --info --debug` 取那一刻的 airportd 日志，取回 0 行。
+      - 为此加了 `local-tools/tablet-wifi-capture.sh`：在平板上每 2 s 读一次这个环，把新行追加到文件。16:48 已在平板上启动（`~/unixnu-capture/wifi-0048.log`，60 分钟；16:48 核对在写，530 行），用来留住睡眠唤醒后没连网时的扫描。脚本留在平板的 Data 卷上，以后开机可以先在平板终端里启动它再连 Wi-Fi。
+    - 睡眠测试还没做。16:48 平板上 `sleep 0`、`displaysleep 10`，电量 68%，在充电。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
