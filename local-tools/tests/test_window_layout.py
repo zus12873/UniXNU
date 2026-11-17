@@ -269,8 +269,8 @@ class LargeWindowLayout(unittest.TestCase):
         self.assertIn('vm_compression_limit=1572864', arguments)
         self.assertFalse([item for item in arguments if item.split('=')[0] in ('memory-outside', 'data-reset')])
         line = payload.check_args(['vm-swapin-io=1', 'memory-outside=0'] + arguments)
-        # The board's arguments and the two run arguments, joined by single spaces.
-        self.assertEqual(len(line), 923)
+        # The board's arguments (905 bytes since the 11-17 sheng main merge) and the two run arguments, joined by single spaces.
+        self.assertEqual(len(line), 937)
 
 
 if __name__ == '__main__':
