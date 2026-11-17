@@ -163,6 +163,35 @@
     - 仓库：Ath12kWifi（`origin/main` 只多了 #6 构建修复）、sheng（11-15 以后只有文档）、UniXNU 和 CrossDarwin 的 PR 和 issue；
     - 关键词：wifi hidden、auto-join、wifi、wifi auto、`CardCaps`、`directed`、`3903`。
   - 还不知道的：普通扫描为什么 12 s 拿到 0 个结果（扫描完成事件没来，还是没按指定信道扫）。要驱动的 `wifi-net` 日志才能分清。
+  - 用户选了改驱动（11-17 10:2x）。平板的 26C5035r 也核对过：从 OS cryptex `141-22145-021.dmg` 的 dyld 缓存里看（shadow 方式挂载，原镜像不动；`ipsw dsc disass`）：
+    - `Apple80211Scan` 一样是 `ldrb w8, [x19, #0x5a]; tbz w8, #0x6`；
+    - `__getScanData` 填的类型 86 结构也一样：
+      - `+0x8` 是网络名个数加 1，多的那一项是全零的通配项；
+      - `+0xc` 起每项 40 字节 `{版本, 长度, 名字[32]}`，最多 9 个名字；
+      - `+0x19c`/`+0x1a0` 是 BSSID，最多 15 个；`+0x200` 扫描类型；`+0x210`/`+0x214` 信道；结构共 0x14e8 字节。
+  - 普通扫描 12 s、0 个结果的原因找到一层：
+    - 驱动把扫描请求放进 `nw_mainline.c` 的 `ui` 信箱，由用户态的 `/private/var/ngpu/bin/unixnu-wpa_supplicant`（launchd `org.unixnu.wifi.supplicant`）取走去扫；
+    - 12 s 内没有回报，就算这次扫描完成、没有结果（`scan_deadline = lx_now_ms() + 12000`）；
+    - 所以唤醒后那一分钟，supplicant 没在处理扫描。为什么没处理还不知道：supplicant 不写统一日志，驱动日志只在板级日志里。
+  - 改动（sheng `fcee9fa`，证据 `31562cb`）：
+    - `package/WifiScan.h`：
+      - 能力位表加上 22，其余照旧（46 等）；
+      - 类型 86 的解析：有通配项或多个名字时扫全部网络，只有一个名字、没有通配项时定向扫它；
+      - 一次定向扫多个名字（真正隐藏的网络）要同时改 Ath12kWifi 的 `ui` 信箱，没做。
+    - `WifiNet.cpp` 改用这个头文件：类型 86 解析完以后，和类型 10 走同样的缓存、已连接和真正扫描三条路径；前 16 次请求会记一行 `wifi-net: named scan: ...`。
+    - `kern.unixnu_wifi_log`（`BootDiagExport.c` + `package/WifiLogExport.h`）：只读，给出驱动最近 512 行日志，从旧到新。
+    - 主机检查：
+      - `check-wifi-scan-host.py` 31 项，改之前是失败的（能力位里没有 22）；
+      - `check-wifi-log-export-host.py` 11 项，改之前同样是失败的。
+    - 两份源文件用内核参数编过，没有新的警告。
+    - sheng 其他主机检查里有 4 个失败，原来就失败，和这次改动无关：
+      - `touch`、`boot-progress`、`gpu-power`：sheng 里没有 `drivers/QcomGeniSpi`；
+      - `mhi-boot`：`mhi_boot_host.c:102` 报 `-Wmissing-field-initializers`。
+  - 上机要看（cd14）：
+    - 开机后不碰控制中心就自动连上；
+    - 睡眠唤醒后很快自动重连；
+    - airportd 不再记 `Unable to detect … as broadcast or hidden`，网络不再算隐藏；
+    - `sysctl -n kern.unixnu_wifi_log` 里有 `named scan` 行。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
