@@ -283,6 +283,23 @@
     - 33 个文件冲突，约 150 处。我们自己的提交按文件列在 `out/merge-own-commits-20261117.txt`（本地）。
     - 上游改了我们本地保管、从不提交的 9 个 macOS 27.3 根卷策略文件：主检出目录切分支前要先备份这 9 个文件，切完放回去，并核对哈希。
     - 上游 `4d86261` 去掉了启动参数的 `sheng-` 前缀；`49eb58e` 修了键盘壳输入恢复；`9c92108` 把 macOS 关机和重启接到了 PSCI。
+    - **合并完成（11-17 14:1x）**：合并提交 `9e03d86`，再摘入 SIGP 修复 → `5909daa`。三个助手分领域解了冲突，由我统一复查、暂存（只暂存那 33 个文件）后提交。
+      - 驱动和测试：这些文件在上游的版本，和我们第一次改它之前的版本逐字节相同，所以结果就是我们的版本，上游的内容不会丢。
+      - 启动日志、复位、诊断、存储：结果是我们的版本，它包含了上游的全部内容；`BootWatchdogPolicy.c` 用上游的，上游已经收进了 `enable-jobs`。
+      - 实验室和 CI 脚本：用上游的。
+      - board.toml：保留我们 12 GiB 的内存值、200 MiB 载荷、内核表和 `ci-mps=0`；其余取上游的（GENI SPI、模板、`timeout=1`、install 表、桌面参数）。
+        - 不要 `autoreset=7200`：加上它这一行就超过 1000 字节，而且平板开机 2 小时后会进 fastboot，在那里不充电。
+        - 不要上游无人值守实验室用的诊断参数（`diag`、`diag-export`、`gpu-trace`、`log-video`、`log-bluetooth`、`build-tag`），这样测试镜像加的参数还放得下。现在这一行 905 字节。
+        - 保留 `uefi-watchdog=1`：它和睡眠时的喂狗是同一套机制，panic 后停止喂狗，看门狗会把系统复位。
+      - `.gitmodules`：用上游的，Ath12kWifi 指向 fork；子模块定在 `b455da9`。
+      - 补丁序列：用上游的顺序，`sheng-platform-sleep.patch` 放在最后。
+      - porting.toml：每个区两边取并集。
+    - 合并后的整套 154 个 XNU 补丁，在干净的 XNU（`ac9718f`）上全部能打上，其中包括 `cpu_running` 修复。
+    - 检查：porting record 18 个区；睡眠、Wi-Fi 扫描、日志导出、盖子、启动日志、读回上次日志、键盘壳、键盘服务、触摸、看门狗策略的主机检查；核心 `check-unixnu.py`。全部通过。
+    - 主检出目录已切到 `integrate/upstream-20261117`。那 9 个根卷策略文件：先备份到 `out/policy-backup-20261117/`（附 sha256），再另外 stash 一份（stash@{0}），切换后放回，哈希 9/9 一致。合并用的工作树已经移除。
+    - 子模块都已初始化，版本一致；ShengUfs 现在是上游的 `9d527ae`，里面仍有 `native_ufs_part_read`。
+    - 还不确定：200 MiB 的载荷装不装得下上游的桌面配置（上游是 256 MiB），要真正构建才知道。
+    - 核心仓库比上游落后 593 个提交（多是 Metal R2507），这次没合。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
