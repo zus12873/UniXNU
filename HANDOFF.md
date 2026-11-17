@@ -136,6 +136,24 @@
     - 从 Mac 看，平板 10:16:58 断网，10:19:17 才重新连上，也就是醒来后过了约 84 s Wi-Fi 才回来。
     - 日志：`out/boot-logs/cd13-sleep1-stream.txt`（睡前的实时日志流）、`cd13-sleep1-reach.txt`（本地）。
   - 下一步：第 2 级电源键叫醒。`pmset sleepnow` 后 20 s 内由用户按电源键，应看到 `woke by power`，而且早于 60 s 定时器。
+- **Wi-Fi 不自动连，接着 11-16 那条往下查（11-17 10:2x，cd13，只读）**：用户要已经连过的网络开机和唤醒后都能自动连上。
+  - 日志：`out/boot-logs/cd13-wifi-1117-1023/`（本地，里面有网络名，不入库）。
+  - 已存的网络能跨开机保留：数据卷上有 2 个，auto-join 每次都列出来。
+  - 两个都被 airportd 当成隐藏网络（`Hidden SSIDs (2)`）。
+    - 起因：18:08 用户从控制中心连上之后，airportd 记了 `Unable to detect <ssid> as broadcast or hidden`。它扫描确认没扫到，就按"可能隐藏"存了下来。
+  - 唤醒后（18:17:53 起）auto-join 跑了约 6 轮（`user_wake`、`power_on`、`retry (ac)`），一次也没连上：
+    - 带隐藏网络名的实时扫描都在 10 µs 内 `err[-3903]`，框架自己拒的，没到驱动；
+    - 不带网络名、只扫 2 个信道的普通扫描，每次约 12 s，结果为 0；
+    - 18:19:11 的那次连接是从控制中心发起的 `associateToWiFiNetwork`，不是 auto-join。
+  - `-3903` 是哪里来的（本机 macOS 27.2.1 的 IO80211，`dyld_info -disassemble`）：
+    - `Apple80211Scan` 在 `__getScanData` 之后：请求带了网络名列表、而且不是类型 3 时，检查缓存能力位的 `[ctx+0x5a]` bit 6，没有就 `mov w28, #-0xf3f`（-3903）。
+    - 能力位图从 `ctx+0x58` 开始：驱动已经用的 bit 46 正是 `[ctx+0x5d]` bit 6，对得上。所以要的是**能力位 22**。
+    - 驱动 `package/WifiNet.cpp` 的 `kCardCaps` 现在报的是 {2, 3, 6, 9, 10, 14, 17, 19, 46}，没有 22。
+    - 平板的 26C5035r 是不是同一处判断，还没核对（要从 OS 镜像的 dyld 缓存里看）。
+  - 查过上游，没有：
+    - 仓库：Ath12kWifi（`origin/main` 只多了 #6 构建修复）、sheng（11-15 以后只有文档）、UniXNU 和 CrossDarwin 的 PR 和 issue；
+    - 关键词：wifi hidden、auto-join、wifi、wifi auto、`CardCaps`、`directed`、`3903`。
+  - 还不知道的：普通扫描为什么 12 s 拿到 0 个结果（扫描完成事件没来，还是没按指定信道扫）。要驱动的 `wifi-net` 日志才能分清。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
