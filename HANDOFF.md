@@ -15,7 +15,27 @@
 - 本地 `main` 两边都指到了上游 `main`（上游改写过历史，不能快进），旧位置留在 `backup/main-20261113`；`git branch -f` 顺带把 `main` 的跟踪分支设成了 `upstream/main`。`integrate/*` 分支原样保留，都没推。
 - 检查（都在新分支上跑）：核心 `check-unixnu.py`、`scripts/unixnu` 和 `local-tools` 的测试、`tests/` 四组；ArmCpu 的 `check-mmio-access.py` 和 `check-sleep-host.py`；sheng porting record 18 个区、21 个主机检查和 `check-ath12k-exports.py`（不过的还是那 7 个无关的）；`ArmCpu.cpp`、`KeyboardProbe.cpp`、`ShengSleep.cpp` 用构建参数单独编译通过（`KeyboardCover.cpp` 没单独编）。
 - 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
-- **cd17 构建成功（用户 19:17 前后起，19:30 完成），测试镜像已打好（20:00），平板在 fastboot 里，等用户说可以再从内存启动。**
+- **cd17 构建成功（用户 19:17 前后起，19:30 完成），20:03 用户同意后从内存启动，在跑。第一轮结果见下面"上机结果"；Wi-Fi 连着时 5 GHz 那一批扫描被固件拒绝，是新暴露的问题。**
+  - **上机结果（20:03 `boot-sheng.py` 启动，平板时钟 04:03；到 20:17）**。日志在 `out/boot-logs/cd17-1117-2003/`（本地）。
+    - 启动：发镜像 5 s，45 s 没回 fastboot；20:04:03 SSH 通（开机 41 s）。`hw.memsize` 10142334976。`pmset` 的 `sleep 0` 还在（上次设的留在数据卷上），不用再设。
+    - **开机自己连上了 Wi-Fi**：开机 21 s 时 `en0` 已有地址（驱动日志），41 s 时 SSH 已通。cd16 上开机不会自己连，要从控制中心手动连。用户有没有手点过，要问一句。
+    - **时间戳对了**：20:04 读 CoreWLAN 手里的 8 条结果，`TIMESTAMP` 全部不为 0（462.9 到 471.8 s，是连续时钟的纳秒；平板的连续时钟从进 fastboot 那次复位算起，开机时约 450 s，所以是开机后 13 到 22 s 听到的）。
+      - 那一次 `AGE` 读出来是 75673 到 75682 s，不对；原因是平板开机时墙上时钟停在 11-16 07:0x，连上网后被对时往前拨了约 21 小时（75615 s 上下），CoreWLAN 给拨钟之前收到的结果算年龄时把这一段算进去了（`AGE`＋`TIMESTAMP` 对 8 条都是 76145.0 s；同一时刻 `ps` 里 WindowServer 的运行时长也是 21 小时多）。20:08 再读，13 条的 `AGE`＋`TIMESTAMP` 都等于当时的连续时钟（749.3 s），年龄 97 到 157 s，对。20:14 现场扫一次，7 条年龄 0 到 6.1 s，连着的那个是 0。
+      - 没查：拨钟前收到的结果，CoreWiFi 过滤 `maxAge` 时用的是不是同一种算法。这次开机的连接发生在拨钟之前，没受影响。
+    - **连着时真的去扫了，链路没断**：系统自己的一次（开机 197 s）和我用探针触发的一次（634 s）都是两批。第一批 11 个信道（2.4 GHz 的 1 到 11）：`scan N while joined: on the air` → 约 1.1 s 后 `scan done: status 0`。SSH 一直连着，日志里没有 link down。
+    - **第二批 9 个信道每次都被固件拒绝（新暴露的问题，不是这次改出来的）**：
+      - 现象：第一批结束后 14 到 21 ms 发第二批，驱动日志 `received scan start failure event`，`scan done: status 9`（`NW_CONTROL_DRIVER_FAILED`，cfg80211 报 aborted），前后 1 ms。2 次里 2 次都这样。
+      - 这 9 个信道就是系统认识的全部 5 GHz 信道：`supportedWLANChannels` 报 2.4 GHz 1 到 11、5 GHz 36/40/44/48/149/153/157/161/165。
+      - cd16 上（没连网时）唯一一次 9 个信道的扫描也是这样失败的（`wifi-driver-0138.log` 的第 64 次，21 ms）；另有 2 次单信道的失败。所以是老问题（原来记作"scan start failure status 9"，没查）。
+      - **现在的后果**：连在 2.4 GHz 上时，5 GHz 的网络听不到也扫不到，60 s 后被第三项的过期规则滤掉。20:14 现场扫描的 7 条全在 2.4 GHz。也就是连着的时候列表里只剩 2.4 GHz 的网络（外加连着的那个）。cd16 上这些网络会以旧数据留在列表里。
+      - 排除了一种原因：组件建扫描请求时已经跳过 `IEEE80211_CHAN_DISABLED` 的信道（`nw_cfg80211_control.c:85`）。
+      - 没分清的：是"紧跟着上一次扫描"的时序问题，还是固件不接受这 9 个信道的某种组合。cd16 上隔 40 到 57 ms 的别的扫描有成功的，所以间隔本身不能解释。想用 CoreWLAN 的私有接口单独扫 5 GHz 来区分：`osascript` 调用一次崩溃（139），换了传参后返回 nil、请求没到驱动，放弃了。
+      - 第三项里的一处小毛病：信道在请求发出时就记成"扫过"，扫描失败也照记，所以失败后的 20 s 内同一批不会重试。应该在扫描成功结束时再记。
+    - **Metal**：开机 14 分钟，WindowServer 还是开机时的进程（pid 176），没有新的 WindowServer 报告。cd16 上第一次崩溃在开机后 12 分钟，40 分钟里 5 次，所以还要再用一阵才能下结论。
+    - 开机后的其他报告都是之前就有的种类：`iconservicesagent` 2 份（`MTLReportFailure`，MPSImage 经 `CIBlurProcessor`，就是 Core Image 那个老问题；现在的参数行里没有 `exec-env=iconservicesagent:CI_ENABLE_MPS=0`）、`CacheDeleteExtension` 1 份、`spotlightknowledged.updater` 1 份、系统设置 1 份卡顿报告（04:07）。
+    - 我在平板上试过一次 `/usr/bin/python3`（想在平板上解析报告）：平板没装开发者工具，这个命令会请求安装，屏幕上可能弹出安装对话框，取消即可。之后改成把报告取回 Mac 解析。
+    - 平板上 `log show` 经 SSH 什么都不输出（没查原因），所以这次没有 airportd 的日志；驱动日志的环形缓冲只有 500 行左右（几分钟），要看的事件发生后马上取。
+    - 还没做：离开一个网络的范围看它多久从列表消失（要用户带着平板走）；唤醒后自己连上；连着时扫描对延迟的影响；睡眠第 3、5 级。
   - 构建用的提交：核心 `fad585e`、sheng `783cc8f`（组件 `Ath12kWifi` `f677aa4`、`AdrenoMetal` `685f37c`），都在 `local/on-main-20261117` 上。来源记录 `cd17-build.json`、`cd17-images.json`。
   - 内核 `feede885`，另存 `kernel.macho.cd17-feede885`（json、map 同后缀，只读）；载荷 `91064f79`，另存 `payload.cd17-base.img`。日常文件已还原，7 个哈希都对；OS 镜像已卸载。
   - 核对过（和 cd16 的差别就是要验证的三处）：
