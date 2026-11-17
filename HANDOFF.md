@@ -244,6 +244,16 @@
     - 怀疑过的"`scan_req` 卡住、之后的扫描全部 `-EBUSY`"被排除了。
     - 这趟还是用户从控制中心手动连的（21:15:19，`WiFiNetworkJoinReason = ControlCenter`）。
     - 修法：把请求里的信道表一路交到 supplicant。WifiNet 解析类型 10 和类型 86 的信道表（类型 86：`+0x210` 个数，`+0x214` 起每项 12 字节）→ `nw_wifi_scan` 带上频点 → `ui` 信箱 → supplicant `SCAN freq=…`。要改 Ath12kWifi 的 `nw_abi`、`nw_mainline.c`、`nw_supplicant_frontend.c`，以及 sheng 的 `WifiNet.cpp`。
+  - **cd15 彩条测试（平板时间 21:17:55 `pmset sleepnow`，开着盖）**：
+    - 用户：没有彩条了，但按了很多次电源键才看到桌面，之后手动连上了 Wi-Fi。
+    - 背光修复起作用了：两次唤醒都是 `panel back to its level 40 ms / 817 ms after the wake, 2 frames shown`。
+    - **新问题：开着盖入睡，3 ms 就被"盖子"叫醒**：21:18:26.633 `IOCPUSleepKernel enter`，.709 `woke by lid (intid 240) after 3 ms; sleeps 1, spurious 0`。盖子一直开着，所以是误唤醒。
+      - 推测：盖子那根 TLMM 线还留着之前锁存的中断状态。`ShengSleep.cpp prepare()` 只在盖子合着时清它（"A closed lid's status is … cleared"），开着盖时不清，一睡下汇总中断就挂着；`shouldWake(240)` 只看"盖子开着"，于是马上叫醒。
+      - cd13 第 1、2 级也是开着盖，但没出现这个问题，可能那次开机后盖子没有动过，没有锁存状态。
+    - 这次误唤醒是完整唤醒：`requestUserActive … for sheng lid`，21:18:26.809 `Display state: On`，loginwindow .875 `startUnlock`。之后一直到 21:28:37 才因为闲置 10 分钟 `Display state: Off`，中间没有任何睡眠。
+      - 用户这段时间看到的是黑屏，按电源键没用，直到 21:32:03 合盖、21:32:10 开盖才看到桌面。是背光没亮，还是锁屏界面没画出来，日志分不清。
+      - 21:32:33 那次唤醒同样是盖子 3 ms（开盖发生在入睡的 30 s 里，算正常），背光走同一条新路径，817 ms 后恢复，用户看到了桌面。所以新的背光路径本身是好的。
+    - 吞键只在电源键叫醒时开启，这次没开，用户的按键都正常上报了。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
