@@ -300,6 +300,11 @@
     - 子模块都已初始化，版本一致；ShengUfs 现在是上游的 `9d527ae`，里面仍有 `native_ufs_part_read`。
     - 还不确定：200 MiB 的载荷装不装得下上游的桌面配置（上游是 256 MiB），要真正构建才知道。
     - 核心仓库比上游落后 593 个提交（多是 Metal R2507），这次没合。
+    - 第一次构建 cd16（11-17 14:2x）在 `archive-20-build-gop-legacy-display-27` 失败：
+      - 报错：`build-sheng-source-drivers.py` 找不到 `<tree>/profiles/os/ipados-27.0.1-24A446/profile.toml`；
+      - 原因：sheng 上游新的 `build-gop-legacy-display-27.py` 调这个核心脚本时不再传 `--profile`，依赖核心上游的 `66535d1`（rponeawa，"pass the selected OS profile to source driver compilation"）。
+      - 修复：核心 `aff8f4f`，`cherry-pick -x 66535d1`。构建时用 `UNIXNU_OS_PROFILE` 指向选定的配置，没设时回到核心仓库自己的 `profiles`；内核的参考源码里加上 `IOHIDFamily`。
+      - `check-unixnu.py` 通过；macOS 配置里 `IOHIDFamily` 和 `IOStorageFamily` 都钉了版本。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
