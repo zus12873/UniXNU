@@ -17,6 +17,32 @@
 - 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
 - cd16 还没构建成功过：命令不变，见下面"cd16 要带的修复"一条。
 
+**往上游 `main` 推的进度（2026-11-17 16:1x 起，规则 `.claude/rules/push-progress-to-main.md`）**
+- 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
+- 已推到 fork，还没开 PR（等用户说开）：
+
+  | 项 | fork 上的分支 | 提交 | 基于 | 验证 |
+  | --- | --- | --- | --- | --- |
+  | `--auto-login` 文档行 | `zus12873/UniXNU` `docs/macos-auto-login-user` | `a07572d` | 核心 `upstream/main` `6213954` | 上游 `make-macos-data-seed.py` 第 90 行确有这条限制 |
+  | 开盖入睡 3 ms 被唤醒 | `zus12873/UniXNU-sheng` `fix/sleep-open-lid-wake` | `bc00259` | 作者的 `feat/platform-sleep-wake` `5d8fedb`（sheng #127，draft） | 新测试在旧代码上编译失败（缺 `sheng_sleep_clear_lid_status`），带修复后 `check-sheng-sleep-host.py` 通过；porting record 18 个区；两个源文件和工作分支上单独编过的一致。没上机 |
+  | 第 13 次入睡的 panic（SIGP 恢复） | `zus12873/UniXNU-sheng` `fix/sleep-sigp-recovery-race` | `e3a233b` | 同上 | `patches/` 整个目录和构建用的一致；15:03 那次构建里 `cpu_common.o` 带着这一段编过，只有警告（那次只败在链接 Wi-Fi 符号）。没有主机测试，没上机 |
+
+  - 查过别人：`gh search prs`（UniXNU、CrossDarwin；`auto-login`、`sheng_sigp_recover`、`cpu_running SIGPdisabled`、`INTR_STATUS lid sleep`）和各仓库 `git log --all -S'target_proc->cpu_running'`，没有同类改动。
+  - 主题分支上的提交说明重写过（不带 `integrate/*`、`cd15`）；测试注释里的 `cd15` 改成了 "seen on the tablet"，其余和工作分支的 `8d1a536`、`8a0c5f5`、核心 `c0f8627` 内容相同。
+  - 工作树：`../UniXNU-pr-docs-autologin`、`../UniXNU-sheng-pr-sleep-lid`、`../UniXNU-sheng-pr-sleep-sigp`。
+- 等用户决定：
+  - Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
+  - 旧 PR（sheng #109 到 #112，都开在上游改写历史之前，差异带 660 多个提交）。按新增的行逐行比过：
+    - #109（策略测试桩）：4/4 在上游 main。
+    - #110（`enable-jobs`）：检查脚本 7/7、`BootWatchdogPolicy.c` 8/12 在上游 main，差的 4 行是注释。
+    - #112（`ci-mps=0`）：参数在上游 main 的 `board.toml` 第 243 行，只少注释。
+    - #111（合盖丢触摸）：不在 main；在作者的 #119 和 #127 里（都是 draft），`TouchLid.h`、测试和检查脚本逐行相同。
+- 上游的新动向（15:5x 拉取）：
+  - 核心 `upstream/main` 多了 `6213954`（设备记录文档）。
+  - 作者的 sheng 睡眠分支多了 `5d8fedb`：`BootLog.c` 的日志格式串放进 `__DATA_CONST`，让 `__TEXT` 放得进保留 kext 的空隙。
+  - 工作分支还没带这两个提交：用户 15:49 起的 cd16 构建在跑，没动主检出目录。**cd16 构建如果报 `__TEXT` 放不下，先合 `5d8fedb`。** 构建结束后把它合进 sheng 工作分支。
+  - 作者开着的相关 PR（都是 draft）：核心 #299、sheng #127 和 #119、ArmCpu #7。
+
 以下"当前阶段"写于 2026-11-17 09:3x，已被上面这一段取代：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）上机卡死的原因找到了：启动核进入睡眠时读 GIC 的方式 Gunyah 模拟不了，触发 panic。ArmCpu `a2c5dd3` 已修好，等用户构建 cd13 再上机。** 详情见下面"cd12 构建和上机"一条。 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
 - 已提交：
   - ArmCpu `local/platform-sleep`：`6062866`（唤醒判定，主机测试）和 `a26ef5d`（副核 PSCI CPU_OFF、启动核屏蔽中断等唤醒、`initCPU(false)` 恢复）。核心 `3bec015` 指向它。
