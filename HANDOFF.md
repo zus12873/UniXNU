@@ -135,7 +135,16 @@
     - 完整唤醒：IOPMrootDomain `Wake Type = UserActivity Assertion`，airportd `FullWake:cpu disk net aud vid`。`hw.activecpu` 8，没有 panic。
     - 从 Mac 看，平板 10:16:58 断网，10:19:17 才重新连上，也就是醒来后过了约 84 s Wi-Fi 才回来。
     - 日志：`out/boot-logs/cd13-sleep1-stream.txt`（睡前的实时日志流）、`cd13-sleep1-reach.txt`（本地）。
-  - 下一步：第 2 级电源键叫醒。`pmset sleepnow` 后 20 s 内由用户按电源键，应看到 `woke by power`，而且早于 60 s 定时器。
+  - **第 2 级通过（10:28，电源键叫醒）**：
+    - 做法：`(sleep 30; pmset sleepnow)`；用户在屏幕黑了约 45 s 后短按一下电源键。
+    - 18:28:33 `sleeping`，背光关；18:29:05 `IOCPUSleepKernel enter`。
+    - 18:29:35 `sheng sleep: woke by power (intid 513) after 29660 ms; sleeps 2, spurious 0, masked 0, ticks 7, unarmed 0, cpu_off failures 0, phase 5`：
+      - 比 60 s 定时器早；ticks 7 是累计数，加上第 1 级的 5 次；
+      - 背光恢复，屏幕一直亮着（叫醒系统的那次按键被吞掉了）。
+    - `kern.sleeptime`/`waketime` 18:29:05/18:29:35；开机时间不变；`hw.activecpu` 8；`Wake Type = UserActivity Assertion`。
+    - Wi-Fi 又是用户从控制中心手动连的（`WiFiNetworkJoinReason = ControlCenter`），10:31:19 平板才重新出现在网络上。
+    - 日志：`out/boot-logs/cd13-sleep2-stream.txt`、`cd13-sleep2-reach.txt`。
+  - 下一步：第 3 级，合盖睡、开盖醒，应看到 `woke by lid`。
 - **Wi-Fi 不自动连，接着 11-16 那条往下查（11-17 10:2x，cd13，只读）**：用户要已经连过的网络开机和唤醒后都能自动连上。
   - 日志：`out/boot-logs/cd13-wifi-1117-1023/`（本地，里面有网络名，不入库）。
   - 已存的网络能跨开机保留：数据卷上有 2 个，auto-join 每次都列出来。
