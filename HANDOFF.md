@@ -204,6 +204,19 @@
     - 连上后 airportd 又记了 `Unable to detect … as broadcast or hidden`；
     - 查 airportd 日志要按进程号：网络时间到了以后平板时钟会往前跳，`--last` 会漏掉开机早期的日志；
     - supplicant 处理 UI 扫描请求的地方是 `nw_supplicant_frontend.c`：执行 wpa_supplicant 的 `SCAN` 或 `SCAN ssid <hex>`；被拒绝时会马上报 BUSY，不会拖满 12 s。所以 12 s 说明它接下了请求却没有回报，或者请求根本没到它手上。
+  - **cd14 开关 Wi-Fi 的实验（平板时间 20:26:38 关，20:26:52 开，之后用户手动连接）**，读到的驱动日志在 `out/boot-logs/cd14-1117-1214/wifi-toggle.log`：
+    - `power set 1`、`wifi: radio on applied` 之后，`named scan … names 2, wildcard 1` 连续 3 次（后两次被合并）。100 ms 后只有一行 `Found new beacon on frequency: 5180 MHz`，再没有扫描完成的记录。
+    - airportd 那边：实时扫描（5g36、2g6）`duration=12027ms, results=0`，正好是驱动的 12 s 超时。只查缓存的扫描结果为 0：驱动手里的 19 个结果是 20:12 连上之前扫的，`maxCacheAge=20000`。
+    - 连着网时的扫描走"回缓存"那条路径，每次 2.00 s。
+    - 用户手动连接：`join` 之后 0.4 s 就到了 sta 6（UP）。所以经 supplicant 的连接没问题，问题只在没连网时的扫描。
+    - 扫描真正完成时，驱动收到 `NW_CONTROL_SCAN_DONE`，进 `nw_mainline.c` 的 `event()` 处理，但这一步不写日志。要分清是 supplicant 没发起扫描，还是 cfg80211 扫描没完成，得在 Ath12kWifi 里加日志：扫描请求交给 supplicant 的结果、`NW_CONTROL_SCAN`、`SCAN_DONE`（是否中止、BSS 数）。
+  - **唤醒时的彩条**（用户：三种唤醒都有，黑屏 → 黑屏加不到 1 s 的彩条 → 桌面）。cd13 第 2 级唤醒，平板时间 18:29:35：
+    - .046 背光恢复（`kIOMessageSystemHasPoweredOn`）；
+    - .047 powerd："Display is asleep on activity tickle. Lets turn it on"；
+    - .070 WindowServer `Display:Power Will Wake`、`set_display_state off→on`、`Display 1 set power state 1`；内核 `IOMobileGraphicsFamily request_power_change … powerstate 1`；
+    - .161 `Did Wake`；.277 / .328 内核 `vt 5 first dfrm`、`vt 5 direct, 6 surfaces`。
+    - WindowServer 醒来后不通过背光驱动重新设亮度，只设了 headroom hint。
+    - 结论：背光比 WindowServer 打开显示器早约 25 ms，比第一批画面早约 0.25 s。修法：背光等显示器重新上电、出了第一批画面以后再恢复，并加一个超时兜底，免得屏幕一直不亮。
   - 上机要看（cd14）：
     - 开机后不碰控制中心就自动连上；
     - 睡眠唤醒后很快自动重连；
