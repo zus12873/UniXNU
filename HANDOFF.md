@@ -30,20 +30,20 @@
 
 用户 20:5x 选的：留一份小备份加两个镜像；构建盘只留下载的系统镜像；Mac 上的项目目录清空。
 
-外置盘 `/Volumes/12873/UniXNU-archive-20261117/`（21 GB，里面有 `README.md` 和 `SHA256SUMS`，列了 251 个文件；从原处拷来的都和原文件比过 sha256，只有 5 份小的测试日志没比）：
+外置盘 `/Volumes/12873/UniXNU-archive-20261117/`（21 GB，里面有 `README.md` 和 `SHA256SUMS`，列了 2633 个文件；从原处拷来的都和原文件比过，只有 5 份小的测试日志没比）：
 
 | 目录 | 内容 |
 | --- | --- |
-| `tablet-restore/` | 日常镜像 `boot-v4-flash.prev.img`（`40234c20`，`boot_a` 里的那份）；cd17 测试镜像 `boot-v4-payload.bigwin-cd17-sleep.img`（`6aa21a9a`）；刷在平板 `userdata` 上的系统盘 `userdata-root.sparse.img`（16 GB，`01e4bebb`）；两个镜像各自的内核和符号表（`kernels/`）；Data 种子、`owner-trust.bundle` 和构建输入的记录（`build-inputs/`） |
+| `tablet-restore/` | 日常镜像 `boot-v4-flash.prev.img`（`40234c20`，`boot_a` 里的那份）；cd17 测试镜像 `boot-v4-payload.bigwin-cd17-sleep.img`（`6aa21a9a`）；刷在平板 `userdata` 上的系统盘 `userdata-root.sparse.img`（16 GB，`01e4bebb`）；两个镜像各自的内核和符号表（`kernels/`）；Data 种子、`owner-trust.bundle`、构建输入的记录，以及三样没进 git 的构建输入（`build-inputs/`：设备仓库的 `firmware/wcn7850/` 三个 Wi-Fi 固件文件和 `.cache/firmware/`，固件仓库的 `Binaries/sheng/`） |
 | `data/` | 录屏、截图、平板日志（原 `data/`） |
 | `boot-logs/` | 各次开机的日志（原 `out/boot-logs/`），含网络名和地址 |
 | `provenance/`、`provenance-build-volume/` | cd6 到 cd17 的构建来源记录 |
-| `local-settings/` | `unixnu.local.toml`（含芯片号）、11-17 重建工作分支时的两份提交清单 |
+| `local-settings/` | `unixnu.local.toml`（含芯片号）、11-17 重建工作分支时的两份提交清单、Claude 的项目本地设置、`.superpowers/` 里各计划的进度记录 |
 | `root-policies/` | 本机生成的根卷策略文件：设备仓库工作目录里的 9 个文件、`out/policy-backup-*`、stash 的补丁 |
 | `ssh/` | 平板的 SSH 密钥、账户名、地址、主机指纹（原 `out/ssh/`）。外置盘是 exFAT，不保存权限，私钥拷回来后要 `chmod 600` |
 | `metal-fix-test-evidence/` | 0064 在 metal2vulkan 上先失败后通过的测试日志。那棵测试树里没提交的改动和已推送的 0064 补丁逐行相同 |
 
-- 系统盘镜像和 `build-inputs/` 不在我问用户时列的清单里（当时把 `out/flash/` 写成了"78 个启动镜像"，其实是 70 个启动镜像、4 个固件文件和一个 16 GB 的系统盘）。它们重新生成很费事，所以留了下来，已告诉用户不要的话可以删。
+- 系统盘镜像、两个内核和 `build-inputs/` 不在我问用户时列的清单里（当时把 `out/flash/` 写成了"78 个启动镜像"，其实是 70 个启动镜像、4 个固件文件和一个 16 GB 的系统盘）。它们重新生成很费事，所以留了下来，已告诉用户不要的话可以删。
 - 构建盘 `/Volumes/12873/UniXNU-build.sparsebundle` 只剩下载的东西，压缩后 41 GB（原来 120 GB）：`unixnu-out/ipsw/26C5035r/`（macOS 27.3 的系统镜像，29 GB）和 `rom/sheng_global_images_OS3.0.305.0…tgz`（小米原厂线刷包，7 GB；解开的那份删了，删之前核对过它的 105 项都在 tgz 里）。压缩后只读挂载检查过，两样都在。
 - 已删除：其余 68 个启动镜像、4 个固件文件、`out/downloads/`（Linux 日志读取镜像的构建目录）、构建盘上的构建树和缓存、cd2 到 cd17 的内核和载荷、固件的各个版本、未压缩的系统盘镜像。
 - Mac 上的项目目录（`personal_projects` 下的 `UniXNU`、`UniXNU-sheng`、`UniXNU_macOS`、`uefi-sheng` 和 20 个 `*-pr-*`、`*-repro-daily` 工作树）在这一条提交推送并核对之后删除。
@@ -53,6 +53,7 @@
 - 克隆核心、设备、固件三个仓库到同一个目录下（设备和固件要叫 `UniXNU-sheng`、`uefi-sheng`，或改 `unixnu.local.toml` 里的路径），切到上表的分支，`git submodule update --init`；核心的 3 个子模块按上面说的从 fork 取。
 - 把 `local-settings/unixnu.local.toml` 拷回核心仓库根目录；其中 `out` 指向构建盘的 `unixnu-out`。
 - 把 `root-policies/working-tree-macos-27.3-26C5035r/` 拷回设备仓库的 `scripts/policies/macos-27.3-26C5035r/`（不提交），`build-inputs/data.dbr` 用作 `--data-ramdisk`。这样新内核和平板上现有的系统盘对得上，不用重刷 `userdata`。这一点没有验证过：归档之后没有重新构建过。
+- 把 `build-inputs/firmware-wcn7850/` 拷回设备仓库的 `firmware/wcn7850/`，`build-inputs/sheng-cache-firmware/` 拷回设备仓库的 `.cache/firmware/`，`build-inputs/uefi-sheng-Binaries-sheng/` 拷回固件仓库的 `Binaries/sheng/`。这三样都被 git 忽略或没跟踪，来源没有查。
 - 内核、载荷、固件镜像都要重新构建，步骤见本文件"接下来的步骤"一节和 `docs/zh/porting/macos.md`。
 - 平板 SSH：把 `ssh/` 拷回 `out/ssh/`，镜像参数里带 `enable-jobs=com.openssh.sshd`。
 
