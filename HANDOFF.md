@@ -174,7 +174,25 @@
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
-- 已推到 fork，还没开 PR（等用户说开）：
+- **睡眠和 Wi-Fi 的 PR 已开（11-17 20:0x，用户要求"睡眠＋wifi 部分的功能 pr 到 unixnu 和 sheng 的 main"）**。开之前 19:56 拉取过：sheng `main` 仍是 `2061710`，组件 `main` 仍是 `26cf2da`，没有别人的同类 PR。8 个 PR 的 base 都是 `main`，开完逐个核对过头提交和文件列表，都是 MERGEABLE：
+
+  | PR | fork 上的分支 | 头 | 状态 | 说明 |
+  | --- | --- | --- | --- | --- |
+  | sheng #128 | `fix/sleep-open-lid-wake` | `bc00259` | ready | cd16 上机：开盖入睡不再 3 ms 醒，连续 8 轮都过 |
+  | sheng #129 | `fix/sleep-sigp-recovery-race` | `e3a233b` | ready | cd16 一次开机 17 次入睡没 panic；原来 panic 的长时间合盖还没重做，说明里写了 |
+  | sheng #130 | `feat/wifi-log-export` | `a818ab7` | ready | `a28b056` 搬过来，加一条 porting 记录；源文件和 cd16 编的逐字节相同 |
+  | sheng #131 | `fix/wifi-scan-result-timestamp` | `e79f7bd` | draft | 没上机 |
+  | sheng #132 | `fix/wifi-named-scans` | `d0cd8d7` | draft | `e92978e` 搬过来；`.gitmodules` 用上游的，指针 `b455da9`；等 Ath12kWifi #7 |
+  | sheng #133 | `fix/wifi-list-follows-the-air` | `998e0fc` | draft | 叠在 #132 上，合入 #131（`00e3f1c`），指针 `f677aa4`；等 #131、#132、Ath12kWifi #8；没上机。Wi-Fi 代码和工作分支 `783cc8f` 相同 |
+  | Ath12kWifi #7 | `fix/scan-ui-channels` | `b455da9` | ready | `0d8758a`（诊断）＋`b455da9`；cd16 跑的就是这个提交 |
+  | Ath12kWifi #8 | `fix/held-networks-age-on-scan-channels` | `f677aa4` | draft | 叠在 #7 上（两者改同几行）；只基于 `main` 的版本留在 `fix/held-networks-age-at-read`；没上机 |
+
+  - 核心（`UniXNU/UniXNU`）这次没有要提的：睡眠部分已由 #299 和 ArmCpu #7 合进 `main`，核心没有 Wi-Fi 代码。ArmCpu 本地分支只比上游多"睡眠钩子不用弱引用"一处，是作者有意改的。
+  - 组件测试（`tools/test-mainline-runtime.py`、`test-cfg80211-control.py`、`test-supplicant.py`）在 `b455da9` 和 `f677aa4` 上都过；两个指针都能从上游地址取到。sheng 三个新分支的主机检查和 porting record（18 个区）都过。
+  - #130、#131、#132、#133 都往 `porting.toml` 同两行（network、diagnostics 的 findings）末尾加句子：先合一个，其余的在这两行冲突，两边都留就行。
+  - cd17 上机后，给 #131、#133、Ath12kWifi #8 补结果；改成 ready 要先问用户。
+  - 工作树：`../UniXNU-sheng-pr-wifi-log`、`../UniXNU-sheng-pr-wifi-named-scans`、`../UniXNU-sheng-pr-wifi-list-main`、`../Ath12kWifi-pr-scan-channels`（组件测试要的 `deps/`、`out/` 是从子模块检出目录拷过来的）。
+- 已推到 fork，还没开 PR（等用户说开；其中睡眠两项已开 #128、#129，见上一条）：
 
   | 项 | fork 上的分支 | 提交 | 基于 | 验证 |
   | --- | --- | --- | --- | --- |
@@ -192,7 +210,7 @@
   - 工作分支照规则要从新的 `main` 重建，还没做。试合的冲突：sheng 只有 `porting.toml`；核心只有 `drivers/AdrenoMetal` 的指针（`8c7f950` 对本机的 `685f37c`）。
   - 顺序（我的安排，用户可以改）：cd17 先从现在的工作分支构建，它和 cd16 的差别是三处：0064、`5d8fedb` 的 `BootLog.c`、Wi-Fi 三项（sheng `437943c` 到 `783cc8f`，组件 `e6195c7`、`f677aa4`）。Wi-Fi 的改动不碰图形，WindowServer 还崩不崩仍能直接归因；重建工作分支放在 cd17 验证之后。#303 会在编译前校验根卷策略文件，重建后的第一次构建可能要先过这一关。
 - 等用户决定：
-  - Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
+  - （已开 PR：sheng #130、#132，组件 Ath12kWifi #7，见上面）Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
   - 旧 PR（sheng #109 到 #112，都开在上游改写历史之前，差异带 660 多个提交）。按新增的行逐行比过：
     - #109（策略测试桩）：4/4 在上游 main。
     - #110（`enable-jobs`）：检查脚本 7/7、`BootWatchdogPolicy.c` 8/12 在上游 main，差的 4 行是注释。
