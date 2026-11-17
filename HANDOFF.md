@@ -15,7 +15,19 @@
 - 本地 `main` 两边都指到了上游 `main`（上游改写过历史，不能快进），旧位置留在 `backup/main-20261113`；`git branch -f` 顺带把 `main` 的跟踪分支设成了 `upstream/main`。`integrate/*` 分支原样保留，都没推。
 - 检查（都在新分支上跑）：核心 `check-unixnu.py`、`scripts/unixnu` 和 `local-tools` 的测试、`tests/` 四组；ArmCpu 的 `check-mmio-access.py` 和 `check-sleep-host.py`；sheng porting record 18 个区、21 个主机检查和 `check-ath12k-exports.py`（不过的还是那 7 个无关的）；`ArmCpu.cpp`、`KeyboardProbe.cpp`、`ShengSleep.cpp` 用构建参数单独编译通过（`KeyboardCover.cpp` 没单独编）。
 - 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
-- cd16 还没构建成功过：命令不变，见下面"cd16 要带的修复"一条。
+- **cd16 构建成功（用户 15:49 起第四次，16:04 完成），测试镜像已打好，等用户说可以再从内存启动。**
+  - 构建用的提交：核心 `2804d8b`（构建期间只多了文档和规则的提交）、sheng `8ca560d`，都在 `local/on-main-20261117` 上。来源记录 `cd16-build.json`、`cd16-images.json`。
+  - 内核 `e677dce5`，另存 `kernel.macho.cd16-e677dce5`（json、map 同后缀，只读）；载荷 `297adb02`，另存 `payload.cd16-base.img`（200 MiB 装得下上游的桌面配置）。日常文件已还原，7 个哈希都对；OS 镜像已卸载。
+  - 内核里核对过：
+    - 字符串：`wifi: scan request %u to the supplicant: ssid %u, %u frequencies`、`wifi: supplicant scan`、`sheng backlight: system awake, panel waits for the display`、`panel back to its level`、`sheng sleep: woke by`、`PMRD: sleep enabled by platform-sleep`、`SL st=`。
+    - 符号：`_nw_wifi_scan_frequencies`、`_sysctl__kern_unixnu_wifi_log`、`_sysctl__kern_unixnu_prev_log`、`_arm64_platform_sleep_hook`、`_armcpu_sleep_register`、`_sheng_sleep_probe`、`_sheng_sigp_recover`、`_boot_reset_watchdog_ping`、`_sheng_buttons_sleep_check`、`_native_keyboard_lid_closed`。
+    - 构建树里打过补丁的 `cpu_common.c` 第 423 行有 `cpu_running` 条件；这次的 `kernel.log` 没有 error，也没有未定义符号。
+    - 没找到 `sheng keyboard: cover` 这行日志的字符串：键盘壳现在用作者的版本，措辞可能变了，没查。
+  - 测试载荷 `payload.cd16-sleep.img`（`46fbd8be`）：加 `enable-jobs=com.openssh.sshd platform-sleep=1 platform-sleep-wake-after=60 darkwake=1`，`debug=0x14e` 改写成 `debug=334`，**去掉了 `log-gpu=1`**，参数行 994 字节。
+    - 原因：上游的桌面参数合进来后基础行是 920 字节（cd15 是 877），四个睡眠参数加上去是 1004 字节，超过 1000。`board.toml` 那条"905 字节、放得下"的记录漏算了构建加在最前面的 `vm-swapin-io=1`。
+    - 为此给 `make-payload-variant.py` 加了 `--remove-arg NAME`（核心 `c3e45d7`，新测试先失败后通过，`local-tools/tests` 91 项全过）。cd11 到 cd15 的睡眠镜像也都不带 `log-gpu=1`。
+  - 测试镜像 `out/flash/boot-v4-payload.bigwin-cd16-sleep.img`（`c38f794f`），`bootimg-contents.py --payload` 核对过装的是 `46fbd8be`。固件还是 11-15 的 `boot-bigwin.img`（`5c926a3f`）：上游 `main` 钉的 DarwinBoot `5243c68` 是 11-11 的，我们的 `bdb6ff7` 只多 4 个本地提交，固件不用重做。
+  - 上机要看的：开机自动连 Wi-Fi；唤醒没有彩条；开着盖 `pmset sleepnow` 不再 3 ms 被叫醒；合盖放 15 分钟以上（定时器每 60 s 叫醒一次，超过 13 轮）不 panic；唤醒后 Wi-Fi 重连；睡眠第 4、5 级；新的 Metal 运行库（R2507）有没有画面问题。上机前要用户在平板上 `sudo pmset -a sleep 0`。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
@@ -40,7 +52,7 @@
 - 上游的新动向（15:5x 拉取）：
   - 核心 `upstream/main` 多了 `6213954`（设备记录文档）。
   - 作者的 sheng 睡眠分支多了 `5d8fedb`：`BootLog.c` 的日志格式串放进 `__DATA_CONST`，让 `__TEXT` 放得进保留 kext 的空隙。
-  - 工作分支还没带这两个提交：用户 15:49 起的 cd16 构建在跑，没动主检出目录。**cd16 构建如果报 `__TEXT` 放不下，先合 `5d8fedb`。** 构建结束后把它合进 sheng 工作分支。
+  - cd16 构建时工作分支不带这两个提交，构建没报 `__TEXT` 放不下。构建完成后把 `5d8fedb` 合进了 sheng 工作分支（合并提交 `23366db`，只动 `BootLog.c`；9 个策略文件哈希不变）：启动日志的两个主机检查、睡眠、盖子、Wi-Fi 的检查和 porting record 都过。`BootLog.c` 没能用内核参数单独编（`kernel-compile-check.py` 把它当 C++ 编，合并前的版本同样报错），要等下一次构建。**所以 cd16 之后的下一个镜像会多这一处改动。** 核心工作分支还差上游 `main` 的 `6213954`（只是设备记录文档）。
   - 作者开着的相关 PR（都是 draft）：核心 #299、sheng #127 和 #119、ArmCpu #7。
 
 以下"当前阶段"写于 2026-11-17 09:3x，已被上面这一段取代：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）上机卡死的原因找到了：启动核进入睡眠时读 GIC 的方式 Gunyah 模拟不了，触发 panic。ArmCpu `a2c5dd3` 已修好，等用户构建 cd13 再上机。** 详情见下面"cd12 构建和上机"一条。 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
