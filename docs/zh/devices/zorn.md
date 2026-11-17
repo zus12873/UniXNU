@@ -4,9 +4,9 @@
 
 <div v-pre>
 
-Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB Data and dim64. CPU1 narrow root publication has bounded controls; intermittent GUI stalls and long-term stability remain unresolved. Format2 host migration is separate from historical device qualification.
+Redmi K80: iOS26 candidate reaches owner-confirmed lockscreen/desktop and basic touch;Settings-long-press freeze and low frame rate remain. Exact261 returns to TWRP automatically. GPU/Metal/display/touch full acceptance and format2 clean-build equivalence remain incomplete;default iPadOS17 profile is retained.
 
-源记录: [porting.toml](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/porting.toml), `ef13dcc71b9ca97bde15381d51fe74aeff81f854`.
+源记录: [porting.toml](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/porting.toml), `8067bd3836bde6a201f657109818562c3aa3f790`.
 
 本页按设备记录自动生成。
 
@@ -19,7 +19,7 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 | [存储与根卷](#storage) | `implemented` |
 | [显示](#display) | `implemented` |
 | [输入](#input) | `implemented` |
-| [GPU](#gpu) | `planned` |
+| [GPU](#gpu) | `implemented` |
 | [网络](#network) | `planned` |
 | [音频](#audio) | `planned` |
 | [电源](#power) | `implemented` |
@@ -46,6 +46,7 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 - README was not the catalog ingestion source: the scanner selects format2 from root board.toml, then validates porting.toml. The old root was format1 even though the record checker passed.
 - Root userdata capacity now describes dedicated64GiB unixnu; the immutable historical compatibility board stays SHA d65567ec. Publication checks validate format2/iOS17 resolution and complete path ownership.
+- The public610093-byte record at0ca7f702 is complete and parses locally,while the official catalog reports EOF. Its Blob.text reader does not check truncation. Keep this entry concise;the full historical record is archived byte-for-byte.
 
 ### 完成条件
 
@@ -61,8 +62,10 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 证据
 
-- `source`: [Root board now uses schema2 with four profiles,9 components and explicit157-patch order. The retained diagnostic board is SHA-pinned; host migration checks do not qualify a new native kernel or device run.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/repository-format.md)
-- `source`: [Format2 four-layer/9-component/157-patch resolution, DTS/ADT/tree, official catalog metadata simulation and fixed legacy-selection host checks passed. Source/record files remain uncommitted; this is not a new native kernel or phone result.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/format2-documentation-sync-2026-10-30.json)
+- `source`: [Root board now uses schema2 with four profiles,9 components and explicit157-patch order. The retained diagnostic board is SHA-pinned; host migration checks do not qualify a new native kernel or device run.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/repository-format.md)
+- `source`: [Format2 four-layer/9-component/157-patch resolution, DTS/ADT/tree, official catalog metadata simulation and fixed legacy-selection host checks passed. Source/record files remain uncommitted; this is not a new native kernel or phone result.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/format2-documentation-sync-2026-10-30.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
+- `source`: [Current root parses and stays below48KiB;size guard and official-scanner regression reject truncated history and accept complete concise input. No published historical source revision is reassigned.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/catalog-ingestion-2026-11-17.md)
 
 ## 固件与启动 {#firmware}
 
@@ -96,11 +99,13 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Preserve the known FD and touch handoff while validating any future firmware change separately.
+- Preserve the known FD and touch handoff. The closed checkpoint FD and distinct terminal media candidate are built/audited in isolation. The latter remains unexecuted pending exact owner permission and all fresh runtime guards.
 
 ### 证据
 
-- `source`: [Archived UEFI touch power/clock handoff supports the FT3683 kernel communication path; this update reused the recorded FD and made no firmware build.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/touch-power-handoff-result.json)
+- `source`: [Archived UEFI touch power/clock handoff supports the FT3683 kernel communication path; this update reused the recorded FD and made no firmware build.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/touch-power-handoff-result.json)
+- `source`: [Publication reconciles current244 evidence,retained17/Data baselines and exact source ownership. Fixed official package entry only plans the default17 profile;26 source archive is not a generic release claim. Existing dated source/host/device scopes remain distinct;no historical revision is reassigned,no new firmware build or device action by publication.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/progress-2026-11-16-ios26.md)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## CPU 与中断 {#cpu}
 
@@ -137,15 +142,13 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Preserve the bounded fix and original gates; do not repeat completed controls or add CPU/GUI probes without new direction.
+- Preserve the existing iOS 26 CPU-rendered lockscreen baseline. Use the observed iOS 26 eight-core accounting result as the CPU checkpoint for the lockscreen branch.
 
 ### 证据
 
-- `source`: [Archived identical75b9ca39-kernel controls:0-fail/1-pass/0-fail/1-pass, with late TTBR1=0 versus the CPU0 root; original gates unchanged.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu1-root-publication-controlled-2026-10-30.json)
-- `source`: [Archived normal GUI observations:2 e700 runs and1 alternate936 layout, with all8 core gates, retained Data, dim64, fresh logs and camera lock-screen frames.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu1-root-publication-gui-2026-10-30.json)
-- `source`: [Archived a889900-second failure: CPU/Data/dim64 passed, but120/720-second camera frames remained on the Apple logo. GUI qualification failed and is preserved.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu1-root-publication-stability-2026-10-30.json)
-- `source`: [Archived25a same-full-kernel900-second lock-screen observation passed; this excludes the budget as a sufficient cause, not metadata/Data/timing causation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gui-budget-same-kernel-2026-10-30.json)
-- `source`: [Archived single c50 trial recovered in395s;255 inputs/77 archive files and distinct log matched. Lock screen/all8/Data/dim64 passed and every core had USER/SYSTEM accounting progress; no performance/root-cause qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu-active-trial-2026-10-30.json)
+- `source`: [Archived identical75b9ca39-kernel controls:0-fail/1-pass/0-fail/1-pass, with late TTBR1=0 versus the CPU0 root; original gates unchanged.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/cpu1-root-publication-controlled-2026-10-30.json)
+- `source`: [The owner-accepted iOS 26 CPU desktop boot 996ff287 again reported eight online cores. All eight IDs showed increasing XNU USER and SYSTEM accounting. The boot returned automatically to TWRP.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-ios26-cpu-desktop-touch-eightcore-milestone-2026-11-13.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 内存与 DMA {#memory}
 
@@ -181,7 +184,8 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 证据
 
-- `source`: [Board memory/VM-map investigation and compatibility limits are retained; the8GiB desktop result does not qualify the full nominal12GiB map.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/review-2026-10-28-official-houji.md)
+- `source`: [Board memory/VM-map investigation and compatibility limits are retained; the8GiB desktop result does not qualify the full nominal12GiB map.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/review-2026-10-28-official-houji.md)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 存储与根卷 {#storage}
 
@@ -219,9 +223,8 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 证据
 
-- `source`: [Archived8GiB UFS-backed Data mount/retention preserved the original UUID/cookie without RAM/Data errors. The older unresponsive touch result is retained.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/data8-retained-touch-result.json)
-- `source`: [Archived single c50 trial recovered in395s;255 inputs/77 archive files and distinct log matched. Lock screen/all8/Data/dim64 passed and every core had USER/SYSTEM accounting progress; no performance/root-cause qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu-active-trial-2026-10-30.json)
-- `source`: [Owner-authorized new64GiB unixnu:online F2FS shrink/GPTpair/Recoverygeometry, fullOS SHA and65-block metadata verified. New e328kernel/fresh5c622 image/11884inputs and retained e2b49 image/11896inputs; actual retained marker2d931234/Data errors0/owner unlock+tap confirmation/396.65s Recovery. Root storage-only synchronization adds matching descriptors/packer proof checks; no Android boot claim.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/dual-system-reinstall-2026-11-01.json)
+- `source`: [Archived8GiB UFS-backed Data mount/retention preserved the original UUID/cookie without RAM/Data errors. The older unresponsive touch result is retained.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/data8-retained-touch-result.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 显示 {#display}
 
@@ -245,6 +248,8 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 - Brightness307-&gt;64 was read back. Two6aea lock-screen captures had accepted/transfer/retired9/9/9 and8/8/8; c50 had8/8/8, reject0/status0. Independent camera frames showed lock screen.
 - Type5 registration/send queue offsets agree. At60Hz, properties0 does not mean no query; healthy lock screens also had started1 and zero observed sender callbacks.
+- On 2026-11-13 the owner visually confirmed the iOS26 CPU-rendered system lock screen during the bounded b0da41e9 boot; the diagnostic runner does not set lockscreen\_proven, and no camera photo was saved.
+- Exact261 owner confirms iOS desktop plus swipe,tap,long-press and unlock;Settings-long-press eventually freezes. Low frame rate and instability are unresolved. This is partial interaction evidence,not full contacts/edges/pixel/scanout acceptance.
 
 ### 完成条件
 
@@ -256,13 +261,14 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Keep CPU presentation and brightness baseline; preserve unresolved Apple-logo evidence without changing queues or forcing notifications.
+- The bounded b0da41e9 run reached the CPU-rendered iOS system lock screen by owner visual confirmation. Keep that milestone distinct from the runner's false lockscreen flag and the missing camera frame; preserve the CPU baseline and prioritize GPU development.
 
 ### 证据
 
-- `source`: [Archived DCS307-to64 transition and fresh64 readback; this is a register value rather than calibrated luminance or a system brightness-slider implementation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/brightness-dim-result.json)
-- `source`: [Archived second6aea bounded run recovered with a camera lock screen and v19 accepted/transfer/retired8/8/8; first run9/9/9 remains separate.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/display-progress-repeat-2026-10-30.json)
-- `source`: [Source/final-link audit found matching type5 queue offset5592;60Hz property counters do not prove client registration, receipt or GUI-stall causation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/display-notification-contract-2026-10-30.json)
+- `source`: [Actual presenter separates pending work from terminal failures;terminal/cache refusal stops CPU worker through existing Mach C adapter,wakes producers and retains unknown frames.7 affected TUs/full1390-input kerneld9f6759d zero undefined;loader/nonZORN component checks pass. No GPU/DMA stop or hardware execution claim;bootc1132857 remains4b18a29f.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/gpu-k80-presenter-terminal26.json)
+- `source`: [Historical evidence for its exact recorded inputs. The linked artifact and complete archive preserve the full original result,commands and limitations;no qualification is transferred to the current candidate.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v251-lazy-session-observed-2026-11-16.json)
+- `source`: [Exact261:one boot/zero retries returned verifiedTWRP333.63s;39CDC frames and240s video pass. Owner confirms iOS desktop and basic gestures,then Settings-long-press freeze. First BoMap NoResources inner cause unknown. Both paths lowFPS,no ranking;full acceptance incomplete.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-observed-2026-11-17.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 输入 {#input}
 
@@ -283,6 +289,7 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 ### 开发经验
 
 - 42f3 owner confirmed desktop, unlock and icon taps. The second3a run recorded independent IDs0/1 for5188ms with normal release,2219 good frames and55 HID submissions without errors.
+- Exact261 owner confirms iOS desktop plus swipe,tap,long-press and unlock;Settings-long-press eventually freezes. Low frame rate and instability are unresolved. This is partial interaction evidence,not full contacts/edges/pixel/scanout acceptance.
 
 ### 完成条件
 
@@ -294,16 +301,18 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Preserve usable touch; optimization and additional gesture qualification remain deferred.
+- Use the verified continuous FT3683 path on the iOS 26 CPU-rendered lockscreen branch. Retain the owner-accepted no-Home desktop and basic touch milestone. Settings interaction, multi-touch identity and edge behavior remain for later qualification.
 
 ### 证据
 
-- `source`: [Archived42f3 desktop/unlock/icon-tap owner confirmation is bound to boot/kernel/fresh log and124 inputs; no new device test is asserted here.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/touch-desktop-fast-qualified.json)
-- `source`: [Archived second3a desktop run recorded2219 good frames,55 HID submissions without errors, and independent IDs0/1 for5188ms with release; system multi-touch remains unqualified.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/qualified-source-repeat-two-contacts.json)
+- `source`: [Archived42f3 desktop/unlock/icon-tap owner confirmation is bound to boot/kernel/fresh log and124 inputs; no new device test is asserted here.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/touch-desktop-fast-qualified.json)
+- `source`: [Actual251 selected TouchBoard/Source/Worker/Host object lineage traced to concrete source and original recipes;all independently rebuild byte-equal. Kernel resource-owner macros ARM\_PGSHIFT14;shared SPI/parser unit makes no CPU-page ownership claim. Source still uses readMatrixFrame/Detector,not qualified controller-reported contacts or complete physical gestures. No new touch operation or binary inspection;original17/Data baselines retained.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-ft3683-selected-inputs-2026-11-16.json)
+- `source`: [Exact261:one boot/zero retries returned verifiedTWRP333.63s;39CDC frames and240s video pass. Owner confirms iOS desktop and basic gestures,then Settings-long-press freeze. First BoMap NoResources inner cause unknown. Both paths lowFPS,no ranking;full acceptance incomplete.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-observed-2026-11-17.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## GPU {#gpu}
 
-`planned`
+`implemented`
 
 ### 硬件与依赖
 
@@ -319,10 +328,10 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 开发经验
 
-- Published CPU-owned memory preparation allocates8 backings/565248B; the historical0fe device run verified CPU allocation/mapping/zeroing, not GPU DMA, execution or rendering.
-- The opt-in D/v21 capture preserves the existing text/footer/trace through a bounded codec; default-off stubs and strict builder/payload guards remain. Host tests use explicit IOKit doubles, not hardware ownership.
-- Archived Gen7/HFI, platform-provider and compiler investigations are source summaries. Most isolated implementation capsules and large logs remain external local archives, not selected production components.
-- The57c2ed36 media qualification attempt was refused before boot/BCB/native I/O; its claim is consumed. The later owner stock reflash and unixnu64 reinstall invalidate its userdata/slotB runtime coordinates.
+- The isolated iOS26 K80 direct-ring backend implements source-connected firmware/GMU/HFI,memory,SMMU,submit,fence,IOGPU/Metal and presentation integration. Exact bounded-image and dedicated Metal/image tests retain their own build identities in linked evidence;they are partial qualifications.
+- Current261 rebuilds32actual objects and links1398inputs with0undefined;CPU16KiB is separate from GPU4KiB. Source-connected per-client error and close metadata preserves real backend returns and retained foreign-owner attribution.
+- Exact261 reached the iOS lockscreen/desktop with owner-confirmed swipe,tap,long-press and unlock responses,but froze after Settings long press. Both CPU and GPU paths are low frame rate;no comparative ranking or measured FPS is claimed. One boot returned to verifiedTWRP333.63s with protected samples unchanged.
+- First recorded backend error is PID10/client129 method3 BoMap NoResources;the inner branch and final freeze cause remain unknown. Second client Close/exit was not observed within the existing CDC window. Video shows late home-style UI.
 
 ### 完成条件
 
@@ -330,30 +339,21 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 当前范围
 
-- Complete GPU power/security/stop, QSMMUv500 context/routing ownership, IOVA/DMA, authenticated firmware execution, command submission/fences and Metal rendering are unqualified.
-- Host peers, compiler objects, staged SDK links, DT resources and callback success are not live ownership or a boot lease. Original stock signatures/UUIDs and unknown native status are preserved.
-- Full native/format2 clean-bootstrap reproducibility and recovery-readable GPU query failures remain unqualified. Historical local artifact paths are provenance locators; no published host/device verification level is inferred from them.
+- Implemented means source scope only;full GPU/Metal/display/client-lifecycle and FT3683 acceptance are incomplete. Published default17 format2 selection and isolated26 candidates are distinct;clean-checkout full26 release reproducibility remains unqualified.
+- Sampled surface/access-fence/acquire/copy metadata does not prove per-frame GPU writes or physical scanout. No cross-task/concurrent isolation,full device/DMA-stop lifecycle or stability qualification. Metadata/legacy stderr may drop;no constant-success substitutes or instruction analysis.
 
 ### 下一步
 
-- Keep native GPU invocation disabled. Before a future explicitly authorized GPU trial, bind the current unixnu64 storage identity, readable failure protection, actual native kernel/FD/ADT/FAT/currentstart/immutable inputs and original independent watchdog/fresh BCB.
-- Do not repeat consumed57/c50/0fe trials or expand query/HFI carriers. Publication review updates source and documentation only; GPU adaptation requires its separate current plan.
+- Capture the real BoMap NoResources capacity/refusal branch and extend bounded log coverage to late Settings-long-press freeze while preserving frame/byte/panic/WDT budgets;then fix the evidenced backend cause and validate exact new kernel. Complete real render/presentation and FT3683 lifecycle acceptance.
 
 ### 证据
 
-- `source`: [Isolated append-only Gen7 transport and unchanged legacy regression pass software-peer and ARM64 C/C++ relocatable linking; raw errors/ownership retained. No GPU MMIO, firmware execution, new kernel or phone operation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-hfi-transport-2026-10-30.json)
-- `source`: [Pure startup templates, exact generic/v5/START ACK assessment and raw MEM\_ALLOC requirement planning pass isolated source-oracle host and ARM64 interface checks. Board tables/platform ownership remain unavailable, runtime\_complete0; no new kernel or phone operation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-startup-contract-2026-10-30.json)
-- `source`: [Actual shared reg parser and generic memory getters integrated in an isolated K80 adapter, host IOKit-double controls and frozen native C++ recipe pass; original GPU source unchanged, no runtime resource ownership or hardware start claimed.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-native-platform-2026-10-30.json)
-- `source`: [Fixed-SHA8backing CPU-only provider and retained partial failure implemented in isolation; actual native C/C++ recipes and constinit storage pass. No GPU mappings/firmware execution/new kernel or hardware allocation evidence.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-owned-memory-2026-10-30.json)
-- `source`: [Main default-off CPU-only backing preflight, exact successful preflight gate, independent D/v21 wire and decoder passed host controls and actual frozen XNU/IOKit consumer compilation. Final kernel/virtual ABI auditor and first canonical full build are pending; allow\_boot=false, no GPU activation or phone test.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-owned-memory-integration-2026-10-30.json)
-- `source`: [Canonical compatibility full build independently checked13objects/48functions/336calls/81original virtual slots;6actual kernel mutations refused. One397s recovered fresh-log trial matched342inputs/190archives, prepared8CPU-owned backings565248B and preserved8core/Data/dim64/lockscreen. No GPU activation/rendering or repeat trial; source worktree is uncommitted.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-owned-memory-trial-2026-10-30.json)
-- `source`: [Isolated CPU-window owner uses real IOKit types and unchanged fixed K80 role parser.1023subsets/256overlap refusals/150native failures/73gate failures/3mutations pass;3native objects independently match SHA,98original Apple slots and11actual virtual calls checked. No active integration, new kernel, MMIO or phone operation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-native-window-owner-2026-10-30.json)
-- `source`: [Isolated real-EFI typed resolver passes36raw-status/12gate/23ABI-scope controls,128private contexts and3source mutations. Actual firmware LTO compile independently matches SHA; only usedClock1/10 andBootServices0x140 ABI bound. No live query, newFD/kernel, power/clock change or phone operation; EBS owner and exact archivedFD modules remain unqualified.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-power-resolver-2026-10-30.json)
-- `source`: [Real EBS event owner passes34native failure/partial controls,21exit injections/3mutations;2firmware LTO objects independently match SHA, callback/slot ABI and no-entry link annotation pass. Bounded originalFD extraction confirms3exact modules includingClock53c18. No actual firmware execution, newFD/kernel or phone operation.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-boot-lifecycle-2026-10-30.json)
-- `source`: [Default-off real staged firmware C caller/C++ABI links with4independently matching objects and realAutoGen/libraries; oldmodule excluded.23source-prefix host cases/4CLI refusals and critical finalPE call/callback/BSS/3module mutations pass. RAM-only272B capture, no finalFD/kernel, livequery or phone operation; sourceworktree uncommitted.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-real-caller-2026-10-30.json)
-- `source`: [Default-off staged firmwareproducer/realDarwinBoot ADTconsumer preserve272B scalar capture;14publication cases/35consumer refusals each,7actualsource pipeline scenarios,12independent nativeobjects/112inputs and5actualPE corruption refusals pass. Isolated preGenFw pair only; no nativeproperty consumer/recoveredfailuretransport or fullFD/phone/GPUactivation. Worktree source remains uncommitted.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-ram-handoff-2026-10-30.json)
-- `source`: [RealDarwin23 SecureDT/nativeconsumer and stagedBSD link with4independent objects/711native inputs and unchangedactualArmCpu SHA.40ASan/UBSan processes,16rawAPI errors,2source and3object mutants pass. Actual84slotring capacity/retention fails fullcapture preservation; no lossless recovery route claimed, no newFD/kernel/phone or GPUactivation. Worktree uncommitted.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-native-query-consumer-2026-10-31.json)
-- `source`: [Originalsinglelogblock coordinates and3archived storage modules fullSHA bound; pure realtype descriptorselector passes40candidate/12rawstatus controls and2source mutants, independentnative object/45inputs/ABI/noentrySDK closure. No live discovery/GPTCRC/write permission or fullcapture recoveredroute, no newFD/kernel/phone/GPUactivation; worktree uncommitted.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/gpu-early-checkpoint-provider-2026-10-31.json)
+- `source`: [Historical evidence for its exact recorded inputs. The linked artifact and complete archive preserve the full original result,commands and limitations;no qualification is transferred to the current candidate.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v247-known-present-observed-2026-11-16.json)
+- `source`: [Historical evidence for its exact recorded inputs. The linked artifact and complete archive preserve the full original result,commands and limitations;no qualification is transferred to the current candidate.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v251-lazy-session-observed-2026-11-16.json)
+- `source`: [Historical evidence for its exact recorded inputs. The linked artifact and complete archive preserve the full original result,commands and limitations;no qualification is transferred to the current candidate.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v260-platform-identity-observed-2026-11-16.json)
+- `source`: [Exact261 offline source/32-object1398-input full link0undefined,CPU16KiB118headers,current identity and sanitizer checks,14zero-fuzz patches and full boot package pass. Host/source scope only;no final hardware acceptance.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-offline-2026-11-17.json)
+- `source`: [Exact261:one boot/zero retries returned verifiedTWRP333.63s;39CDC frames and240s video pass. Owner confirms iOS desktop and basic gestures,then Settings-long-press freeze. First BoMap NoResources inner cause unknown. Both paths lowFPS,no ranking;full acceptance incomplete.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-observed-2026-11-17.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 网络 {#network}
 
@@ -461,7 +461,9 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 证据
 
-- `source`: [Implemented PMGR compatibility covers service publication and original ABI/object lifetime. It does not claim charging, DVFS or sleep/wake support.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/native/pmgr/README.md)
+- `source`: [Actual SMMU PM private claimant opens/retains real base controller and rechecks ownership around existing power transitions. Independent runtime/suspend grants and source PM algorithm retained. One iOS26 TU/full1390-input kernel5df5a34c zero compile warnings/undefined,loader parse passes. No PM/native/device execution or hardware permission supplied;bootc1132857 remains4b18a29f.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/gpu-k80-smmu-pm-provider-claim26.json)
+- `source`: [Implemented PMGR compatibility covers service publication and original ABI/object lifetime. It does not claim charging, DVFS or sleep/wake support.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/native/pmgr/README.md)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 镜像组装 {#packaging}
 
@@ -497,15 +499,13 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Finish recipe/output-path equivalence checks before a format2 kernel build; do not relabel old manifests or overwrite42f3/3a baselines.
+- The fixed --gpu-unixnu64-closed-image --os 17 entry packages a source-bound closed FD and exact retained unixnu64 payload without boot. Finish native qualification/protection independently; do not relabel old manifests or overwrite42f3/3a baselines.
 
 ### 证据
 
-- `source`: [Archived2 independent157-patch replays and1011 fresh XNU objects reached prelink/packaging; subsequent device failures are separate evidence.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/clean-source-replay-2026-10-29.json)
-- `source`: [Archived path-normalized source-control image3a reached owner-confirmed desktop/taps with221 inputs and fresh log; no general layout/root-cause claim.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/qualified-source-desktop-3a8ac966.json)
-- `source`: [Archived controlled ar/ld probes and2 actual incremental native links produced identical complete kernel bytes in one prepared workspace; clean-bootstrap/cross-machine claims are excluded.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/tool-date-reproducibility-2026-10-30.json)
-- `source`: [Archived c50 build passed independent start/object/FAT and26 pre-pack functions/14 call edges/46 GOT/4 callbacks; preflight publisher supplement was separately bound as a27th function.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu-active-linked-2026-10-30.json)
-- `source`: [Format2 four-layer/9-component/157-patch resolution, DTS/ADT/tree, official catalog metadata simulation and fixed legacy-selection host checks passed. Source/record files remain uncommitted; this is not a new native kernel or phone result.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/format2-documentation-sync-2026-10-30.json)
+- `source`: [Current signed Metal/Turnip actually integrated into separate local rootef11f75a with numeric metadata/signature/HFSX checks. Exact digest bound into kernel4b18a29f+ADT+offline carrier;1390inputs/1 replacement/zero undefined. Original phone rootb56 preserved;new root NOT installed,no device/native execution or GPU qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/gpu-k80-metal-root-integration26.json)
+- `source`: [Exact261 offline source/32-object1398-input full link0undefined,CPU16KiB118headers,current identity and sanitizer checks,14zero-fuzz patches and full boot package pass. Host/source scope only;no final hardware acceptance.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-offline-2026-11-17.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 ## 诊断 {#diagnostics}
 
@@ -527,7 +527,8 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 - The c50 run17:53:39..18:00:14 recovered in395s;120s frame was lock screen4:02. Two epochs63744/243896ms had error0,maskff/status0 and raw tick192000, converted to10ms.
 - All8 USER/SYSTEM cumulative counters grew;8 accepted/transferred/retired with no rejection. No historical Apple-logo failure was reproduced or explained. The one planned observation is consumed.
-- Published host-only decoders and guarded runners preserve raw statuses and consumed claims. Reused unixnu64 claims are now refused before USB, input/archive closures and watchdog markers are checked before device action, and host test shims are versioned instead of read from a prior out tree.
+- The dedicated unixnu64 media runner adds claim-before-first-USB and exact OrangeFox/GPT/Data/BCB checks, separate from completed installation claims; host-only doubles do not grant execution. Published host-only decoders and guarded runners preserve raw statuses and consumed claims. Reused unixnu64 claims are now refused before USB, input/archive closures and watchdog markers are checked before device action, and host test shims are versioned instead of read from a prior out tree.
+- Exact261 captured39CDC frames/67975B and240s video successfully;camera requires the verified full-permission environment. Normal120s CDC poll misses late UI behavior;sampled first BoMap NoResources and final freeze are not yet causally linked.
 
 ### 完成条件
 
@@ -539,12 +540,12 @@ Redmi K80: owner-confirmed desktop/basic touch, eight-core checks, retained8GiB 
 
 ### 下一步
 
-- Owner-present recovery GPU adaptation resumed; query readback remains unqualified. Preserve diagnostics; no CPU/GUI/memory repeats or livequery. Fixed-target read-only recovery provenance is now recorded; all finalimage/watchdog/readback guards remain required.
+- Preserve current261 raw observations and owner corrections;extend bounded late-window source diagnostics and locate the actual mapping resource branch before another exact single trial.
 
 ### 证据
 
-- `source`: [Archived single c50 trial recovered in395s;255 inputs/77 archive files and distinct log matched. Lock screen/all8/Data/dim64 passed and every core had USER/SYSTEM accounting progress; no performance/root-cause qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/cpu-active-trial-2026-10-30.json)
-- `host`: [Publication-source host check:12 refusal controls trap all process/USB calls. The same summary records16 payload profile refusals and CPU-memory/wire host controls. No new native/device/GPU qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/ef13dcc71b9ca97bde15381d51fe74aeff81f854/docs/evidence/publication-review-2026-11-01.json)
-  Command: <code>python3 scripts/check-zorn-unixnu64-admission.py</code>. Revision: `5c42733315d2428e63fe3a1b98cc56fe8d6cfd9c`.
+- `source`: [K80 GENI reported completion of the nonce-tagged transmit after qualifying the inherited UART, default master IRQ mask and disabled GIC interrupt. TWRP returned automatically and protected samples matched. Host wire capture requires an external adapter.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-ios26-geni-send-observed-2026-11-13.json)
+- `source`: [Exact261:one boot/zero retries returned verifiedTWRP333.63s;39CDC frames and240s video pass. Owner confirms iOS desktop and basic gestures,then Settings-long-press freeze. First BoMap NoResources inner cause unknown. Both paths lowFPS,no ranking;full acceptance incomplete.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/evidence/k80-gpu-v261-client-failure-observed-2026-11-17.json)
+- `source`: [Exact complete pre-compaction record,including all historical evidence and its original limits. Archive references retain their original device-repository base;this is history,not new qualification.](https://github.com/kerrinz/UniXNU-zorn/blob/8067bd3836bde6a201f657109818562c3aa3f790/docs/history/porting-through-v261-2026-11-17.toml)
 
 </div>

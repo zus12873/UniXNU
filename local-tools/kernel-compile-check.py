@@ -4,8 +4,8 @@
     kernel-compile-check.py SOURCE [--out DIR] [--c] [--record PATH] [-I DIR ...] [--tree TREE]
 
 The flags come from the build tree's XNU compile record (IOPlatformExpert.cpo.json for C++, osfmk startup.o.json for C), with the
-warnings build-arm-driver.py and build-gop-legacy-display-27.py add; --record names another compile record under the object directory
-(bsd/DEVELOPMENT/kern_exec.o.json for the BSD-flag board sources, as build-sheng-source-storage.py uses it). The (-Wall -Wextra -Werror and their exceptions). The object goes to
+warnings build-arm-driver.py and build-gop-legacy-display-27.py add (-Wall -Wextra -Werror and their exceptions); --record names
+another compile record under the object directory (bsd/DEVELOPMENT/kern_exec.o.json for the BSD-flag board sources). The object goes to
 DIR (default: the system temporary directory); prints the result and the undefined and defined global symbols that name 'platform',
 'sleep' or 'clamshell', for a quick look at what the object links against.
 """
@@ -16,7 +16,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-TREE = Path('/Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/tree')
 WARNINGS = ['-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unnecessary-virtual-specifier', '-Wno-c99-designator',
             '-Wno-reorder-init-list', '-Wno-deprecated-enum-enum-conversion']
 
@@ -28,14 +27,15 @@ def main():
     parser.add_argument('--c', action='store_true', help='a C source (osfmk flags)')
     parser.add_argument('--record', help='compile record relative to the object directory')
     parser.add_argument('-I', dest='includes', action='append', default=[])
-    parser.add_argument('--tree', type=Path, default=TREE)
+    parser.add_argument('--tree', type=Path, required=True, help='resolved XNU build tree')
     args = parser.parse_args()
+    args.tree = args.tree.resolve()
     obj = args.tree / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837'
     recipe = obj / (args.record or ('osfmk/DEVELOPMENT/startup.o.json' if args.c else 'iokit/DEVELOPMENT/IOPlatformExpert.cpo.json'))
     if not recipe.is_file():
         raise SystemExit(f'{recipe}: no compile record (is the build volume mounted?)')
     record = json.loads(recipe.read_text().strip().rstrip(','))
-    out = args.out or Path(tempfile.gettempdir())
+    out = (args.out or Path(tempfile.gettempdir())).resolve()
     out.mkdir(parents=True, exist_ok=True)
     destination = out / (args.source.stem + '.o')
     command, arguments, index = [], record['arguments'], 0

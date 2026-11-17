@@ -1,27 +1,40 @@
 // Recognise the text of video frames with macOS Vision.
 //   swift ocr-frames.swift FRAME.png [FRAME.png ...]            each recognised line once, in frame order
 //   swift ocr-frames.swift --boxes FRAME.png [FRAME.png ...]    every piece of text with its place in the frame
+//   swift ocr-frames.swift --fast FRAME.png [FRAME.png ...]     use Vision's fast recognition mode
 // Used to read the sheng firmware and kernel console from a phone recording of the tablet screen.
 //
 // Vision returns a console line with wide gaps between its columns as several pieces. --boxes prints one piece a line
 // as "<frame>\t<top>\t<left>\t<height>\t<text>" (top, left and height as fractions of the frame, top measured from the
-// top edge), so that a reader can put the pieces of one console line together again (diag/read-abl-memory.py does).
+// top edge), so the pieces of each console line can be grouped by their coordinates.
 import Foundation
 import Vision
 import AppKit
 
 var arguments = Array(CommandLine.arguments.dropFirst())
-let boxes = arguments.first == "--boxes"
-if boxes { arguments.removeFirst() }
+let boxes = arguments.contains("--boxes")
+let fast = arguments.contains("--fast")
+arguments.removeAll { $0 == "--boxes" || $0 == "--fast" }
 
 var seen = Set<String>()
+var failed = false
 for path in arguments {
-    guard let image = NSImage(contentsOfFile: path),
-          let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+    guard let image = NSImage(contentsOfFile: URL(fileURLWithPath: path).path),
+          let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        fputs("\(path): cannot read image\n", stderr)
+        failed = true
+        continue
+    }
     let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
+    request.recognitionLevel = fast ? .fast : .accurate
     request.usesLanguageCorrection = false
-    try? VNImageRequestHandler(cgImage: cg, options: [:]).perform([request])
+    do {
+        try VNImageRequestHandler(cgImage: cg, options: [:]).perform([request])
+    } catch {
+        fputs("\(path): \(error)\n", stderr)
+        failed = true
+        continue
+    }
     let name = (path as NSString).lastPathComponent
     let results = (request.results ?? []).sorted { $0.boundingBox.minY > $1.boundingBox.minY }
     for result in results {
@@ -35,3 +48,5 @@ for path in arguments {
         }
     }
 }
+
+if failed { exit(EXIT_FAILURE) }

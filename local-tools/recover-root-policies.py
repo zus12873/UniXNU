@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-"""Recover a device repository's root policy files from a built payload (2026-11-15).
+"""Recover root policy headers and their owner anchor from a built payload.
 
-    recover-root-policies.py PAYLOAD_FAT POLICIES --verification-from DIR [--write]
+Usage: recover-root-policies.py PAYLOAD_FAT POLICIES --verification-from DIR [--write]
 
-make-root-policies.py writes POLICIES/<window>/{manifest.header.bin, trusted-key.bin, verification.json}; the first two are
-local build products that Git ignores, so a merge that brings tracked files of the same names overwrites them silently (the
-CrossDarwin/rponeawa integration of 2026-11-15 did). A payload built from them still holds both:
-
-- EFI/UniXNU/Payloads/kernel.macho.vroot: the VROOTB01 bundle of build-sheng-source-storage.py, the 544-byte signed
-  header of each selected window in the order OS, SystemOS, App;
-- EFI/UniXNU/Payloads/kernel.macho: the 395-byte owner anchor, linked as verified_root_key.
-
-DIR holds the windows' verification.json as the local build wrote them (for instance a stash checked out to a scratch
-directory). A header is taken only when bytes 56..88 equal that window's image_sha256, the anchor only when its SHA-256 equals
-trusted_key_sha256. Without --write nothing is written. Needs mtools (mcopy).
+DIR supplies each window's verification.json. Headers must match image_sha256 and
+its owner anchor must match trusted_key_sha256. Use --write to restore the matching
+files under POLICIES. Requires mtools.
 """
 import argparse
 import hashlib
@@ -45,7 +37,7 @@ def headers(bundle):
 
 
 def find_key(kernel, wanted):
-    # The anchor is a fixed-size blob; scan every offset, hashing only windows whose first byte matches a known anchor's.
+    # Scan fixed-length candidates for the recorded anchor digest.
     hits = []
     for start in range(len(kernel) - KEY_BYTES + 1):
         if hashlib.sha256(kernel[start:start + KEY_BYTES]).hexdigest() == wanted:
@@ -100,6 +92,7 @@ def main():
         print(f'{target}: manifest.header.bin {hashlib.sha256(data).hexdigest()[:12]}, trusted-key.bin {wanted[:12]}'
               + ('' if args.write else ' (not written)'))
         if args.write:
+            target.mkdir(parents=True, exist_ok=True)
             (target / 'manifest.header.bin').write_bytes(data)
             (target / 'trusted-key.bin').write_bytes(key)
     return 0

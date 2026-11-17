@@ -62,6 +62,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [LG V50 ThinQ \(LM-V500, flashlm\)](/devices/models/flashlm) | flashlm | SM8150 | 1 |
 | [Xiaomi 13](/devices/models/fuxi) | fuxi | SM8550 | 17 |
 | [Gree G0245D \(格力手机 / 色界\)](/devices/models/g0245d) | g0245d | msm8996 | 1 |
+| [Gree G0345D \(格力手机 G3\)](/devices/models/g0345d) | g0345d | msm8996 | 1 |
 | [Preliminary garnet bring-up; not bootable](/devices/models/garnet) | garnet | SM7435 | 1 |
 | [Motorola Moto G 5G](/devices/models/gauguin) | gauguin | SM7225 | 1 |
 | [OnePlus Ace 5](/devices/models/giulia) | giulia | SM8650 | 2 |
@@ -74,6 +75,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [Samsung Galaxy Tab S9 Ultra Wi-Fi](/devices/models/gts9uwifi) | gts9uwifi | SM8550 | 1 |
 | [OnePlus 7 Pro](/devices/models/guacamole) | guacamole | SM8150 | 1 |
 | [Motorola Moto G9 Play](/devices/models/guamp) | guamp | SM6115 | 1 |
+| [Motorola Moto E32 \(XT2227-1\), Unisoc UMS9230 / Tiger T606](/devices/models/hawaii) | hawaii | UMS9230 | 1 |
 | [Redmi K40 Pro](/devices/models/haydn) | haydn | SM8350 | 3 |
 | [Samsung Galaxy S7 Edge](/devices/models/hero2lte) | hero2lte | Exynos 8890 | 1 |
 | [OnePlus 7T Pro \(HD1910/HD1911/HD1913\)](/devices/models/hotdog) | hotdog | SM8150 | 1 |
@@ -106,7 +108,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [Xiaomi Redmi K40S \(munch, 22021211RC\)](/devices/models/munch) | munch | SM8250 | 3 |
 | [Xiaomi Pad 7 Pro](/devices/models/muyu) | muyu | SM8635 | 3 |
 | [Redmi K90 Pro Max / Poco F8 Ultra](/devices/models/myron) | myron | SM8850 | 2 |
-| [Xiaomi Pad 5](/devices/models/nabu) | nabu | SM8150 | 8 |
+| [Xiaomi Pad 5](/devices/models/nabu) | nabu | SM8150 | 9 |
 | [Motorola Moto Z2 Force](/devices/models/nash) | nash | MSM8998 | 1 |
 | [OnePlus 10 Pro 5G](/devices/models/negroni) | negroni | SM8450 | 1 |
 | [MOTO Edge S \(XT2125-4\) / SM8250-AC UniXNU bring-up](/devices/models/nio) | nio | SM8250 | 1 |
@@ -130,7 +132,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [Sony Xperia 1 II](/devices/models/pdx203) | pdx203 | SM8250 | 2 |
 | [Redmi Turbo 3 / Poco F6](/devices/models/peridot) | peridot | SM8635 | 3 |
 | [OPPO Find X7 Ultra \(PHY120\)](/devices/models/phy120) | phy120 | SM8650 | 1 |
-| [Xiaomi Pad 8 Pro](/devices/models/piano) | piano | SM8750 | 4 |
+| [Xiaomi Pad 8 Pro](/devices/models/piano) | piano | SM8750 | 5 |
 | [Redmi K30 5G](/devices/models/picasso) | picasso | SM7250 | 9 |
 | [Xiaomi Pad 6](/devices/models/pipa) | pipa | SM8250 | 5 |
 | [OnePlus Ace 3 \(PJE110\)](/devices/models/pje110) | pje110 |  | 1 |
@@ -152,7 +154,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [Xiaomi Redmi Note 12 Pro 5G \(ruby, MediaTek Dimensity 1080 / MT6877\)](/devices/models/ruby) | ruby | MT6877 | 1 |
 | [Xiaomi MIX Flip](/devices/models/ruyi) | ruyi | SM8650 | 3 |
 | [Xiaomi Mi 6](/devices/models/sagit) | sagit | MSM8998 | 2 |
-| [Xiaomi Pad 6S Pro](/devices/models/sheng) | sheng (community) | SM8550 | 54 |
+| [Xiaomi Pad 6S Pro](/devices/models/sheng) | sheng (community) | SM8550 | 56 |
 | [Xiaomi Pad 6S Pro \(macOS\)](/devices/models/sheng-macos) | sheng-macos | SM8550 | 1 |
 | [Xiaomi 14 Pro 23116PN5BC](/devices/models/shennong) | shennong | SM8650 | 4 |
 | [Xiaomi Mi 8 SE](/devices/models/sirius) | sirius | SDM710 | 4 |
@@ -185,6 +187,7 @@ Follow [Build and boot](/building), [porting steps](/porting/steps) and [log cap
 | [Xiaomi Redmi Pad SE 11"](/devices/models/xun) | xun | SM6225 | 1 |
 | [Redmi Pad format-2 qualification candidate; boot Mu and cust UniXNU must remain separate](/devices/models/yunluo) | yunluo | MT6789 | 1 |
 | [Microsoft Surface Duo 2](/devices/models/zeta) | zeta | SM8350 | 1 |
+| [Xiaomi 12 Pro](/devices/models/zeus) | zeus | SM8450 | 1 |
 | [Xiaomi MIX Fold 2 \(zizhan, SM8475\): UniXNU bring-up derived from Pong](/devices/models/zizhan) | zizhan | SM8475 | 1 |
 | [Redmi K80](/devices/models/zorn) | zorn | SM8650 | 1 |
 

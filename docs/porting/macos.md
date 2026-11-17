@@ -188,15 +188,7 @@ its persistent store from the seed. Use **Boot** on subsequent starts to retain
 Data. The account and Setup settings come from the seed; `--skip-setup` is a seed
 creation option.
 
-The sheng macOS profile uses a SHA-256-pinned firmware template for its ABL
-transport. `unixnu bootimg` replaces only DarwinBoot with the loader from the
-current firmware build, preserving the qualified shim, board firmware, DTB and
-Android header settings. The payload is 187 MiB; packing stops above the
-193 MiB boot-image limit. The menu waits for a key.
-
-The template is cached under `out/downloads`. For an offline build, set
-`UNIXNU_BOOT_TEMPLATE` to the matching `.img.xz`; its checksum is still checked.
-`boot/boot.json` records the template, loader and selected firmware hashes.
+The sheng macOS desktop profile builds its BootShim, board firmware and DarwinBoot from the selected sources. Its 256 MiB logical payload uses chunk compression and fits the 193 MiB boot-image limit. The menu selects **Boot** after one second. `autoreset=7200` and `uefi-watchdog=1` provide the firmware return timer; `diag-export=7140` retains the boot log before the deadline. Shader Cache is installed in Applications and shows compilation progress.
 
 Seed creation options:
 
@@ -232,6 +224,29 @@ The packaging script runs the same steps except userdata:
 ```sh
 scripts/package.sh --os macos-27 --uefi ../uefi-<device>
 ```
+
+For sheng, prepare the [LLVM 22 tools](/porting/uefi-firmware), then save the installation inputs in the UniXNU checkout's `unixnu.local.toml`:
+
+```toml
+[build]
+device = "../UniXNU-sheng"
+uefi = "../uefi-sheng"
+clang_bin = ".cache/edk2-llvm22"
+data_ramdisk = "/path/to/installed-data.dbr"
+unique_chip_id = "<device platform seed>"
+```
+
+Then run `../UniXNU-sheng/scripts/package.sh --os macos-27` from UniXNU. Add the [exported kernel tool paths](/guide/build-kernel#local-builds-with-exported-inputs) on a host using exported build inputs. `package.manifest.json` records the source revisions, complete boot arguments and runtime input identities.
+
+The sheng macOS workflow uses Xcode 26.6, Python 3.14 and LLVM/LLD 22. Configure repository secrets `UNIXNU_UNIQUE_CHIP_ID` and `UNIXNU_LAB_PASSWORD` for the device identity and the initial administrator account. `root_storage=true` builds the three verified root windows and userdata; `false` retains the profile's signed policies for a boot-image update.
+
+A saved Android sparse userdata image can supply the three root images locally:
+
+```sh
+python3 ../UniXNU-sheng/scripts/restore-macos-images.py /path/to/userdata.sparse
+```
+
+The script checks each recovered image against the selected OS profile and stores it as `out/ipsw/<build>/<window>.raw.dmg`. The build uses these verified images. Reserve their combined size plus build space before extraction.
 
 | Step | macOS difference |
 | --- | --- |

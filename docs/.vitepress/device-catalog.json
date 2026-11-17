@@ -245,6 +245,11 @@
     "title_zh": "g0245d"
   },
   {
+    "name": "models/g0345d",
+    "title": "g0345d",
+    "title_zh": "g0345d"
+  },
+  {
     "name": "models/garnet",
     "title": "garnet",
     "title_zh": "garnet"
@@ -303,6 +308,11 @@
     "name": "models/guamp",
     "title": "guamp",
     "title_zh": "guamp"
+  },
+  {
+    "name": "models/hawaii",
+    "title": "hawaii",
+    "title_zh": "hawaii"
   },
   {
     "name": "models/haydn",
@@ -858,6 +868,11 @@
     "name": "models/zeta",
     "title": "zeta",
     "title_zh": "zeta"
+  },
+  {
+    "name": "models/zeus",
+    "title": "zeus",
+    "title_zh": "zeus"
   },
   {
     "name": "models/zizhan",
