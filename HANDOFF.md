@@ -230,6 +230,8 @@
       - 怀疑的原因：`nw_cfg80211_control.c scan()` 在 `rdev->scan_req || rdev->scan_msg` 时返回 `-EBUSY`。如果关 Wi-Fi 或睡眠打断的扫描一直没收尾，之后的扫描就会全部被拒；连接不走这条路径，所以不受影响。
       - `test-mainline-runtime.py`、`test-cfg80211-control.py`、`test-control.py`、`test-control-endpoint.py` 都过。
     - 没做的小问题：入睡没走到处理器那一步时，会打印一行带着上一次统计的 `woke by …`。
+  - 11-17 13:0x 推送到用户自己的远端：核心 `21873ff`、ArmCpu `a2c5dd3`、sheng `6d9de92`。新建了 fork `zus12873/Ath12kWifi`（公开），推了 `local/scan-diagnostics`（`0d8758a`），sheng 的 `.gitmodules` 改成从这个 fork 取。
+  - cd15（11-17 12:49 构建）：内核 `20acb2ca`，载荷 `dfd6c18b`，另存 `.cd15-20acb2ca`、`payload.cd15-base.img`。测试镜像 `boot-v4-payload.bigwin-cd15-sleep.img`（`65b985fa`），载荷 `90f8e10a`。内核里有两行背光新日志和四条扫描诊断。日常文件已还原；来源记录 `cd15-build.json`、`cd15-images.json`。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
