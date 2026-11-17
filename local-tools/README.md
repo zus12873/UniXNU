@@ -172,7 +172,7 @@ python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.bigwin-cdN-s2.img
 
 **连上平板**：
 
-- Wi-Fi 从控制中心手动连（自动加入现在连不上：macOS 把存着的网络当成隐藏网络去定向扫描，驱动不支持）。
+- Wi-Fi 从控制中心手动连。自动加入还连不上：驱动约 7 s 交回扫描结果，系统把结果全部过滤掉，原因没查清（见 `HANDOFF.md` 的 cd16 一条）。
 - SSH 用一把专用密钥，放在 `out/ssh/`（git 忽略），不碰 `~/.ssh`：
 
   ```sh
@@ -182,6 +182,19 @@ python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.bigwin-cdN-s2.img
   ```
 
   平板地址只在当次用，不写进任何入库的文件。
+- 平板的地址会变，不要用记下来的地址。`local-tools/tablet-ssh.py [命令]` 每次按主机密钥找到平板再连：
+  - 它向默认网卡上开着 22 端口的主机要主机密钥，和 `out/ssh/known_hosts` 里那把相同的就是平板。先问上次的地址，再问 ARP 邻居，最后问整个网段（不超过 1022 台）。
+  - 登录名写在 `out/ssh/tablet-account`；找到的地址记在 `out/ssh/tablet-address`，不打印。`--find` 只找不连。
+  - 原因：记下来的地址如果在别的网段，这台 Mac 可能把它路由到隧道接口上。那条路由上任何端口都连得上，连上马上被关掉，看起来像平板的 sshd 坏了。
+- 驱动的 Wi-Fi 日志 `kern.unixnu_wifi_log` 是约 500 行的环，每 10 s 一组的统计行约 6 分钟就把它填满。要留住没连网时（开机后、唤醒后、开关 Wi-Fi 后）的扫描记录，先在平板上启动 `tablet-wifi-capture.sh`，它每 2 s 把新行追加到文件：
+
+  ```sh
+  local-tools/tablet-ssh.py 'mkdir -p ~/unixnu-capture && cat > ~/unixnu-capture/tablet-wifi-capture.sh' < local-tools/tablet-wifi-capture.sh
+  local-tools/tablet-ssh.py 'cd ~/unixnu-capture && nohup sh tablet-wifi-capture.sh ~/unixnu-capture/wifi-$(date +%H%M).log 60 >/dev/null 2>&1 &'
+  local-tools/tablet-ssh.py "awk '!seen[\$0]++' ~/unixnu-capture/wifi-<时间>.log" > out/boot-logs/<目录>/wifi-capture.log
+  ```
+
+  脚本留在平板的 Data 卷上。开机后还没连网时，在平板的终端里跑 `sh ~/unixnu-capture/tablet-wifi-capture.sh ~/unixnu-capture/wifi-boot.log &`，再去连 Wi-Fi。
 
 **每次上机都看的**：
 
