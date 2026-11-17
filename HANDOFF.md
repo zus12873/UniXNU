@@ -299,12 +299,28 @@
     - 主检出目录已切到 `integrate/upstream-20261117`。那 9 个根卷策略文件：先备份到 `out/policy-backup-20261117/`（附 sha256），再另外 stash 一份（stash@{0}），切换后放回，哈希 9/9 一致。合并用的工作树已经移除。
     - 子模块都已初始化，版本一致；ShengUfs 现在是上游的 `9d527ae`，里面仍有 `native_ufs_part_read`。
     - 还不确定：200 MiB 的载荷装不装得下上游的桌面配置（上游是 256 MiB），要真正构建才知道。
-    - 核心仓库比上游落后 593 个提交（多是 Metal R2507），这次没合。
     - 第一次构建 cd16（11-17 14:2x）在 `archive-20-build-gop-legacy-display-27` 失败：
       - 报错：`build-sheng-source-drivers.py` 找不到 `<tree>/profiles/os/ipados-27.0.1-24A446/profile.toml`；
       - 原因：sheng 上游新的 `build-gop-legacy-display-27.py` 调这个核心脚本时不再传 `--profile`，依赖核心上游的 `66535d1`（rponeawa，"pass the selected OS profile to source driver compilation"）。
       - 修复：核心 `aff8f4f`，`cherry-pick -x 66535d1`。构建时用 `UNIXNU_OS_PROFILE` 指向选定的配置，没设时回到核心仓库自己的 `profiles`；内核的参考源码里加上 `IOHIDFamily`。
       - `check-unixnu.py` 通过；macOS 配置里 `IOHIDFamily` 和 `IOStorageFamily` 都钉了版本。
+    - 第二次构建（用户 15:0x 重跑）过了 archive-20，在内核链接失败：`Undefined symbols: _nw_wifi_scan_frequencies, referenced from WifiNet.late.o`。
+      - 原因：sheng 的 `scripts/build-ath12k-wifi.py` 给 Wi-Fi 模块的全局名加前缀 `nwk_`，只留 `keep` 里的入口；我在 Ath12kWifi `b455da9` 新加的 `nw_wifi_scan_frequencies` 不在里面，被改成了 `nwk_nw_wifi_scan_frequencies`。
+      - 修复：sheng `011dacf`，把它加进 `keep`；新增 `scripts/check-ath12k-exports.py`：`include/nw_abi.h` 声明的函数只要会被改名就失败（先看它失败，再改，通过：24 个函数）。单独重编模块，`nw_mainline.o` 里是 `T _nw_wifi_scan_frequencies`。
+      - 这是我们自己的新函数，上游不会有，没查别的仓库。
+    - **核心合上游 main（11-17 15:xx，用户："先合，然后再构建"）**：新分支 `integrate/upstream-20261117`，合并提交 `4577fd6`（上游 `ae4ee0e`），之后不再落后上游。
+      - 593 个上游提交里，大部分之前已经从 CrossDarwin、rponeawa、bluseliu50 的分支进来过。真正新的：AdrenoMetal R2507（`f7b4ed1`）、`toolchain` 模块（`--kernel-sdk`/`--kernel-tools`，不设时和原来一样用系统 Xcode；本机没设）、固件的 `clang_bin`、核对过的原始根卷镜像、macOS 27 桌面附加任务、上游收进去的 `local-tools`（rponeawa 又改过）。
+      - 124 处冲突的取舍：
+        - 设备页面、设备记录、`devices.toml` 由文档机器人生成：取上游。其他文档取上游，只保留两行我们的：`owned_memory_floor`（代码里还有），`--auto-login` 那行（`make-macos-data-seed.py` 仍要求 `--user`、`--user-stdin` 或 `--interactive-user`）。
+        - DarwinBoot、Adreno740：我们的（上游的版本加我们的 9 GiB 窗口和页表位图提交）。AdrenoMetal：上游的 `f7b4ed1`，我们原来的 `26d4902` 在上游改写历史后归档的分支上，90 个提交按内容都已在 `f7b4ed1` 里（`git cherry` 全是 `-`）。`components.toml` 跟着这几个指针走。
+        - `window-outside-memory-adoption.patch`：我们的（上游的加 `memory-outside-report` 诊断）。合并没有改任何内核补丁。
+        - `scripts/unixnu/devicetree.py`：我们的（窗口到 9 GiB、`owned_memory_floor`）。
+        - Metal 构建脚本、`build-boot-runtime.py`、`run-local-kernel.py`、`cli.py`、`firmware.py`、`ipsw.py`：上游的。我们那边只有同一批改动的旧版本；上游也已经有我那处"挂载点放到系统临时目录"的修复。上游还去掉了列 Metal 库时的 `sudo -n`（新的 `list-metal-libraries.py` 跳过要 root 的目录）。
+        - `local-tools`：上游的，加回 `kernel-compile-check.py --record`，`record-build-provenance.py` 里加回 `boot/boot-bigwin.img`。注意上游的 `kernel-compile-check.py` 必须给 `--tree`。
+      - 合并前查过：上游新增的 33 个文件，本地都没有同名的未跟踪或被忽略的文件，不会被悄悄覆盖。
+      - 检查：`check-unixnu.py`；`scripts/unixnu/test_*.py` 5 组；`tests/build`、`tests/macos`、`tests/terminal`；`tests/codesign`（要用 `--source <tree>/.cache/xnu-work/bsd/kern/ubc_subr.c` 跑，9 个）；`local-tools/tests` 87 个；sheng 的 porting record 18 个区；sheng 脚本引用的核心文件现在都在。全部通过。
+        - `local-tools/tests/test_window_layout.py` 原来钉的命令行长度是 923，sheng 合并后参数是 905 字节，实际是 937。已改，核心 `bd0a16d`。
+        - sheng 有 7 个主机检查不过，和这两次合并无关：3 个要参数或样本（`quartzcore-blur`、`quartzcore-turnip-cache`、`vt-parameters`）；4 个在 sheng 上游 main 上也是坏的（`boot-progress`、`gpu-power` 找不到已删除的测试源文件；`touch` 去 sheng 里找已经搬到核心的 GENI SPI；`mhi-boot` 新 clang 下 `-Werror` 报 `missing field 'space' initializer`）。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
