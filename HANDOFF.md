@@ -5,6 +5,58 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
+## 归档索引（2026-11-17 20:5x）
+
+用户 20:4x 要求：把这个项目的全部内容整理归档到在线仓库，之后清空本地，另开新仓库接着做。这一节是从归档接手的入口；下面各节是当时的现场记录，原样保留。
+
+**在线仓库（都在 GitHub 的 `zus12873` 名下，公开）。当前状态 = 下表的分支。**
+
+| 部分 | 仓库 | 分支 | 说明 |
+| --- | --- | --- | --- |
+| 核心 | `zus12873/UniXNU` | `local/on-main-20261117` | 上游 `main` ＋ 作者的睡眠分支 ＋ 本机这一层（12 GiB 设置、`local-tools`、本文件、计划、规则）。cd17 就是从它构建的 |
+| 设备 | `zus12873/UniXNU-sheng` | `local/on-main-20261117`（`783cc8f`） | 上游 `main` ＋ 还没合进去的修复（睡眠两项、Wi-Fi 日志导出、命名扫描、Wi-Fi 三项）＋ 12 GiB 的 `board.toml` |
+| 固件 | `zus12873/uefi-sheng` | `local/sheng-12g-memory-map`（`20331338`） | 12 GiB 内存表；`boot-bigwin.img` 用它编的 |
+| Wi-Fi 模块 | `zus12873/Ath12kWifi` | `fix/held-networks-age-on-scan-channels`（`f677aa4`） | 设备工作分支钉的提交；`.gitmodules` 在工作分支上指向这个 fork |
+| Metal 插件 | `zus12873/AdrenoMetal` | `local/r2507-copy-in-fix`（`685f37c`） | 核心工作分支钉的提交（钉住的 R2507 ＋ 0064）。给上游的版本是 `fix/copied-buffers-freed-pages`（`aecda9c`） |
+| GPU 内核驱动 | `zus12873/Adreno740` | 含 `fd7a0ca` | 核心工作分支钉的提交，上游仓库里没有 |
+| 引导程序 | `zus12873/DarwinBoot` | 含 `bdb6ff7` | 核心工作分支钉的提交（上游钉的 `5243c68` ＋ 4 个本地提交） |
+
+- 核心工作分支有 3 个子模块的提交只在 fork 上（`drivers/Adreno740`、`drivers/AdrenoMetal`、`drivers/DarwinBoot`），`.gitmodules` 里写的还是上游地址：`git submodule update` 取不到时，进那个子模块目录 `git fetch https://github.com/zus12873/<名字> <提交>` 再 `git checkout <提交>`。其余子模块都能从 `.gitmodules` 的地址取到（20:4x 逐个核对过）。
+- 其他分支也都在 fork 上：按主题开的分支和 PR（列表见下面"睡眠和 Wi-Fi 的 PR 已开"一条和它后面的表）、旧的 `integrate/*`、`local/*`（12 GiB 各种窗口方案）、`repro/daily-40234c20`（日常镜像的来源）、`backup/main-20261113`。fork 的 `main` 没动过，是旧的。
+- 设备仓库的两个 stash：`pre-cd2`（`feeds.toml`、`unixnu.lock` 共 6 行）另存成了分支 `archive/stash-pre-cd2`；另一个是本机生成的根卷策略文件，不归档。
+- `CrossDarwin/UniXNU_macOS` 的本地克隆没有本地改动，不用归档。
+
+**没有进在线仓库的（公开仓库放不了：个人数据、苹果的系统文件、体积）**
+
+| 内容 | 位置 | 大小 | 为什么不放 |
+| --- | --- | --- | --- |
+| 启动镜像 78 个（日常镜像、各次测试镜像） | `out/flash/` | 37 G | 单个约 200 MB，含苹果的内核和系统文件 |
+| 构建盘（IPSW、OS 镜像、构建树、cd2 到 cd17 的内核和载荷、日常文件的备份） | 外置盘 `UniXNU-build.sparsebundle` | 115 G | 同上 |
+| 录屏、截图、平板日志 | `data/` | 3.3 G | 用户定过不提交 |
+| 各次开机的日志 | `out/boot-logs/` | 0.9 G | 含网络名、地址 |
+| 构建来源记录（cd6 到 cd17） | `out/provenance/` | 1 M | 含本机路径 |
+| 平板的 SSH 密钥和账户名 | `out/ssh/` | 小 | 凭据 |
+| 本机设置（含芯片号） | `unixnu.local.toml` | 小 | 用户定过不提交 |
+| 本机生成的根卷策略文件 | 设备仓库 `scripts/policies/macos-27.3-26C5035r/`（9 个改过的文件）、`out/policy-backup-*` | 小 | 用户定过不提交；`local-tools/recover-root-policies.py` 能重新生成 |
+
+**从归档接手要重做的**
+
+- `unixnu.local.toml`（芯片号、`device = "../UniXNU-sheng"`、`uefi = "../uefi-sheng"`、`out`、`kernel_args = ["vm-swapin-io=1"]`）。
+- 根卷策略文件、Data 种子（`runtime/data.dbr`）、固件镜像、内核和载荷：都要重新构建，步骤见本文件"接下来的步骤"一节和 `docs/zh/porting/macos.md`。
+- 平板 SSH：镜像参数里带 `enable-jobs=com.openssh.sshd`；密钥没归档的话要重新放公钥。
+
+**平板归档时的状态（20:17 最后一次读）**
+
+- cd17 测试镜像在内存里跑（20:03 启动）；重启后回到 `boot_a` 上的日常镜像（11-14 的，内核 `33d294c8`）。
+- 20:00 在 fastboot 里读的：当前槽位 a，重试次数 a 6、b 7。规矩不变：不把 b 设成活动槽位；a 小于等于 4 时 `fastboot set_active a` 补；接着电源时不要关机。
+
+**归档时没做完的事**（细节在下面"cd17 构建成功"一条的"上机结果"里）
+
+- 连着网时 5 GHz 那一批扫描被固件拒绝（`received scan start failure event`），连在 2.4 GHz 上时列表里的 5 GHz 网络一分钟后消失。原因没分清，没修。
+- Metal 的修复（0064）只看了 14 分钟没崩，还不能下结论；`UniXNU/AdrenoMetal` 的 PR 没开。
+- sheng #131、#133 和 Ath12kWifi #8 是 draft，说明里还写着没上机；cd17 的上机结果没补进去。
+- 睡眠第 3 级（合盖 15 分钟以上）和第 5 级（拔电 1 小时）没做。
+
 **工作分支（2026-11-17 15:3x 起）：核心和 sheng 都在 `local/on-main-20261117` 上，不再用 `integrate/*`。**
 - 用户说作者（rponeawa）告诉他"提交都合了"，要求切回 main。核对结果：上游 `main`（核心 `ae4ee0e`、sheng `8a85350`）里没有睡眠改动；作者当天 15:1x 建了两个还没合进 main 的功能分支：核心 `upstream/feat/sheng-sleep-wake`（`2e64418`）、sheng `upstream/feat/platform-sleep-wake`（`7ffbb0b`，比 main 多 15 个提交）。用户选的基线：main ＋ 作者的两个分支 ＋ 上游没有的本地修复。
 - 分支的构成（`git log upstream/main..HEAD` 就是全部差异）：
