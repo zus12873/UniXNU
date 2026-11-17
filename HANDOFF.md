@@ -52,14 +52,37 @@
       - 16:50 用 `local-tools/tablet-wifi-scan-probe.js` 读了 CoreWLAN 手里的 19 条结果：要连的网络是 36 信道、-34 dBm、名字 16 个字符、信道标志 0x12，都对；`AGE` 也对；但**每条结果的 `TIMESTAMP` 都是 0**。
       - 这台 Mac（27.2.1）上 CoreWiFi 的 `CWFFilteredScanResults` 按 15 种条件过滤，每滤掉一条都记一行调试级日志：`Filtering based on maxAge`、`minTimestamp`、`minRSSI`、`channel list`、`FILS DF`、`BG scan result`、`hidden scan result`、`SSID`、`short SSID`、`BSS type`、`network name prefix`、`incl. scan result list`、`predicate`、`duplicate`、`merge policy`。怀疑是 `minTimestamp`，没有验证。
       - 16:53 在平板上开了调试日志采集（`~/unixnu-capture/airportd-0053.log`，`log stream --level debug`，60 分钟）。下一次没连网时的 auto-join 扫描会留下每条结果被滤掉的原因。
+      - **17:10 唤醒后抓到了原因：`maxAge`，年龄被算成了开机至今的时长。** 唤醒后 2 分 6 秒里 auto-join 扫了 59 次，全是 `results=0`。调试日志里有 533 行 `Filtering based on maxAge (… age=3767182ms (0))`，其余是 `channel list`（不在请求信道上的结果，正常）。3767 s 是当时的连续运行时间，括号里的 0 是时间戳。
+        - `-[CWFScanResult age]` =（`clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)` − `TIMESTAMP`）/ 10⁶，在这台 Mac（27.2）上反汇编看的。`maxCacheAge` 是 10 到 33 s，所以时间戳为 0 的结果全被当成过期。之前怀疑的 `minTimestamp` 不对。
+        - `TIMESTAMP` 取自驱动交回的扫描结果的偏移 0x8d0（64 位）：IO80211 的 `_addScanResultToList` 里 `AGE` ← 0x84（32 位），`TIMESTAMP` ← 0x8d0。macOS 27 的结果结构是 0x8e8（2280）字节：信息元素区从 1024 加到 2048 字节（0x8c 到 0x88c），接着 64 字节，然后是 0x8d0 的时间戳和几个标志（0x8d8、0x8dc、0x8e0、0x8e4 到 0x8e6）。平板自己的框架（27.3，上午反汇编的 `_Apple80211Scan`）用的也是 0x8e8 和 0x88c。
+        - 驱动的 `scan_result`（`../UniXNU-sheng/package/WifiNet.cpp`）还是旧的 1164 字节，只写到 0x48c，0x8d0 没写，所以是 0。开机不自动连和唤醒后不自动连是同一个原因。
+        - 修法（还没做；驱动改动，等用户同意）：把 `scan_result` 扩到 2280 字节，时间戳填"现在的连续时间（ns）减去 `age_ms`"，主机测试先断言布局和时间戳。动手前按规则再查一次上游。
+        - 01:12:22 那次连上不是 auto-join：驱动记了 `explicit link down` 和 `join`，应是手动连的（没向用户确认）。
     - **WindowServer 崩了 4 次**（用户 16:5x："一直在崩溃"）：16:30:04、16:31:58、16:50:41、16:52:44。报告在 `out/boot-logs/cd16-1117-1635/ws/`（本地）。
       - 四次是同一处：主线程 `EXC_BAD_ACCESS KERN_INVALID_ADDRESS`，在 `_platform_memmove` 里。出错地址正好是一块 CoreAnimation 内存区域结束后的第一个字节（区域 184K、244K、116K、32K）。寄存器：源地址等于出错地址，目的地址在栈上，剩余长度 0x1000（16:50 那次 0x400）。
       - 用构建目录里的调试符号翻出调用链（UUID `FB2E63C9-1A40`，和报告里的一致）：`-[NBCommandBuffer commitAndWaitUntilSubmitted]` → `waitUntilScheduled` → `CommandBuffer::settle_commit` → `commit_now`（`command_buffer/mod.rs:4785`）→ `CopiedBuffers::copy_in` → `copy_in_untagged` → `copy_in_run`（`copied.rs:1859`）。16:50 那次走 `copy_in_tagged` → `copy_in_blocks` → `tag_in_place` → `read_block`（`copied.rs:1069`）。
       - 含义：新的 Metal 运行库（metal2vulkan development `46e7cc96`，上游今天合的 R2507，AdrenoMetal `f7b4ed1`）给"不拷贝"的缓冲区留一份副本，每次提交命令缓冲时从应用给的内存里把改过的字节读进来。读的范围超出了那块内存映射的末尾。长度是怎么算错的，还没读代码。
       - 和睡眠改动、和 SSH 这边的操作无关：第一次崩溃在 16:30，我 16:34 才连上平板。Data 卷上只有这 4 份 WindowServer 崩溃报告，之前的镜像（旧运行库）一份都没有。
       - 查过上游，没有修复。搜了 `UniXNU`、`CrossDarwin` 的 PR 和 issue：`WindowServer memmove`、`wait_scheduled`、`R2507`、`WindowServer crash`、`metal2vulkan 46e7cc96`、`command buffer memmove`。`UniXNU/AdrenoMetal` 的 `main`（`8c7f950`）比我们用的多 2 个提交，都是着色器缓存应用的；开着的 #65 是诊断。
-      - 16:59 第 5 个 WindowServer 已经跑了 6 分 48 秒，还在。
-    - 睡眠测试还没做。16:48 平板上 `sleep 0`、`displaysleep 10`，电量 68%，在充电。
+      - 第 5 次崩溃在 16:59:30 前后（pid 4290 → 6733）。6733 到 17:13 还在，中间过了一次睡眠唤醒。
+      - **17:30 用报告里的寄存器对上了成因：读的是已经被释放的旧缓冲。** `copy_in_run` 里 x21 是副本对应的应用内存起点，x24 是长度，x23 是读到的偏移：
+        | 报告 | 副本起点 | 长度 | 现在那一带的 CoreAnimation 区域 | 出错处 |
+        | --- | --- | --- | --- | --- |
+        | 003009 | 0x115ee4000 | 0x2e000（184K） | 0x115edc000–0x115f0a000（同是 184K，往前挪了 0x8000），后面空 0x8000 | 起点 + 0x26000 |
+        | 003203 | 0x10f798000 | 0x3d000（244K） | 0x10f793000–0x10f7d0000（同是 244K，往前挪了 0x5000），后面空 0x5000 | 起点 + 0x38000 |
+        | 005248 | 0x12231e000 | 0x32000（200K） | 0x12231e000–0x122326000（32K） | 起点 + 0x8000 |
+        - 也就是：WindowServer（CoreAnimation）已经释放了那块内存，同一带又分配了别的。运行库里那份副本还登记着，按旧地址、旧长度去读，读到没映射的那一页就崩。
+        - 为什么会去读它：`commit_now` 在"命令的用途没记全"或"有函数按地址取内存"时把 `CopiesReached` 设成全部（`reached_all`、`reached_unnamed`），`copy_in` 就把每一份登记着的副本和应用内存逐页比一遍，不管这次提交用没用到它。旧运行库（`555b13d`）也有这条路。
+        - 为什么旧运行库不崩（推断，没在机器上验证）：新运行库多了一种做副本的原因 `CopiedBecause::OverImport`（`host_aliases.rs` 的 "One page, one import"）：新缓冲的页和一份还活着的导入部分重叠时，不再导入第二次，改成副本。CoreAnimation 释放后在挪了几页的地址上重新分配同样大小的内存（上表前两行正是这样），新缓冲就和旧缓冲的导入部分重叠，于是成了副本。旧运行库里它是导入，页由内核钉住，CPU 不读，内存被释放也没事。
+        - 桥那边已有的处理只管一半：`bridge/NativeMetalObjects.rs` 的 `NoCopyPages` 只在**新建**缓冲、发现同一范围换了内存时才调 `host_range_remapped`。内存被释放、之后没人在同一范围新建缓冲时，旧副本一直留着。
+        - 查过，没有：`steelbrain/metal2vulkan` 的 `development` 顶端就是我们钉的 `46e7cc96`（`master` 是 `d9236a8a`），issue 和 PR 里没有 copy-in、unmapped 相关的内容。
+    - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
+      - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
+      - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
+      - 从 `pmset sleepnow` 到真正入睡隔了 30 s：`Kernel Client Acks: Delays to Sleep notifications: [wifip2pd timed out(30000 ms)]`，两次都有；另有 `com.apple.bluetooth.sleep is slow(1534 ms)`。原因还没查。
+      - 17:04 的第一次没睡成：01:04:13 收到 WillSleep、屏幕关了，01:04:24 键盘（`Xiaomi Keyboard eventType:3`）来了一次输入，系统取消了入睡，Sleep Count 仍是 0。等 wifip2pd 的那 30 s 里碰一下键盘就会取消。
+      - 唤醒后的 Wi-Fi：芯片重新上电（`Requested to power ON`），随后 auto-join 一直扫、一直 `results=0`（原因见上面 Wi-Fi 那条），2 分 6 秒后才连上（应是手动）。平板从 17:09:17 到 17:12:24 不在网络上。
+      - 唤醒时屏幕上有没有彩条，要问用户。还没做：合盖 15 分钟以上、第 4、5 级。16:48 平板上 `sleep 0`、`displaysleep 10`；17:12 电量 64%，在充电。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
