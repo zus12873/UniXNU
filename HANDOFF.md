@@ -232,6 +232,18 @@
     - 没做的小问题：入睡没走到处理器那一步时，会打印一行带着上一次统计的 `woke by …`。
   - 11-17 13:0x 推送到用户自己的远端：核心 `21873ff`、ArmCpu `a2c5dd3`、sheng `6d9de92`。新建了 fork `zus12873/Ath12kWifi`（公开），推了 `local/scan-diagnostics`（`0d8758a`），sheng 的 `.gitmodules` 改成从这个 fork 取。
   - cd15（11-17 12:49 构建）：内核 `20acb2ca`，载荷 `dfd6c18b`，另存 `.cd15-20acb2ca`、`payload.cd15-base.img`。测试镜像 `boot-v4-payload.bigwin-cd15-sleep.img`（`65b985fa`），载荷 `90f8e10a`。内核里有两行背光新日志和四条扫描诊断。日常文件已还原；来源记录 `cd15-build.json`、`cd15-images.json`。
+  - **cd15 上机（13:12 第二次启动；第一次 12:59 那趟用户没来得及连 Wi-Fi，重启了）：Wi-Fi 扫描为什么拿不到结果，查清了**。日志在 `out/boot-logs/cd15-1117-1315/wifi-boot.log`：
+    - 每一轮都是：
+      - `scan request N to the supplicant: ssid 0 -> 0`，送达成功；
+      - 约 50 ms 后 `supplicant scan K: 1 ssids, 0 frequencies -> 0 (held request 0, message 0)`，cfg80211 扫描正常开始，没有 `-EBUSY`；
+      - 12 s 后 `scan request K unanswered after 12 s`；
+      - 再过约 3.7 s 才 `scan done K: status 0, 13 networks held`。
+    - 全频段扫描每次约 15.7 s（30041→45774、48253→63985、64173→79893、81019→96739 ms），比驱动 12 s 的期限长。airportd 每次在结果出来之前就拿到"完成、0 个结果"，开机时 airportd 自己也会在约 12 s 时取消扫描。
+    - `0 frequencies`：airportd 只要扫 2 个信道（5g36、2g6），驱动没把请求里的信道表交下去，supplicant 就扫了全部频段（WCN7850 还包括 6 GHz）。
+    - 对照：连接时那次扫描（`2 ssids, 1 frequencies`）205 ms 就完成了。
+    - 怀疑过的"`scan_req` 卡住、之后的扫描全部 `-EBUSY`"被排除了。
+    - 这趟还是用户从控制中心手动连的（21:15:19，`WiFiNetworkJoinReason = ControlCenter`）。
+    - 修法：把请求里的信道表一路交到 supplicant。WifiNet 解析类型 10 和类型 86 的信道表（类型 86：`+0x210` 个数，`+0x214` 起每项 12 字节）→ `nw_wifi_scan` 带上频点 → `ui` 信箱 → supplicant `SCAN freq=…`。要改 Ath12kWifi 的 `nw_abi`、`nw_mainline.c`、`nw_supplicant_frontend.c`，以及 sheng 的 `WifiNet.cpp`。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
