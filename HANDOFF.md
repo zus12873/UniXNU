@@ -98,10 +98,21 @@
         - 它在虚拟机模式下收到入睡通知后为什么不回应，没有反汇编，不知道；"不回应"是日志里看到的事实。cd14 的日志（`cd14-1117-1214/wake2-all.txt`）里也有同一句拒绝。
         - 查过，没有：`gh search issues --include-prs`（UniXNU、CrossDarwin；`wifip2pd`、`hv_vmm_present wifi`、`virtual machine does not support Wi-Fi`、`PM notification timeout`）；核心、sheng、`UniXNU_macOS` 的 `git log --all -S'wifip2pd'` 只有我们自己的文档提交。
         - 可以试的（都没做，要用户同意）：平板上有 root 的话先 `launchctl bootout system/com.apple.wifip2pd` 再睡一次，看 30 s 是不是没了（只是一次试验，重启就还原）；有效的话在镜像里不启动它（它本来就拒绝所有客户端，AirDrop 这类功能驱动也不支持）。不建议去掉 `vmm-present`。
+        - 17:55 补充：第 4 级的数据说明这只影响每次开机的头 3 次入睡（内核之后不再等它），不急着处理。
       - 17:04 的第一次没睡成：01:04:13 收到 WillSleep、屏幕关了，01:04:24 键盘（`Xiaomi Keyboard eventType:3`）来了一次输入，系统取消了入睡，Sleep Count 仍是 0。等 wifip2pd 的那 30 s 里碰一下键盘就会取消。
       - 唤醒后的 Wi-Fi：芯片重新上电（`Requested to power ON`），随后 auto-join 一直扫、一直 `results=0`（原因见上面 Wi-Fi 那条），2 分 6 秒后才连上（应是手动）。平板从 17:09:17 到 17:12:24 不在网络上。
       - 唤醒时屏幕上有没有彩条，要问用户。还没做：第 2 级（电源键叫醒）、第 3 级（合盖 15 分钟以上）、第 5 级。16:48 平板上 `sleep 0`、`displaysleep 10`；17:36 电量 63%（接在 Mac 上，1 小时掉约 5%）。
-    - **睡眠第 4 级（连续 10 次）17:37:56 开始**：平板上跑 `local-tools/tablet-sleep-cycles.sh`（不靠网络，每轮 `pmset sleepnow`、等定时器叫醒、记一行），结果在平板的 `~/unixnu-capture/sleep-cycles-0138.log`，驱动日志在 `wifi-0138.log`。唤醒后 Wi-Fi 不会自己连，要用户手动连上以后才能取回。开始时 Sleep Count 1，WindowServer pid 6733（已连续运行 37 分钟，中间过了一次睡眠）。
+    - **睡眠第 4 级（连续入睡）：8 轮都睡着、都醒来，没有 panic，WindowServer 没崩。** 17:37:55 到 17:50:32，开着盖，`local-tools/tablet-sleep-cycles.sh`。日志在 `out/boot-logs/cd16-1117-1635/`（本地）：`sleep-cycles-0138.log`、`cycles-0138-kernel.log`、`wifi-driver-0138.log`（含网络名字）。
+      - 原定 10 轮，只跑了 8 轮：第 8 轮睡到 48.6 s 时用户按了电源键（去连 Wi-Fi），第 9 轮的请求 3.3 s 后被用户的操作取消，第 10 轮开始前我在 17:53:09 把脚本停了（否则平板会再睡一次、Wi-Fi 又掉）。
+      - 7 次定时器叫醒：`woke by timer (intid 27) after 60000/60001 ms`。1 次电源键叫醒：`woke by power (intid 513) after 48603 ms`，这顺带过了一次第 2 级。
+      - 每次：`spurious 0, masked 0, unarmed 0, cpu_off failures 0, phase 5`；面板在醒后 84 到 233 ms 回到原亮度、各 2 帧；`IOCPUSleepKernel` 进出 8 对 8。这次开机 Sleep Count 到 9，`kern.boottime` 没变，WindowServer 一直是 pid 6733（到 17:52 连续运行 53 分钟）。
+      - 从 `pmset sleepnow` 到入睡：前 3 轮 31、31、35 s，后 5 轮 6、6、9、7、7 s。前 3 轮是在等超时的进程：`wifip2pd`（第 1 轮）和 `AMPLibraryAgent`（第 1 到 3 轮）各 30 s。之后不再等，因为内核对连续超时 3 次的客户端不再等回应（`iokit/Kernel/IOPMrootDomain.cpp:7545`，`ackTimeoutCnt >= 3`；构建用的 `feeds/xnu-3199e8bc` 里看的）。`wifip2pd` 这次开机的 3 次是 17:04（被取消的那次）、17:08、17:38。所以每次开机只有头 3 次入睡各多等 30 s。
+      - 小问题（没处理）：
+        - 被取消的入睡会重复打印上一次的唤醒行。17:50:53 `sleeping, lid open`，没进 `IOCPUSleepKernel`，17:50:56 又打了一遍 `woke by power (intid 513) after 48603 ms; sleeps 9`，数字和 17:50:32 那行一样。只是日志不准，`sleeps` 没多算。这是作者睡眠代码里的报告逻辑。
+        - 17:51:01（那次取消后 5 s）Terminal 有一份 spin 报告：`Slow response to HID event`，3.96 s。当时内存空闲 15%。
+        - 每次醒来 Wi-Fi 都没自己连上（已知，等时间戳的修复）。
+      - 充电：17:09 64%，17:38 80%，17:54 92%；17:54 读 `ShengBattery`：`Amperage` 3317 mA，4449 mV，34.9 °C，适配器 9 V 3 A（33 W）。比 11-15 量到的约 2 A 高。17:36:30 `pmset -g batt` 还显示 63%，两分钟后电源日志里是 80%：要么 17:37 前后换了充电头，要么醒着的时候百分比更新得慢，没查，要问用户。
+    - 还没做：第 3 级（合盖 15 分钟以上，同时把入睡次数推过 13 次）、第 5 级（拔电合盖 1 小时）。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
