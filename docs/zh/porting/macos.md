@@ -187,7 +187,7 @@ sheng 的 macOS 桌面配置从选定源码构建 BootShim、板级固件和 Dar
 | `--real-name NAME` | 设置管理员的显示名称，短用户名与 `/Users/NAME` 路径保持不变 |
 | `--user-stdin` | 从标准输入的 JSON 对象读取 `name`、`password` 和可选的 `real_name` |
 | `--interactive-user` | 交互输入账户名、显示名称和密码 |
-| `--auto-login` | 开机自动登录指定账户，供无人值守测试使用 |
+| `--auto-login` | 开机自动登录指定账户。供无人值守测试使用，需要 `--user`、`--user-stdin` 或 `--interactive-user` |
 | `--keyboard-type PRODUCT-VENDOR-COUNTRY=TYPE` | 记录键盘布局类型，键盘设置助理不再询问 |
 | `--volume-uuid UUID` | 为 Data 卷指定固定 UUID，新 seed 可以替换旧 seed 而无需重新构建内核 |
 
