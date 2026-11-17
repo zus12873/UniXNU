@@ -264,6 +264,19 @@
       - `WifiScan.h` `sheng_wifi_scan_frequencies` 解析类型 10 和类型 86 的信道表，转成频点交给 `nw_wifi_scan_frequencies`；
       - `ShengSleep` `sheng_sleep_clear_lid_status`：入睡准备时不管盖子开合，都清掉盖子线上的旧状态；
       - `check-wifi-scan-host.py` 45 项、`check-sheng-sleep-host.py` 467 项，改之前都是失败的；两份源文件都用内核参数编过。
+  - **cd15 合盖很久以后，开盖和电源键都叫不醒（用户 13:5x）**：
+    - 14:01 用 cd12-read 开机读出了 cd15 那趟的板级日志：`out/boot-logs/cd12read-1117-1405/`（本地）。日志写到开机后 2533 s（约 13:55）为止。
+    - 合盖期间定时器叫醒 → Clamshell Sleep 正常循环了 12 次（`woke by timer … sleeps 12, cpu_off failures 0`）。
+    - 第 13 次入睡到 trace point 0x18（停副核）时 panic：`machine_routines.c:948 Assertion failed: getCpuDatap()->cpu_signal == SIGPdisabled (0x0 == 0x80000000)`。panic 之后没有重启，所以一直黑屏。
+    - 原因：
+      - `ml_cpu_down` 先把 `cpu_running` 置 FALSE，再由 `cpu_signal_handler_internal(TRUE)` 给自己打上 `SIGPdisabled`，然后断言只剩这一位；
+      - 启动补丁（bluseliu50，`zzzz-sheng-ipados27-bringup.patch`）里的 `sheng_sigp_recover`，会在别的核给一个"已启动但挂着 `SIGPdisabled`"的核发 IPI 时，把这个标志清掉，用来补救启动时丢掉的自我 IPI；
+      - `ml_cpu_down` 并不清 `StartedState`，所以下线途中的核也会被这样"补救"。
+    - 修复：sheng `59d0346`，在 `sheng-platform-sleep.patch` 里给 `sheng_sigp_recover` 加上 `cpu_running` 条件。
+      - 不会误伤原本要补救的情况：启动时 `cpu_running` 在 `cpu_init` 里就置了 TRUE，早于 `processor_cpu_reinit` 等信号。
+      - 验证：在构建树打过补丁的文件上先反向打回旧补丁，再 `git apply --check` 新补丁，能打上；改过的 `cpu_common.c` 用 XNU 自己的编译记录能编过。主机上测不了，要上机连续睡眠多次验证。
+      - 上游 `01e3d92` 放宽的是另一个断言（`processor_cpu_reinit` 里的 `assert_ml_cpu_signal_is_enabled`），会随这次合并进来。
+    - 没解决：睡眠中 panic 之后不会自动重启，cd12 和 cd15 各出现过一次，原因没查。
   - **用户要把 sheng 上游最新的 main 合进新镜像（11-17 14:xx）**：
     - `upstream/main` `8a85350`，比我们多 768 个提交。合并基点是 10-21 的 `7562a77`：上游把很多和我们分支上相同的改动压成了别的提交。
     - 在单独的工作树 `../UniXNU-sheng-merge`、新分支 `integrate/upstream-20261117` 上合并。`integrate/upstream-20261116` 和主检出目录都不动。
