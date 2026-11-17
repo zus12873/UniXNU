@@ -28,6 +28,10 @@
     - 为此给 `make-payload-variant.py` 加了 `--remove-arg NAME`（核心 `c3e45d7`，新测试先失败后通过，`local-tools/tests` 91 项全过）。cd11 到 cd15 的睡眠镜像也都不带 `log-gpu=1`。
   - 测试镜像 `out/flash/boot-v4-payload.bigwin-cd16-sleep.img`（`c38f794f`），`bootimg-contents.py --payload` 核对过装的是 `46fbd8be`。固件还是 11-15 的 `boot-bigwin.img`（`5c926a3f`）：上游 `main` 钉的 DarwinBoot `5243c68` 是 11-11 的，我们的 `bdb6ff7` 只多 4 个本地提交，固件不用重做。
   - 上机要看的：开机自动连 Wi-Fi；唤醒没有彩条；开着盖 `pmset sleepnow` 不再 3 ms 被叫醒；合盖放 15 分钟以上（定时器每 60 s 叫醒一次，超过 13 轮）不 panic；唤醒后 Wi-Fi 重连；睡眠第 4、5 级；新的 Metal 运行库（R2507）有没有画面问题。上机前要用户在平板上 `sudo pmset -a sleep 0`。
+  - **cd16 第一次启动（16:18，用户说进了 fastboot）**：
+    - fastboot 里：当前槽位 a，a 重试 6 次、b 7 次，都没标成功也没标不可启动，电池 4137 mV；a 大于 4，没补。`boot-sheng.py` 启动后引导程序 45 s 没再回应，镜像在跑。
+    - 16:20 起平板在老地址上能连到 22 端口（ARP 有记录），开机约 2 分钟，没等我提示：看起来是自己连上了 Wi-Fi（是不是用户手动连的，还没问到）。
+    - **SSH 连上就被对端关掉**：`kex_exchange_identification: Connection closed by remote host`，一个字节的版本串都没收到。16:20 到 16:22 试了 6 次都一样。cd15 上同一把密钥、同一个参数 `enable-jobs=com.openssh.sshd` 是通的。原因还没查，先问用户屏幕上是什么。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
