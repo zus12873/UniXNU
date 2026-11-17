@@ -333,6 +333,10 @@
       - 检查：`check-unixnu.py`；`scripts/unixnu/test_*.py` 5 组；`tests/build`、`tests/macos`、`tests/terminal`；`tests/codesign`（要用 `--source <tree>/.cache/xnu-work/bsd/kern/ubc_subr.c` 跑，9 个）；`local-tools/tests` 87 个；sheng 的 porting record 18 个区；sheng 脚本引用的核心文件现在都在。全部通过。
         - `local-tools/tests/test_window_layout.py` 原来钉的命令行长度是 923，sheng 合并后参数是 905 字节，实际是 937。已改，核心 `bd0a16d`。
         - sheng 有 7 个主机检查不过，和这两次合并无关：3 个要参数或样本（`quartzcore-blur`、`quartzcore-turnip-cache`、`vt-parameters`）；4 个在 sheng 上游 main 上也是坏的（`boot-progress`、`gpu-power` 找不到已删除的测试源文件；`touch` 去 sheng 里找已经搬到核心的 GENI SPI；`mhi-boot` 新 clang 下 `-Werror` 报 `missing field 'space' initializer`）。
+    - 第三次构建（用户 15:43，已在 `local/on-main-20261117` 上；终端提示符里的 `integrate/upstream-20261116` 是切分支前的旧提示）：Metal 库清单过了（434 个路径），停在 `.cache/gpu-reference/metal2vulkan: source revision differs from its pin`。
+      - 原因：上游 `5f93377`（rponeawa，R2507）把 metal2vulkan 钉到 development 的 `46e7cc96`；缓存里还是 cd7 取的 `555b13d`，加上构建打的补丁（66 个文件）。`build-boot-runtime.py` 的 `checkout()` 只在目录不存在时才取。
+      - 处理（15:5x）：缓存改名留作 `metal2vulkan.555b13d-cd7-20261116`，照 `checkout()` 的步骤取了 `46e7cc96`（干净，0 个改动）。`git apply --check` 新补丁 `0063-main-optimizations-on-development-46e7cc96.patch` 能打上（70 个文件）。
+      - `check-metal2vulkan-pin.py` 报 FAIL，但不影响构建：上游 AdrenoMetal `f7b4ed1` 的 `bridge/patches/` 里还留着 0002 到 0062 共 29 个旧补丁，构建只列 `0063`，检查要求目录里只有构建列出的补丁。构建脚本都不调这个检查。上游的问题，没报。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
