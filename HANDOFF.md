@@ -58,7 +58,7 @@
         - 驱动的 `scan_result`（`../UniXNU-sheng/package/WifiNet.cpp`）还是旧的 1164 字节，只写到 0x48c，0x8d0 没写，所以是 0。开机不自动连和唤醒后不自动连是同一个原因。
         - 修法（还没做；驱动改动，等用户同意）：把 `scan_result` 扩到 2280 字节，时间戳填"现在的连续时间（ns）减去 `age_ms`"，主机测试先断言布局和时间戳。动手前按规则再查一次上游。
         - 01:12:22 那次连上不是 auto-join：驱动记了 `explicit link down` 和 `join`，应是手动连的（没向用户确认）。
-      - 查过，没有（17:45，Wi-Fi 扫描结果的时间戳）：sheng `upstream/main`（`2061710`）和 `upstream/feat/platform-sleep-wake` 的 `package/WifiNet.cpp` 里 `scan_result` 都还是 1164 字节、没有 `timestamp` 字样；`git log --all -S'0x8d0'`、`-S'2280'`、`--grep` `timestamp`/`maxAge`/`auto-join` 只有我们自己的提交；`gh search prs`（UniXNU、CrossDarwin；`scan result timestamp`、`auto-join maxAge`、`CWFFilteredScanResults`、`wifi auto join`）和 `gh search issues --owner UniXNU "wifi auto join"` 都没有。修复是驱动改动，还没动手，等用户同意。
+      - 查过，没有（17:39 拉取后查的，Wi-Fi 扫描结果的时间戳）：sheng `upstream/main`（`2061710`）和 `upstream/feat/platform-sleep-wake` 的 `package/WifiNet.cpp` 里 `scan_result` 都还是 1164 字节、没有 `timestamp` 字样；`git log --all -S'0x8d0'`、`-S'2280'`、`--grep` `timestamp`/`maxAge`/`auto-join` 只有我们自己的提交；`gh search prs`（UniXNU、CrossDarwin；`scan result timestamp`、`auto-join maxAge`、`CWFFilteredScanResults`、`wifi auto join`）和 `gh search issues --owner UniXNU "wifi auto join"` 都没有。修复是驱动改动，还没动手，等用户同意。
     - **WindowServer 崩了 4 次**（用户 16:5x："一直在崩溃"）：16:30:04、16:31:58、16:50:41、16:52:44。报告在 `out/boot-logs/cd16-1117-1635/ws/`（本地）。
       - 四次是同一处：主线程 `EXC_BAD_ACCESS KERN_INVALID_ADDRESS`，在 `_platform_memmove` 里。出错地址正好是一块 CoreAnimation 内存区域结束后的第一个字节（区域 184K、244K、116K、32K）。寄存器：源地址等于出错地址，目的地址在栈上，剩余长度 0x1000（16:50 那次 0x400）。
       - 用构建目录里的调试符号翻出调用链（UUID `FB2E63C9-1A40`，和报告里的一致）：`-[NBCommandBuffer commitAndWaitUntilSubmitted]` → `waitUntilScheduled` → `CommandBuffer::settle_commit` → `commit_now`（`command_buffer/mod.rs:4785`）→ `CopiedBuffers::copy_in` → `copy_in_untagged` → `copy_in_run`（`copied.rs:1859`）。16:50 那次走 `copy_in_tagged` → `copy_in_blocks` → `tag_in_place` → `read_block`（`copied.rs:1069`）。
@@ -76,9 +76,9 @@
         - 为什么会去读它：`commit_now` 在"命令的用途没记全"或"有函数按地址取内存"时把 `CopiesReached` 设成全部（`reached_all`、`reached_unnamed`），`copy_in` 就把每一份登记着的副本和应用内存逐页比一遍，不管这次提交用没用到它。旧运行库（`555b13d`）也有这条路。
         - 为什么旧运行库不崩（推断，没在机器上验证）：新运行库多了一种做副本的原因 `CopiedBecause::OverImport`（`host_aliases.rs` 的 "One page, one import"）：新缓冲的页和一份还活着的导入部分重叠时，不再导入第二次，改成副本。CoreAnimation 释放后在挪了几页的地址上重新分配同样大小的内存（上表前两行正是这样），新缓冲就和旧缓冲的导入部分重叠，于是成了副本。旧运行库里它是导入，页由内核钉住，CPU 不读，内存被释放也没事。
         - 桥那边已有的处理只管一半：`bridge/NativeMetalObjects.rs` 的 `NoCopyPages` 只在**新建**缓冲、发现同一范围换了内存时才调 `host_range_remapped`。内存被释放、之后没人在同一范围新建缓冲时，旧副本一直留着。
-        - 查过，没有（17:45 再查）：`steelbrain/metal2vulkan` 的 `development` 已到 `d78a53e4`，比我们钉的 `46e7cc96` 多 42 个提交（RUNTIME 2508 到 2530，今天 12:03 到 16:58）。之前写"顶端就是我们钉的版本"是错的。这 42 个提交没有碰 `copied.rs`、`host_aliases.rs`、`buffer_descriptor.rs`（91 个改动文件里只有校验用的 `runtime_lane/host_memory.rs` 加了 4 行）。issue 里搜 `copy_in`、`unmapped`、`copied host`、`EXC_BAD_ACCESS`，没有。`UniXNU/AdrenoMetal` 的 `main` 仍是 `8c7f950`，开着的只有 #65。
+        - 查过，没有（写修复之前再查的，17:2x）：`steelbrain/metal2vulkan` 的 `development` 已到 `d78a53e4`，比我们钉的 `46e7cc96` 多 42 个提交（RUNTIME 2508 到 2530，今天 12:03 到 16:58）。之前写"顶端就是我们钉的版本"是错的。这 42 个提交没有碰 `copied.rs`、`host_aliases.rs`、`buffer_descriptor.rs`（91 个改动文件里只有校验用的 `runtime_lane/host_memory.rs` 加了 4 行）。issue 里搜 `copy_in`、`unmapped`、`copied host`、`EXC_BAD_ACCESS`，没有。`UniXNU/AdrenoMetal` 的 `main` 仍是 `8c7f950`，开着的只有 #65。
       - 第 5 份报告（`WindowServer-005939.ips`）是同一处：出错地址是一块 12K 的 CoreAnimation 区域后的第一个字节，后面空 0x2000。
-      - **修复（17:50，没上机）：运行库在比较前先问内核那几页还在不在。**
+      - **修复（测试 17:30 先失败、17:32 通过，17:34 提交，没上机）：运行库在比较前先问内核那几页还在不在。**
         - 改动是运行库的一个补丁 `bridge/patches/0064-copies-leave-unreachable-pages-alone.patch`（201 行，只在 macOS 上生效）：`copy_in` 比较一份副本之前、`merge_back` 写回之前，用 `mach_vm_region` 查副本那段地址是不是每一页都映射着、带着要用的权限（读；要写回时读加写）。不满足就跳过这份副本：不读它的页、不给它做 base、不往里写回。页重新映射后照常比较。`host_memory.rs` 里原来只给 `mapped_writable` 用的那段区域遍历抽成了 `mapped_with`。
         - 先写测试：`tests::copied::a_commit_leaves_a_copy_alone_while_its_pages_cannot_be_read`（把副本的后两页设成不可读，再提交）。没有修复时测试进程被 SIGBUS 杀掉，其余 20 个副本测试通过；带修复 21 个全过。`cargo test -p metal2vulkan-runtime --lib -- copied copies host_memory host_aliases read_only dirty_pages`：107 过，0 败，4 个忽略。`cargo check` 和 `rustfmt --check` 干净。
         - 局限：内核回答之后、读完之前页被释放，仍会出错（窗口是微秒级）；页已被别的映射占用时照样读（读进一份没人用的副本，不写回）。副本本身每次提交都要比一遍的开销还在，这次没动。
@@ -87,12 +87,12 @@
         - 本地工作分支：`drivers/AdrenoMetal` 从 `f7b4ed1` 挪到 `685f37c`（`f7b4ed1` + 这一个提交，分支 `local/r2507-copy-in-fix`，只在本机；这样不带进上游 `main` 多出来的 5 个着色器缓存提交）。`scripts/build-adreno-metal-bridge.py` 的补丁列表加了 0064。核心提交 `471172b`。
         - 用构建脚本自己的办法核对过：构建目录里缓存的运行库源码现在是"钉住的版本 + 0063"（树 `a1c07cff`），加上 0064 是 `6ab46c88`，都在列表能产生的状态里，所以下一次构建会自己打上 0064 并重编桥。`scripts/check-unixnu.py` 通过。
         - 下一步：用户构建 cd17（`sudo -v` 后 `./unixnu build kernel payload …`），从内存启动，看 WindowServer 还崩不崩。向 `UniXNU/AdrenoMetal` 开 PR（draft，写明没上机）、要不要同时报给 `steelbrain/metal2vulkan`，等用户说。核心那边的 PR 要等组件 PR 合并后才能指向上游取得到的提交。
-        - **cd17 的构建准备已做完（17:52）**：日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），三份备份都在；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑；构建盘剩 85 GiB。工作分支：核心 `471172b` 之后只有文档提交，sheng `23366db`。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。
+        - **cd17 的构建准备已做完（17:47）**：日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），三份备份都在；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑；构建盘剩 85 GiB。工作分支：核心 `471172b` 之后只有文档提交，sheng `23366db`。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。
     - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
       - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
       - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
       - 从 `pmset sleepnow` 到真正入睡隔了 30 s：`Kernel Client Acks: Delays to Sleep notifications: [wifip2pd timed out(30000 ms)]`，两次都有；另有 `com.apple.bluetooth.sleep is slow(1534 ms)`。原因见下一条。
-      - **这 30 s 的原因（17:50，从已存的日志里查的，没改任何东西）**：`wifip2pd` 把这台机器当成虚拟机。
+      - **这 30 s 的原因（17:43，从已存的日志里查的，没改任何东西）**：`wifip2pd` 把这台机器当成虚拟机。
         - 日志：01:08:44.484 `wifip2pd … System will sleep`，随后只有 `Rejecting XPC connection with PID 249 because virtual machine does not support Wi-Fi`（249 是 airportd，这一份日志里 46 次），之后没有回应；01:09:14.477 内核 `PM notification timeout (pid 306, wifip2pd)`，正好 30 s。
         - 依据：`wifip2pd` 的二进制里有 `kern.hv_vmm_present` 和这句拒绝的话（在这台 Mac 的 27.2.1 上看的 `strings`，同时它导入 `IORegisterForSystemPower`、`IOAllowPowerChange`）。平板上这个值是 1，因为 `../UniXNU-sheng/board.toml:140` 写了 `"vmm-present" = 1`（没有 Apple 的 PMGR 和 SEP，报成虚拟平台让 AMFI 不等 `ApplePMGRNub`；evb10 的记录里写着不这样 watchdogd 会连崩三次后内核 panic）。
         - 它在虚拟机模式下收到入睡通知后为什么不回应，没有反汇编，不知道；"不回应"是日志里看到的事实。cd14 的日志（`cd14-1117-1214/wake2-all.txt`）里也有同一句拒绝。
@@ -117,7 +117,7 @@
   - 查过别人：`gh search prs`（UniXNU、CrossDarwin；`auto-login`、`sheng_sigp_recover`、`cpu_running SIGPdisabled`、`INTR_STATUS lid sleep`）和各仓库 `git log --all -S'target_proc->cpu_running'`，没有同类改动。
   - 主题分支上的提交说明重写过（不带 `integrate/*`、`cd15`）；测试注释里的 `cd15` 改成了 "seen on the tablet"，其余和工作分支的 `8d1a536`、`8a0c5f5`、核心 `c0f8627` 内容相同。
   - 工作树：`../UniXNU-pr-docs-autologin`、`../UniXNU-sheng-pr-sleep-lid`、`../UniXNU-sheng-pr-sleep-sigp`、`../AdrenoMetal-pr-copy-in`。
-- **上游 `main` 又前进了（17:50 拉取）**：
+- **上游 `main` 又前进了（sheng 17:39、核心 17:40、Metal 组件 17:45 拉取）**：
   - sheng：#127 在 15:44 合进了 `main`（`2061710`）。`main` ＝ 作者分支的 `5d8fedb` ＋ 一个文档提交 `8a9d4c6`（`porting.toml`、`reports/macos-sleep-wake.md`），代码和 `5d8fedb` 一样。我们的两个修复都不在里面（`sheng_sleep_clear_lid_status` 在 `main` 里 0 处）。`fix/sleep-open-lid-wake`、`fix/sleep-sigp-recovery-race` 各比 `main` 多 1 个提交，`git merge-tree` 试合到 `main` 都干净：以后开 PR 的 base 直接用 `main`，不用重开分支。
   - 核心：`main` 到 `630b85a`，比工作分支的基线多 16 个提交（#299 选用 ArmCpu 的睡眠和恢复、#300 到 #303 构建前的校验、#304 着色器缓存的登录代理、文档）。它钉的 `drivers/AdrenoMetal` 是 `8c7f950`，补丁列表仍只有 0063：`fix/copied-buffers-freed-pages` 正好基于这个提交。
   - 工作分支照规则要从新的 `main` 重建，还没做。试合的冲突：sheng 只有 `porting.toml`；核心只有 `drivers/AdrenoMetal` 的指针（`8c7f950` 对本机的 `685f37c`）。
