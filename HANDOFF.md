@@ -132,7 +132,12 @@
         - 所以光给 macOS 补时间戳不够：按现在的 `age_ms` 算出来的时间戳也会一直是"266 s 前"。修的时候要存"上次听到的时刻"，交结果时再算，而且用把睡眠时间算进去的时钟。
       - 18:11:50 有一次扫描没启动：`received scan start failure event`，`scan done 140: status 9, 57 networks held`，之后交出去的是手里的旧表。原因没查。
       - 查过，没有：sheng `upstream/main` 的 `WifiNet.cpp` 里这条"连着就用缓存回答"的规则原样在；`UniXNU/Ath12kWifi` 的 `main`（`26cf2da`，比我们多 1 个合并提交）和我们的 `b455da9` 里都没有过期或按时间筛的代码（搜 `cfg80211_bss_expire`、`bss_expire`、`SCAN_RESULT_EXPIRE`、`max_age`、`too old`）；`gh search issues --include-prs`（UniXNU、CrossDarwin；`stale scan results`、`scan results expire`、`scan while joined`、`bss age`）没有。
-      - 可以做的修复（驱动改动，等用户同意，和时间戳那一项一起做最省事）：一、表里存"上次听到的时刻"，交结果时按含睡眠的时钟算 `age_ms`，超过一定时间没听到的不交（没连接时 30 s 上下，和 Linux 一样；连着时别的信道没法重新确认，得同时放开下面这一条）；二、连着的时候，界面主动要的扫描真的去扫（mac80211 自己会处理离开信道），后台的扫描仍用缓存；三、补上 `TIMESTAMP`，让 macOS 自己也能按时间筛。
+      - **用户 18:2x 同意"三项一起修"。做法（进行中，做完一项在这里记一项）：**
+        - 甲、组件 `Ath12kWifi`（`src/nw_mainline.c`）：`nw_wifi_bss_get` 交的 `age_ms` 改成读的那一刻算。快照里存每条"上次听到"的含睡眠时刻（`lx_boottime_ns`，即 `mach_continuous_time`）；`jiffies` 是 `mach_absolute_time`，睡眠时不走，所以另记最近几次唤醒时两个时钟的差，把"听到之后睡了多久"加回去。ABI 不变。测试加在 `tests/mainline_runtime_test.c`（`python3 tools/test-mainline-runtime.py`）。主题分支从组件上游 `main`（`26cf2da`）开。不给收到的帧打 boottime 戳：那会让发给 supplicant 的结果多一个属性，它按自己的时钟算，风险大。
+        - 乙、sheng 时间戳（独立，可以直接从 `upstream/main` 开主题分支）：扫描结果结构挪进 `package/WifiScan.h`，长到 macOS 27 的 2280 字节（元素区 2048，`0x8d0` 处 64 位时间戳 = 含睡眠的当前纳秒 - `age_ms`），请求只有 1164 字节时元素区仍按 1024 截。主机测试 `package/tests/wifi_scan_host.c`。
+        - 丙、sheng 列表跟着实际走（依赖甲，也依赖本地还没进上游的"扫描带信道"`e92978e` 和组件 `b455da9`，上游的主题分支等那两项定了再开）：交结果时跳过超过 60 s 没听到的条目，当前连着的那个永远算新的；已连接满 15 s 以后，系统要的主动、被动扫描（类型 1、2）真的去扫，连接过程中、刚连上、以及类型 3（可用缓存）和 4（后台）仍用手里的表。判断写成 `WifiScan.h` 里的纯函数，带主机测试。
+        - 开发都在单独的工作树里做；验证完、确认没有构建在跑，再把提交放进两个仓库的工作分支，cd17 一起带上。
+      - 原先列的三项（供对照）：一、表里存"上次听到的时刻"，交结果时按含睡眠的时钟算 `age_ms`，超过一定时间没听到的不交（没连接时 30 s 上下，和 Linux 一样；连着时别的信道没法重新确认，得同时放开下面这一条）；二、连着的时候，界面主动要的扫描真的去扫（mac80211 自己会处理离开信道），后台的扫描仍用缓存；三、补上 `TIMESTAMP`，让 macOS 自己也能按时间筛。
     - 还没做：第 5 级（拔电合盖 1 小时）。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
