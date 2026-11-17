@@ -117,6 +117,13 @@
   - 测试镜像 `out/flash/boot-v4-payload.bigwin-cd13-sleep.img`（`56ff05d0`），载荷 `10b1cce4`，参数和 cd12-sleep 逐字节相同，内核块 `610fa1f6`。
   - 09:57 从内存启动（槽位 a 6 次、b 7 次）。
   - 如果又卡住：用 `cd12-read` 镜像开机读 `kern.unixnu_prev_log`，它不开睡眠。
+  - 10:10 用户报终端未响应，还没开始睡眠测试，开机 13 分钟。日志在 `out/boot-logs/cd13-terminal-1117-1011/`（本地）：`ps`、终端的 `sample`、`pmset`、统一日志、3 份崩溃报告。
+    - 终端主线程每一次取样都停在同一处：画标题栏的文档图标（`NSThemeDocumentButtonCell` → `ISConcreteIcon generateImageWithDescriptor`），在等图标服务的同步 XPC 回复。终端本身没问题，和睡眠修复也无关。
+    - 用户那份 `gui/501/com.apple.iconservices.iconservicesagent`：`runs = 15`、`successive crashes = 15`、`state = spawn scheduled`。
+      - 每次拉起 0.4–0.5 s 后就 SIGABRT，日志是 `MPSImageUnaryKernel.mm, line 335`。
+      - 崩溃栈：`CIBlurProcessor processWithInputs` → `MPSImage` → `MTLReportFailure` → `abort`。
+    - 启动参数里有 `ci-mps=0`，但这次没有像 cd8/cd9 那样崩两次就稳住，开机 13 分钟后还在崩。原因没查。
+    - `pmset -g` 里 `sleep 0`（被 powerd、Terminal 挡着），所以不用再执行 `sudo pmset -a sleep 0`。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
