@@ -5,7 +5,7 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-**工作分支（2026-11-17 16:xx 起）：核心和 sheng 都在 `local/on-main-20261117` 上，不再用 `integrate/*`。**
+**工作分支（2026-11-17 15:3x 起）：核心和 sheng 都在 `local/on-main-20261117` 上，不再用 `integrate/*`。**
 - 用户说作者（rponeawa）告诉他"提交都合了"，要求切回 main。核对结果：上游 `main`（核心 `ae4ee0e`、sheng `8a85350`）里没有睡眠改动；作者当天 15:1x 建了两个还没合进 main 的功能分支：核心 `upstream/feat/sheng-sleep-wake`（`2e64418`）、sheng `upstream/feat/platform-sleep-wake`（`7ffbb0b`，比 main 多 15 个提交）。用户选的基线：main ＋ 作者的两个分支 ＋ 上游没有的本地修复。
 - 分支的构成（`git log upstream/main..HEAD` 就是全部差异）：
   - 核心：作者的 `2e64418`（ArmCpu 换成 `5f37026`，含我们的睡眠和 GIC 修复，睡眠钩子改成弱引用），上面 4 个提交：`29e63b4`（12 GiB：9 GiB 窗口和下限、Adreno740 页表位图、`memory-outside-report`）、`c0f8627`（`--auto-login` 文档行）、`f09e70f`（`local-tools`）、`3440539`（HANDOFF、计划、设计、规则）。
@@ -17,7 +17,7 @@
 - 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
 - cd16 还没构建成功过：命令不变，见下面"cd16 要带的修复"一条。
 
-**往上游 `main` 推的进度（2026-11-17 16:1x 起，规则 `.claude/rules/push-progress-to-main.md`）**
+**往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
 - 已推到 fork，还没开 PR（等用户说开）：
 
