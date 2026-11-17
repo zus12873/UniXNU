@@ -217,6 +217,22 @@
     - .161 `Did Wake`；.277 / .328 内核 `vt 5 first dfrm`、`vt 5 direct, 6 surfaces`。
     - WindowServer 醒来后不通过背光驱动重新设亮度，只设了 headroom hint。
     - 结论：背光比 WindowServer 打开显示器早约 25 ms，比第一批画面早约 0.25 s。修法：背光等显示器重新上电、出了第一批画面以后再恢复，并加一个超时兜底，免得屏幕一直不亮。
+  - **cd15 的两处改动（11-17 12:5x，用户选的是"等画面出来再亮"和"先加诊断日志"）**：
+    - 先查过上游，没有：UniXNU、CrossDarwin 的 PR 里搜 backlight wake、backlight、wifi scan；历史里搜 color bar、first frame、backlight 和 wake/resume。Ath12kWifi 上游只多了 #6，是构建修复。
+    - 背光（sheng `1466e22`，证据 `7681063`）：
+      - 醒来后背光先保持暗，每 20 ms 看一次显示驱动的帧计数 `native_legacy_swapstat` [7]+[9]+[10]（拷贝、翻页、latch，GopFramebuffer 导出，弱引用）；
+      - 多出 2 帧，或者过了 1.5 s，就恢复亮度；拿不到计数时固定等 0.6 s；等的过程中又要睡，就取消；
+      - 日志改成两行：`system awake, panel waits for the display`，和 `panel back to its level N ms after the wake, M frames shown`；
+      - `lid_backlight_wake_ready`（LidClamshell.h），`check-lid-clamshell-host.py` 51 项，改之前是失败的；用内核参数编过，没有警告。
+    - Ath12kWifi 本地分支 `local/scan-diagnostics` `0d8758a`（基于 `39cc47b`）；sheng `1c48ecb` 指向它，`5a17da0` 改了记录里的固定版本：
+      - 只加日志，限频（前 64 次、之后每 64 次，失败的每次都记），不改行为；
+      - 记四件事：扫描请求交给 supplicant（`scan request N to the supplicant: ssid L -> R`）、12 s 无人回（`unanswered after 12 s`）、supplicant 发起的 cfg80211 扫描（`supplicant scan N: S ssids, F frequencies -> R (held request X, message Y)`）、扫描完成（`scan done N: status S, K networks held`）。
+      - 怀疑的原因：`nw_cfg80211_control.c scan()` 在 `rdev->scan_req || rdev->scan_msg` 时返回 `-EBUSY`。如果关 Wi-Fi 或睡眠打断的扫描一直没收尾，之后的扫描就会全部被拒；连接不走这条路径，所以不受影响。
+      - `test-mainline-runtime.py`、`test-cfg80211-control.py`、`test-control.py`、`test-control-endpoint.py` 都过。
+    - 没做的小问题：入睡没走到处理器那一步时，会打印一行带着上一次统计的 `woke by …`。
+  - 上机要看（cd15）：
+    - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
+    - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
   - 上机要看（cd14）：
     - 开机后不碰控制中心就自动连上；
     - 睡眠唤醒后很快自动重连；
