@@ -75,14 +75,25 @@
         - 为什么会去读它：`commit_now` 在"命令的用途没记全"或"有函数按地址取内存"时把 `CopiesReached` 设成全部（`reached_all`、`reached_unnamed`），`copy_in` 就把每一份登记着的副本和应用内存逐页比一遍，不管这次提交用没用到它。旧运行库（`555b13d`）也有这条路。
         - 为什么旧运行库不崩（推断，没在机器上验证）：新运行库多了一种做副本的原因 `CopiedBecause::OverImport`（`host_aliases.rs` 的 "One page, one import"）：新缓冲的页和一份还活着的导入部分重叠时，不再导入第二次，改成副本。CoreAnimation 释放后在挪了几页的地址上重新分配同样大小的内存（上表前两行正是这样），新缓冲就和旧缓冲的导入部分重叠，于是成了副本。旧运行库里它是导入，页由内核钉住，CPU 不读，内存被释放也没事。
         - 桥那边已有的处理只管一半：`bridge/NativeMetalObjects.rs` 的 `NoCopyPages` 只在**新建**缓冲、发现同一范围换了内存时才调 `host_range_remapped`。内存被释放、之后没人在同一范围新建缓冲时，旧副本一直留着。
-        - 查过，没有：`steelbrain/metal2vulkan` 的 `development` 顶端就是我们钉的 `46e7cc96`（`master` 是 `d9236a8a`），issue 和 PR 里没有 copy-in、unmapped 相关的内容。
+        - 查过，没有（17:45 再查）：`steelbrain/metal2vulkan` 的 `development` 已到 `d78a53e4`，比我们钉的 `46e7cc96` 多 42 个提交（RUNTIME 2508 到 2530，今天 12:03 到 16:58）。之前写"顶端就是我们钉的版本"是错的。这 42 个提交没有碰 `copied.rs`、`host_aliases.rs`、`buffer_descriptor.rs`（91 个改动文件里只有校验用的 `runtime_lane/host_memory.rs` 加了 4 行）。issue 里搜 `copy_in`、`unmapped`、`copied host`、`EXC_BAD_ACCESS`，没有。`UniXNU/AdrenoMetal` 的 `main` 仍是 `8c7f950`，开着的只有 #65。
+      - 第 5 份报告（`WindowServer-005939.ips`）是同一处：出错地址是一块 12K 的 CoreAnimation 区域后的第一个字节，后面空 0x2000。
+      - **修复（17:50，没上机）：运行库在比较前先问内核那几页还在不在。**
+        - 改动是运行库的一个补丁 `bridge/patches/0064-copies-leave-unreachable-pages-alone.patch`（201 行，只在 macOS 上生效）：`copy_in` 比较一份副本之前、`merge_back` 写回之前，用 `mach_vm_region` 查副本那段地址是不是每一页都映射着、带着要用的权限（读；要写回时读加写）。不满足就跳过这份副本：不读它的页、不给它做 base、不往里写回。页重新映射后照常比较。`host_memory.rs` 里原来只给 `mapped_writable` 用的那段区域遍历抽成了 `mapped_with`。
+        - 先写测试：`tests::copied::a_commit_leaves_a_copy_alone_while_its_pages_cannot_be_read`（把副本的后两页设成不可读，再提交）。没有修复时测试进程被 SIGBUS 杀掉，其余 20 个副本测试通过；带修复 21 个全过。`cargo test -p metal2vulkan-runtime --lib -- copied copies host_memory host_aliases read_only dirty_pages`：107 过，0 败，4 个忽略。`cargo check` 和 `rustfmt --check` 干净。
+        - 局限：内核回答之后、读完之前页被释放，仍会出错（窗口是微秒级）；页已被别的映射占用时照样读（读进一份没人用的副本，不写回）。副本本身每次提交都要比一遍的开销还在，这次没动。
+        - 测试用的工作副本在 `/Volumes/UniXNUBuild/unixnu-out/work/m2v-copyin-fix`（钉住的版本 + 0063，本地多一个提交让 `tests/exit_guard.rs:1768` 在稳定版工具链上能编，不在补丁里）。运行库要求的 `nightly-2026-11-03` 没装，用的是构建脚本同样的办法：稳定版 1.99.1 加 `RUSTC_BOOTSTRAP=1`。
+        - 组件：`zus12873/AdrenoMetal` 的 `fix/copied-buffers-freed-pages`，`aecda9c`，基于组件上游 `main` `8c7f950`，已推 fork，没开 PR。带 README 一节 "No-copy buffers over freed memory"。工作树 `../AdrenoMetal-pr-copy-in`。
+        - 本地工作分支：`drivers/AdrenoMetal` 从 `f7b4ed1` 挪到 `685f37c`（`f7b4ed1` + 这一个提交，分支 `local/r2507-copy-in-fix`，只在本机；这样不带进上游 `main` 多出来的 5 个着色器缓存提交）。`scripts/build-adreno-metal-bridge.py` 的补丁列表加了 0064。核心提交 `471172b`。
+        - 用构建脚本自己的办法核对过：构建目录里缓存的运行库源码现在是"钉住的版本 + 0063"（树 `a1c07cff`），加上 0064 是 `6ab46c88`，都在列表能产生的状态里，所以下一次构建会自己打上 0064 并重编桥。`scripts/check-unixnu.py` 通过。
+        - 下一步：用户构建 cd17（`sudo -v` 后 `./unixnu build kernel payload …`），从内存启动，看 WindowServer 还崩不崩。向 `UniXNU/AdrenoMetal` 开 PR（draft，写明没上机）、要不要同时报给 `steelbrain/metal2vulkan`，等用户说。核心那边的 PR 要等组件 PR 合并后才能指向上游取得到的提交。
     - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
       - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
       - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
       - 从 `pmset sleepnow` 到真正入睡隔了 30 s：`Kernel Client Acks: Delays to Sleep notifications: [wifip2pd timed out(30000 ms)]`，两次都有；另有 `com.apple.bluetooth.sleep is slow(1534 ms)`。原因还没查。
       - 17:04 的第一次没睡成：01:04:13 收到 WillSleep、屏幕关了，01:04:24 键盘（`Xiaomi Keyboard eventType:3`）来了一次输入，系统取消了入睡，Sleep Count 仍是 0。等 wifip2pd 的那 30 s 里碰一下键盘就会取消。
       - 唤醒后的 Wi-Fi：芯片重新上电（`Requested to power ON`），随后 auto-join 一直扫、一直 `results=0`（原因见上面 Wi-Fi 那条），2 分 6 秒后才连上（应是手动）。平板从 17:09:17 到 17:12:24 不在网络上。
-      - 唤醒时屏幕上有没有彩条，要问用户。还没做：合盖 15 分钟以上、第 4、5 级。16:48 平板上 `sleep 0`、`displaysleep 10`；17:12 电量 64%，在充电。
+      - 唤醒时屏幕上有没有彩条，要问用户。还没做：第 2 级（电源键叫醒）、第 3 级（合盖 15 分钟以上）、第 5 级。16:48 平板上 `sleep 0`、`displaysleep 10`；17:36 电量 63%（接在 Mac 上，1 小时掉约 5%）。
+    - **睡眠第 4 级（连续 10 次）17:37:56 开始**：平板上跑 `local-tools/tablet-sleep-cycles.sh`（不靠网络，每轮 `pmset sleepnow`、等定时器叫醒、记一行），结果在平板的 `~/unixnu-capture/sleep-cycles-0138.log`，驱动日志在 `wifi-0138.log`。唤醒后 Wi-Fi 不会自己连，要用户手动连上以后才能取回。开始时 Sleep Count 1，WindowServer pid 6733（已连续运行 37 分钟，中间过了一次睡眠）。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
 - 做法：每项改动单独开分支（从 `upstream/main` 开；依赖作者分支的从那个分支开），在单独的工作树里验证，通过后直接推 fork，开 PR 前问用户。本机 12 GiB 这一层不推。
@@ -93,10 +104,11 @@
   | `--auto-login` 文档行 | `zus12873/UniXNU` `docs/macos-auto-login-user` | `a07572d` | 核心 `upstream/main` `6213954` | 上游 `make-macos-data-seed.py` 第 90 行确有这条限制 |
   | 开盖入睡 3 ms 被唤醒 | `zus12873/UniXNU-sheng` `fix/sleep-open-lid-wake` | `bc00259` | 作者的 `feat/platform-sleep-wake` `5d8fedb`（sheng #127，draft） | 新测试在旧代码上编译失败（缺 `sheng_sleep_clear_lid_status`），带修复后 `check-sheng-sleep-host.py` 通过；porting record 18 个区；两个源文件和工作分支上单独编过的一致。没上机 |
   | 第 13 次入睡的 panic（SIGP 恢复） | `zus12873/UniXNU-sheng` `fix/sleep-sigp-recovery-race` | `e3a233b` | 同上 | `patches/` 整个目录和构建用的一致；15:03 那次构建里 `cpu_common.o` 带着这一段编过，只有警告（那次只败在链接 Wi-Fi 符号）。没有主机测试，没上机 |
+  | WindowServer 在副本比较里读已释放的内存 | `zus12873/AdrenoMetal` `fix/copied-buffers-freed-pages` | `aecda9c` | 组件上游 `main` `8c7f950` | 新测试没有修复时 SIGBUS、带修复通过；相关 107 个测试通过；补丁能接在 0063 后面打上。没编插件，没上机 |
 
   - 查过别人：`gh search prs`（UniXNU、CrossDarwin；`auto-login`、`sheng_sigp_recover`、`cpu_running SIGPdisabled`、`INTR_STATUS lid sleep`）和各仓库 `git log --all -S'target_proc->cpu_running'`，没有同类改动。
   - 主题分支上的提交说明重写过（不带 `integrate/*`、`cd15`）；测试注释里的 `cd15` 改成了 "seen on the tablet"，其余和工作分支的 `8d1a536`、`8a0c5f5`、核心 `c0f8627` 内容相同。
-  - 工作树：`../UniXNU-pr-docs-autologin`、`../UniXNU-sheng-pr-sleep-lid`、`../UniXNU-sheng-pr-sleep-sigp`。
+  - 工作树：`../UniXNU-pr-docs-autologin`、`../UniXNU-sheng-pr-sleep-lid`、`../UniXNU-sheng-pr-sleep-sigp`、`../AdrenoMetal-pr-copy-in`。
 - 等用户决定：
   - Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
   - 旧 PR（sheng #109 到 #112，都开在上游改写历史之前，差异带 660 多个提交）。按新增的行逐行比过：

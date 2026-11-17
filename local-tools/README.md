@@ -195,6 +195,12 @@ python3 -I local-tools/boot-sheng.py out/flash/boot-v4-payload.bigwin-cdN-s2.img
   ```
 
   脚本留在平板的 Data 卷上。开机后还没连网时，在平板的终端里跑 `sh ~/unixnu-capture/tablet-wifi-capture.sh ~/unixnu-capture/wifi-boot.log &`，再去连 Wi-Fi。
+- `tablet-sleep-cycles.sh`：在平板上连续入睡若干次（默认 10 次），每次等它醒来，记一行（入睡和醒来的时刻、Sleep Count、WindowServer 的 pid）。唤醒后 Wi-Fi 不会自己连上，所以它不靠网络，放到平板上后台跑；跑完手动连上 Wi-Fi 再取结果。等入睡的 30 s 里碰键盘会取消那一轮，那一行会写 "no sleep"。
+  ```
+  local-tools/tablet-ssh.py 'cat > ~/unixnu-capture/tablet-sleep-cycles.sh' < local-tools/tablet-sleep-cycles.sh
+  local-tools/tablet-ssh.py 'nohup sh ~/unixnu-capture/tablet-sleep-cycles.sh ~/unixnu-capture/sleep-cycles-$(date +%H%M).log 10 >/dev/null 2>&1 &'
+  ```
+  内核自己的记录事后用 `/usr/bin/log show --start '<日期 时刻>' --info | grep -E 'sheng sleep|IOCPUSleepKernel|panel back'` 取。
 - `tablet-wifi-scan-probe.js`：打印 CoreWLAN 手里每条扫描结果的信道、信号、有没有名字，以及扫描记录里的 `AGE`、`TIMESTAMP` 和标志（不打印名字和地址）。用法在文件开头。
 - 系统为什么滤掉扫描结果，要看调试级日志，平时不落盘。先在平板上开采集，再让它扫描：
 
