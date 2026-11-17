@@ -87,7 +87,7 @@
         - 本地工作分支：`drivers/AdrenoMetal` 从 `f7b4ed1` 挪到 `685f37c`（`f7b4ed1` + 这一个提交，分支 `local/r2507-copy-in-fix`，只在本机；这样不带进上游 `main` 多出来的 5 个着色器缓存提交）。`scripts/build-adreno-metal-bridge.py` 的补丁列表加了 0064。核心提交 `471172b`。
         - 用构建脚本自己的办法核对过：构建目录里缓存的运行库源码现在是"钉住的版本 + 0063"（树 `a1c07cff`），加上 0064 是 `6ab46c88`，都在列表能产生的状态里，所以下一次构建会自己打上 0064 并重编桥。`scripts/check-unixnu.py` 通过。
         - 下一步：用户构建 cd17（`sudo -v` 后 `./unixnu build kernel payload …`），从内存启动，看 WindowServer 还崩不崩。向 `UniXNU/AdrenoMetal` 开 PR（draft，写明没上机）、要不要同时报给 `steelbrain/metal2vulkan`，等用户说。核心那边的 PR 要等组件 PR 合并后才能指向上游取得到的提交。
-        - **cd17 的构建准备已做完（17:47）**：日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），三份备份都在；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑；构建盘剩 85 GiB。工作分支：核心 `471172b` 之后只有文档提交，sheng `23366db`。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。
+        - **cd17 的构建准备 17:47 做完过，18:44 起失效：外置盘不在，哈希核对和挂 OS 镜像要重做（见下面 Wi-Fi 一条里的"外置盘不在"）。** 当时的记录：日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），三份备份都在；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑；构建盘剩 85 GiB。工作分支：核心 `471172b` 之后只有文档提交，sheng `23366db`。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。
     - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
       - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
       - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
@@ -132,11 +132,28 @@
         - 所以光给 macOS 补时间戳不够：按现在的 `age_ms` 算出来的时间戳也会一直是"266 s 前"。修的时候要存"上次听到的时刻"，交结果时再算，而且用把睡眠时间算进去的时钟。
       - 18:11:50 有一次扫描没启动：`received scan start failure event`，`scan done 140: status 9, 57 networks held`，之后交出去的是手里的旧表。原因没查。
       - 查过，没有：sheng `upstream/main` 的 `WifiNet.cpp` 里这条"连着就用缓存回答"的规则原样在；`UniXNU/Ath12kWifi` 的 `main`（`26cf2da`，比我们多 1 个合并提交）和我们的 `b455da9` 里都没有过期或按时间筛的代码（搜 `cfg80211_bss_expire`、`bss_expire`、`SCAN_RESULT_EXPIRE`、`max_age`、`too old`）；`gh search issues --include-prs`（UniXNU、CrossDarwin；`stale scan results`、`scan results expire`、`scan while joined`、`bss age`）没有。
-      - **用户 18:2x 同意"三项一起修"。做法（进行中，做完一项在这里记一项）：**
-        - 甲、组件 `Ath12kWifi`（`src/nw_mainline.c`）：`nw_wifi_bss_get` 交的 `age_ms` 改成读的那一刻算。快照里存每条"上次听到"的含睡眠时刻（`lx_boottime_ns`，即 `mach_continuous_time`）；`jiffies` 是 `mach_absolute_time`，睡眠时不走，所以另记最近几次唤醒时两个时钟的差，把"听到之后睡了多久"加回去。ABI 不变。测试加在 `tests/mainline_runtime_test.c`（`python3 tools/test-mainline-runtime.py`）。主题分支从组件上游 `main`（`26cf2da`）开。不给收到的帧打 boottime 戳：那会让发给 supplicant 的结果多一个属性，它按自己的时钟算，风险大。
-        - 乙、sheng 时间戳（独立，可以直接从 `upstream/main` 开主题分支）：扫描结果结构挪进 `package/WifiScan.h`，长到 macOS 27 的 2280 字节（元素区 2048，`0x8d0` 处 64 位时间戳 = 含睡眠的当前纳秒 - `age_ms`），请求只有 1164 字节时元素区仍按 1024 截。主机测试 `package/tests/wifi_scan_host.c`。
-        - 丙、sheng 列表跟着实际走（依赖甲，也依赖本地还没进上游的"扫描带信道"`e92978e` 和组件 `b455da9`，上游的主题分支等那两项定了再开）：交结果时跳过超过 60 s 没听到的条目，当前连着的那个永远算新的；已连接满 15 s 以后，系统要的主动、被动扫描（类型 1、2）真的去扫，连接过程中、刚连上、以及类型 3（可用缓存）和 4（后台）仍用手里的表。判断写成 `WifiScan.h` 里的纯函数，带主机测试。
-        - 开发都在单独的工作树里做；验证完、确认没有构建在跑，再把提交放进两个仓库的工作分支，cd17 一起带上。
+      - **用户 18:2x 同意"三项一起修"。代码和主机测试都做完了（19:00），工作分支已带上，没上机；cd17 一起验证。**
+        - 甲、组件 `Ath12kWifi`，分支 `fix/held-networks-age-at-read`（从组件上游 `main` `26cf2da` 开，工作树 `../Ath12kWifi-pr-held-age`），**已推到 `zus12873/Ath12kWifi`，没开 PR**：
+          - `a3dd395`：`nw_wifi_bss_get` 交的 `age_ms` 改成读的那一刻算。快照里存每条"上次听到"的含睡眠时刻（`boottime_ns`，即 `mach_continuous_time`）。cfg80211 给帧打的是 `jiffies`（`mach_absolute_time`，睡眠时不走），所以运行循环每一轮比较两个时钟的差，差多出 1 s 以上记一次唤醒（留最近 8 次），换算时用"听到那一刻的差"。当前连着的那个读出来是 0。ABI 不变。
+          - `02cee62`：**做的时候发现 cfg80211 的表从不清理**（18:15 的 56 条里最旧 5814 s，就是开机时听到的），而快照只取表里前 128 条、最老的在前。只在交结果时过滤，网络多的地方列表会被旧条目占满。现在扫描结束时超过 2 分钟没听到的不收进快照；当前连着的那个一定收，表满时放最后一格。
+          - 验证：`python3 tools/test-mainline-runtime.py`，两个新用例都是先失败后通过（第一个在"5 s 后再读还是旧值"处失败，第二个在"旧网络还在表里"处失败）；`src/nw_mainline.c` 用 `scripts/build-ath12k-wifi.py` 的内核参数单独编过。
+          - 查过，没有（18:58 拉取后）：组件上游 `main` 没动；`git log --all -S` `cfg80211_bss_expire`、`UI_BSS_MAX`、`age_ms` 只有原始提交和我们的；`gh search prs`（UniXNU、CrossDarwin）`held networks age`、`bss expire`、`scan list 128`、`stale networks` 都是 0 条；组件的 6 个 PR 都和扫描表无关。
+        - 乙、sheng 时间戳，分支 `fix/wifi-scan-result-timestamp`（从 `upstream/main` `2061710` 开，工作树 `../UniXNU-sheng-pr-wifi-scan-timestamp`），`f53c83e` ＋ `e79f7bd`（porting record 的 diagnostics 一条），**只在本地，还没推**：
+          - 扫描结果结构挪进 `package/WifiScanResult.h`，长到 0x8e8（2280）字节：元素区 2048，`0x8d0` 处 64 位时间戳 = 交结果时的连续时间（ns）减 `age_ms`。请求给的字节少（旧的 1164）时只拿到前半段，元素按放得下的截。
+          - 验证：`python3 scripts/check-wifi-scan-result-host.py`（新增，19 项；先在 1164 字节的旧结构上失败）；`porting-record.py check --device . --base upstream/main` 过。
+          - **没推的原因：`WifiNet.cpp` 还没用构建参数单独编。** 外置盘不在（见下），`kernel-compile-check.py` 要的编译记录在构建盘上。先拿 SDK 的 Kernel.framework 头文件做了语法检查：改动前后都是 13 个错误、70 个警告，逐条相同（错误都是公开头文件里没有的私有接口，和这次改动无关）。盘接回来后编一遍再推。
+        - 丙、sheng 列表跟着实际走，本地分支 `local/wifi-list-follows-the-air`（从工作分支 `23366db` 开，工作树 `../UniXNU-sheng-pr-wifi-list`），**不推**（下面压着本机这一层）：
+          - `437943c`、`685395d`：乙的两个提交搬过来（`cherry-pick -n`，include 和 porting.toml 两处冲突都是两边都留）。
+          - `f13df08`：判断写在 `package/WifiScanPolicy.h`。交结果时跳过超过 60 s 没听到的；连接已满 15 s 时扫描请求真的去扫，除非它点名的信道 20 s 内都扫过（没点名信道的算"全部信道"）；连接过程中和刚连上的 15 s 仍用手里的表。请求撞上正在进行的扫描时会被模块并进去，这种不记"扫过"。连着时扫到的结果不写日志（原来每次扫描会把前 24 条连名字写进去）。
+            - 按信道记而不是按时间限：系统把信道分批要，一次用户层面的扫描是连着好几个请求；按时间限的话每次只有第一批真的去扫，其余信道永远不刷新，60 s 后全被过滤掉。
+            - 已存日志里只有一条带类型的扫描请求：类型 1（主动）、11 个信道、2 个名字加通配。所以没按类型区分，类型 3（可用缓存）走的还是原来的分支。
+          - `783cc8f`：`drivers/Ath12kWifi` 从 `b455da9` 挪到 `f677aa4`（组件本地分支 `local/scan-diagnostics` 上搬了甲的两个提交：`e6195c7`、`f677aa4`，和"扫描带信道"的测试并排；组件测试过，`nw_mainline.c` 用内核参数编过）。
+          - 验证：`python3 scripts/check-wifi-scan-policy-host.py`（新增，99 项；先在"超过 60 s 的仍被交出"处失败）；扫描、扫描结果、日志导出、盖子、触摸盖子的主机检查和 porting record 都过；`WifiNet.cpp` 同样只做了 SDK 头文件的语法检查（和工作分支原文件的诊断逐条相同）。
+          - **sheng 工作分支已快进到 `783cc8f`**（当时没有构建在跑；9 个策略文件哈希前后一致；子模块就在 `f677aa4`）。
+          - 往上游走：丙要等"扫描带信道"（sheng `e92978e`、组件 `b455da9`）先有自己的主题分支，再从它上面重开；没有信道的话连着时每次真扫都是全频段，约 16 s。
+        - 这次看到的旧问题（不是这次改出来的，没动）：`scripts/check-wifi-association.py` 在上游 `main` 上就编不过（4 个错误：`gKeepJoin`、`type`、`kScanReq`、`kScanTypeCached`），在工作分支上是 23 个错误。乙只把它切源码用的标记从 `struct channel` 改成 `using channel`，错误和上游的 4 个逐条相同。
+        - **外置盘不在（18:44 发现）**：`/Volumes/12873` 和 `/Volumes/UniXNUBuild` 都没挂着，`hdiutil info` 里还留着那个镜像的设备（disk6、disk7）；17:47 挂在 scratchpad `os-mount` 的 OS 镜像也没了。17:47 做的构建前准备（哈希、OS 镜像）要重做。盘接回来以后：`hdiutil detach` 掉残留的设备 → 重新 attach → `diskutil verifyVolume` → 核对 7 个日常哈希 → 挂 OS 镜像 → 用 `kernel-compile-check.py` 编两个版本的 `WifiNet.cpp` → 推乙。
+        - cd17 上机时 Wi-Fi 要看的：`tablet-wifi-scan-probe.js` 里 `TIMESTAMP` 不再是 0、`AGE` 会涨；开机和唤醒后自己连上已存网络；离开一个网络的范围后一两分钟内它从列表里消失；驱动日志里有 `scan N while joined: on the air`；连着时扫描对延迟和吞吐的影响（`ping` 看抖动）；刚连上时 DHCP 照常拿到地址。
       - 原先列的三项（供对照）：一、表里存"上次听到的时刻"，交结果时按含睡眠的时钟算 `age_ms`，超过一定时间没听到的不交（没连接时 30 s 上下，和 Linux 一样；连着时别的信道没法重新确认，得同时放开下面这一条）；二、连着的时候，界面主动要的扫描真的去扫（mac80211 自己会处理离开信道），后台的扫描仍用缓存；三、补上 `TIMESTAMP`，让 macOS 自己也能按时间筛。
     - 还没做：第 5 级（拔电合盖 1 小时）。
 
@@ -158,7 +175,7 @@
   - sheng：#127 在 15:44 合进了 `main`（`2061710`）。`main` ＝ 作者分支的 `5d8fedb` ＋ 一个文档提交 `8a9d4c6`（`porting.toml`、`reports/macos-sleep-wake.md`），代码和 `5d8fedb` 一样。我们的两个修复都不在里面（`sheng_sleep_clear_lid_status` 在 `main` 里 0 处）。`fix/sleep-open-lid-wake`、`fix/sleep-sigp-recovery-race` 各比 `main` 多 1 个提交，`git merge-tree` 试合到 `main` 都干净：以后开 PR 的 base 直接用 `main`，不用重开分支。
   - 核心：`main` 到 `630b85a`，比工作分支的基线多 16 个提交（#299 选用 ArmCpu 的睡眠和恢复、#300 到 #303 构建前的校验、#304 着色器缓存的登录代理、文档）。它钉的 `drivers/AdrenoMetal` 是 `8c7f950`，补丁列表仍只有 0063：`fix/copied-buffers-freed-pages` 正好基于这个提交。
   - 工作分支照规则要从新的 `main` 重建，还没做。试合的冲突：sheng 只有 `porting.toml`；核心只有 `drivers/AdrenoMetal` 的指针（`8c7f950` 对本机的 `685f37c`）。
-  - 顺序（我的安排，用户可以改）：cd17 先从现在的工作分支构建，这样它和 cd16 的差别只有 0064 和 `5d8fedb` 的 `BootLog.c`，WindowServer 还崩不崩能直接归因；重建工作分支放在 cd17 验证之后。#303 会在编译前校验根卷策略文件，重建后的第一次构建可能要先过这一关。
+  - 顺序（我的安排，用户可以改）：cd17 先从现在的工作分支构建，它和 cd16 的差别是三处：0064、`5d8fedb` 的 `BootLog.c`、Wi-Fi 三项（sheng `437943c` 到 `783cc8f`，组件 `e6195c7`、`f677aa4`）。Wi-Fi 的改动不碰图形，WindowServer 还崩不崩仍能直接归因；重建工作分支放在 cd17 验证之后。#303 会在编译前校验根卷策略文件，重建后的第一次构建可能要先过这一关。
 - 等用户决定：
   - Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
   - 旧 PR（sheng #109 到 #112，都开在上游改写历史之前，差异带 660 多个提交）。按新增的行逐行比过：
