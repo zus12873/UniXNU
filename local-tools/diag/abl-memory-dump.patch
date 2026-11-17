@@ -1,0 +1,189 @@
+diff --git a/package/UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.c b/package/UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.c
+index cd2a9e0..562134a 100644
+--- a/package/UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.c
++++ b/package/UniXNUPkg/Driver/UniXNURamDiskDxe/UniXNURamDiskDxe.c
+@@ -202,6 +202,177 @@ PublishInitrd (
+   DEBUG ((DEBUG_ERROR, "UNIXNURAMDISK: initrd block device 0x%lx size 0x%lx %r\n", Start, End - Start, Status));
+ }
+ 
++//
++// DIAGNOSTIC (local-tools/diag/abl-memory-dump.patch, never merged): print the memory the bootloader describes in
++// its device tree on the screen log, a few lines at a time, so that a recording of the screen can be read back.
++// Every range line ends in a check value over base and size (local-tools/diag/read-abl-memory.py recomputes it).
++//
++STATIC UINTN  mDumpLines;
++
++STATIC
++UINT16
++DumpCheck (
++  IN UINT64  Base,
++  IN UINT64  Size
++  )
++{
++  UINT32  Sum;
++  UINTN   Index;
++
++  Sum = 0;
++  for (Index = 0; Index < 8; Index++) {
++    Sum = Sum * 31 + (UINT8)RShiftU64 (Base, 8 * Index);
++  }
++
++  for (Index = 0; Index < 8; Index++) {
++    Sum = Sum * 31 + (UINT8)RShiftU64 (Size, 8 * Index);
++  }
++
++  return (UINT16)(Sum ^ (Sum >> 16));
++}
++
++STATIC
++VOID
++DumpPause (
++  VOID
++  )
++{
++  mDumpLines++;
++  if ((mDumpLines % 10) == 0) {
++    gBS->Stall (5000000);
++  }
++}
++
++STATIC
++VOID
++DumpNode (
++  IN     CONST VOID   *Fdt,
++  IN     INT32        Node,
++  IN     CONST CHAR8  *Tag,
++  IN     INT32        AddressCells,
++  IN     INT32        SizeCells,
++  IN OUT UINT64       *Total
++  )
++{
++  CONST CHAR8  *Name;
++  CONST UINT8  *Reg;
++  CONST VOID   *Status;
++  INT32        Length;
++  INT32        StatusLength;
++  INT32        Entry;
++  INT32        Offset;
++  UINT64       Base;
++  UINT64       Size;
++  CHAR8        Flags[4];
++
++  Name = FdtGetName (Fdt, Node, NULL);
++  if (Name == NULL) {
++    Name = "?";
++  }
++
++  StatusLength = 0;
++  Status       = FdtGetProp (Fdt, Node, "status", &StatusLength);
++  Flags[0]     = (FdtGetProp (Fdt, Node, "no-map", NULL) != NULL) ? 'n' : '-';
++  Flags[1]     = ((Status != NULL) && (StatusLength >= 8) && (CompareMem (Status, "disabled", 8) == 0)) ? 'd' : '-';
++  Flags[2]     = (FdtGetProp (Fdt, Node, "reusable", NULL) != NULL) ? 'r' : '-';
++  Flags[3]     = '\0';
++
++  if ((AddressCells < 1) || (AddressCells > 2) || (SizeCells < 1) || (SizeCells > 2)) {
++    DEBUG ((DEBUG_ERROR, "%a %a cells %d %d\n", Tag, Name, AddressCells, SizeCells));
++    DumpPause ();
++    return;
++  }
++
++  Entry  = (AddressCells + SizeCells) * 4;
++  Length = 0;
++  Reg    = FdtGetProp (Fdt, Node, "reg", &Length);
++  if ((Reg == NULL) || (Length < Entry)) {
++    // No fixed address: the operating system places it. Only its size is known here.
++    Length = 0;
++    Reg    = FdtGetProp (Fdt, Node, "size", &Length);
++    Size   = ((Reg != NULL) && (Length == SizeCells * 4)) ? ReadCells (Reg, (UINT32)SizeCells) : 0;
++    DEBUG ((DEBUG_ERROR, "%a %a dyn %010lx %a\n", Tag, Name, Size, Flags));
++    DumpPause ();
++    return;
++  }
++
++  for (Offset = 0; Offset + Entry <= Length; Offset += Entry) {
++    Base = ReadCells (Reg + Offset, (UINT32)AddressCells);
++    Size = ReadCells (Reg + Offset + AddressCells * 4, (UINT32)SizeCells);
++    if (Total != NULL) {
++      *Total += Size;
++    }
++
++    DEBUG ((DEBUG_ERROR, "%a %a %010lx %010lx %a %04x\n", Tag, Name, Base, Size, Flags, DumpCheck (Base, Size)));
++    DumpPause ();
++  }
++}
++
++STATIC
++VOID
++DumpAblMemory (
++  IN CONST VOID  *Fdt
++  )
++{
++  INT32        Root;
++  INT32        Reserved;
++  INT32        Node;
++  INT32        Length;
++  INTN         Count;
++  INTN         Index;
++  CONST CHAR8  *Name;
++  CONST VOID   *Prop;
++  UINT64       Base;
++  UINT64       Size;
++  UINT64       Total;
++
++  Root = FdtPathOffset (Fdt, "/");
++  if (Root < 0) {
++    return;
++  }
++
++  Total = 0;
++  for (Node = FdtFirstSubnode (Fdt, Root); Node >= 0; Node = FdtNextSubnode (Fdt, Node)) {
++    Name = FdtGetName (Fdt, Node, NULL);
++    if ((Name == NULL) || (AsciiStrnCmp (Name, "memory", 6) != 0)) {
++      continue;
++    }
++
++    Length = 0;
++    Prop   = FdtGetProp (Fdt, Node, "ddr_size", &Length);
++    DEBUG ((
++      DEBUG_ERROR,
++      "ABLMEM %a ddr_size %x len %d\n",
++      Name,
++      ((Prop != NULL) && (Length >= 4)) ? Fdt32ToCpu (ReadUnaligned32 (Prop)) : 0xffffffff,
++      Length
++      ));
++    DumpPause ();
++    DumpNode (Fdt, Node, "ABLMEM", FdtAddressCells (Fdt, Root), FdtSizeCells (Fdt, Root), &Total);
++  }
++
++  DEBUG ((DEBUG_ERROR, "ABLMEM total %010lx\n", Total));
++  gBS->Stall (8000000);
++
++  Count = FdtGetNumberOfReserveMapEntries (Fdt);
++  for (Index = 0; Index < Count; Index++) {
++    if (FdtGetReserveMapEntry (Fdt, Index, &Base, &Size) == 0) {
++      DEBUG ((DEBUG_ERROR, "ABLMAP %d %010lx %010lx %04x\n", (INT32)Index, Base, Size, DumpCheck (Base, Size)));
++      DumpPause ();
++    }
++  }
++
++  Reserved = FdtPathOffset (Fdt, "/reserved-memory");
++  if (Reserved >= 0) {
++    for (Node = FdtFirstSubnode (Fdt, Reserved); Node >= 0; Node = FdtNextSubnode (Fdt, Node)) {
++      DumpNode (Fdt, Node, "ABLRSV", FdtAddressCells (Fdt, Reserved), FdtSizeCells (Fdt, Reserved), NULL);
++    }
++  }
++
++  DEBUG ((DEBUG_ERROR, "ABLEND lines %u\n", (UINT32)mDumpLines));
++  gBS->Stall (8000000);
++}
++
+ EFI_STATUS
+ EFIAPI
+ UniXNURamDiskDxeEntry (
+@@ -231,5 +402,6 @@ UniXNURamDiskDxeEntry (
+   DEBUG ((DEBUG_ERROR, "UNIXNURAMDISK: device tree at 0x%lx, %u bytes\n", Dtb, (UINT32)FdtTotalSize ((VOID *)(UINTN)Dtb)));
+ 
+   PublishInitrd ((VOID *)(UINTN)Dtb);
++  DumpAblMemory ((VOID *)(UINTN)Dtb);
+   return EFI_SUCCESS;
+ }

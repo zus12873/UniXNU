@@ -29,7 +29,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ('sheng', 'macos-27.3-26C5035r', 'sheng_macos')
 OUTPUTS = ['kernel/kernel.macho', 'kernel/kernel.json', 'kernel/kernel.map.json', 'payload/payload.img', 'payload/payload.json',
-           'boot/boot.img', 'boot/boot.json', 'runtime/data.dbr', 'xnu-patches.list', 'xnu-inputs.json']
+           'boot/boot.img', 'boot/boot.json', 'boot/boot-bigwin.img', 'runtime/data.dbr', 'xnu-patches.list',
+           'xnu-inputs.json']
 FIRMWARE = 'Build/shengPkg/DEBUG_CLANGPDB/FV/SILICIUM_UEFI.fd'
 
 
