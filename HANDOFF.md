@@ -124,6 +124,18 @@
       - 崩溃栈：`CIBlurProcessor processWithInputs` → `MPSImage` → `MTLReportFailure` → `abort`。
     - 启动参数里有 `ci-mps=0`，但这次没有像 cd8/cd9 那样崩两次就稳住，开机 13 分钟后还在崩。原因没查。
     - `pmset -g` 里 `sleep 0`（被 powerd、Terminal 挡着），所以不用再执行 `sudo pmset -a sleep 0`。
+  - **第 1 级通过（10:16，开着盖、插着电）**：SSH 里执行 `pmset sleepnow`。
+    - 18:16:22（平板时间）`sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关。之后约 30 s 是 powerd 等应用。
+    - 18:16:53 走完 0x12→0x16，`System Sleep`，`IOCPUSleepKernel enter`，0x17→0x18→0x19，然后是唤醒那边的 0x23、0x22。
+    - 18:17:53 唤醒：`sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`，背光回到原来的亮度。
+      - 看门狗 tick 正好 5 次（每 10 s 一次）；
+      - 副核 CPU_OFF 没有失败；
+      - 没有误唤醒，也没有关掉任何中断线。
+    - `kern.sleeptime` 18:16:53，`kern.waketime` 18:17:53；`kern.boottime` 没变，所以是同一次开机，不是重启。
+    - 完整唤醒：IOPMrootDomain `Wake Type = UserActivity Assertion`，airportd `FullWake:cpu disk net aud vid`。`hw.activecpu` 8，没有 panic。
+    - 从 Mac 看，平板 10:16:58 断网，10:19:17 才重新连上，也就是醒来后过了约 84 s Wi-Fi 才回来。
+    - 日志：`out/boot-logs/cd13-sleep1-stream.txt`（睡前的实时日志流）、`cd13-sleep1-reach.txt`（本地）。
+  - 下一步：第 2 级电源键叫醒。`pmset sleepnow` 后 20 s 内由用户按电源键，应看到 `woke by power`，而且早于 60 s 定时器。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
