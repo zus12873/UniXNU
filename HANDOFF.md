@@ -254,6 +254,22 @@
       - 用户这段时间看到的是黑屏，按电源键没用，直到 21:32:03 合盖、21:32:10 开盖才看到桌面。是背光没亮，还是锁屏界面没画出来，日志分不清。
       - 21:32:33 那次唤醒同样是盖子 3 ms（开盖发生在入睡的 30 s 里，算正常），背光走同一条新路径，817 ms 后恢复，用户看到了桌面。所以新的背光路径本身是好的。
     - 吞键只在电源键叫醒时开启，这次没开，用户的按键都正常上报了。
+  - **cd16 要带的修复（11-17 14:xx，用户选"两个一起修"）**：
+    - Ath12kWifi `b455da9`（`local/scan-diagnostics`，只在本机，还没推到 fork）：
+      - `nw_wifi_scan_frequencies()`，最多 `NW_WIFI_SCAN_FREQUENCIES_MAX`（32）个 2400–7125 MHz 的频点；
+      - UI 请求带 `NW_CONTROL_ATTR_SCAN_FREQUENCIES` 交给 supplicant，前端把它放进刚排上的手动扫描的 `manual_scan_freqs`；
+      - 不能用 `SCAN freq=`：它要用驱动的信道表把频点过一遍，`driver_sheng` 不报信道表，所以命令会返回 FAIL，测试里已确认；
+      - `mainline_runtime_test.c` 新用例、`supplicant_test.c` 新增 `scan` 模式，改之前都是失败的；Ath12kWifi 其余测试都过，macOS 版 supplicant 能编过。
+    - sheng `7d088df`（证据 `60f116d`）：
+      - `WifiScan.h` `sheng_wifi_scan_frequencies` 解析类型 10 和类型 86 的信道表，转成频点交给 `nw_wifi_scan_frequencies`；
+      - `ShengSleep` `sheng_sleep_clear_lid_status`：入睡准备时不管盖子开合，都清掉盖子线上的旧状态；
+      - `check-wifi-scan-host.py` 45 项、`check-sheng-sleep-host.py` 467 项，改之前都是失败的；两份源文件都用内核参数编过。
+  - **用户要把 sheng 上游最新的 main 合进新镜像（11-17 14:xx）**：
+    - `upstream/main` `8a85350`，比我们多 768 个提交。合并基点是 10-21 的 `7562a77`：上游把很多和我们分支上相同的改动压成了别的提交。
+    - 在单独的工作树 `../UniXNU-sheng-merge`、新分支 `integrate/upstream-20261117` 上合并。`integrate/upstream-20261116` 和主检出目录都不动。
+    - 33 个文件冲突，约 150 处。我们自己的提交按文件列在 `out/merge-own-commits-20261117.txt`（本地）。
+    - 上游改了我们本地保管、从不提交的 9 个 macOS 27.3 根卷策略文件：主检出目录切分支前要先备份这 9 个文件，切完放回去，并核对哈希。
+    - 上游 `4d86261` 去掉了启动参数的 `sheng-` 前缀；`49eb58e` 修了键盘壳输入恢复；`9c92108` 把 macOS 关机和重启接到了 PSCI。
   - 上机要看（cd15）：
     - 唤醒时没有彩条，日志里 `panel back to its level` 的毫秒数和帧数合理；
     - 开机后、开关 Wi-Fi 后马上读 `sysctl -n kern.unixnu_wifi_log | grep -E "scan request|supplicant scan|scan done|unanswered"`，看扫描卡在哪一步。
