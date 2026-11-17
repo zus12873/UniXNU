@@ -46,7 +46,7 @@
 - 系统盘镜像、两个内核和 `build-inputs/` 不在我问用户时列的清单里（当时把 `out/flash/` 写成了"78 个启动镜像"，其实是 70 个启动镜像、4 个固件文件和一个 16 GB 的系统盘）。它们重新生成很费事，所以留了下来，已告诉用户不要的话可以删。
 - 构建盘 `/Volumes/12873/UniXNU-build.sparsebundle` 只剩下载的东西，压缩后 41 GB（原来 120 GB）：`unixnu-out/ipsw/26C5035r/`（macOS 27.3 的系统镜像，29 GB）和 `rom/sheng_global_images_OS3.0.305.0…tgz`（小米原厂线刷包，7 GB；解开的那份删了，删之前核对过它的 105 项都在 tgz 里）。压缩后只读挂载检查过，两样都在。
 - 已删除：其余 68 个启动镜像、4 个固件文件、`out/downloads/`（Linux 日志读取镜像的构建目录）、构建盘上的构建树和缓存、cd2 到 cd17 的内核和载荷、固件的各个版本、未压缩的系统盘镜像。
-- Mac 上的项目目录（`personal_projects` 下的 `UniXNU`、`UniXNU-sheng`、`UniXNU_macOS`、`uefi-sheng` 和 20 个 `*-pr-*`、`*-repro-daily` 工作树）在这一条提交推送并核对之后删除。
+- Mac 上的项目目录（`personal_projects` 下的 `UniXNU`、`UniXNU-sheng`、`UniXNU_macOS`、`uefi-sheng` 和 19 个 `*-pr-*`、`*-repro-daily` 工作树）在这一条提交推送并核对之后删除。
 
 **从归档接手要做的**
 
