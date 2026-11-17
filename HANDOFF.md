@@ -112,7 +112,24 @@
         - 17:51:01（那次取消后 5 s）Terminal 有一份 spin 报告：`Slow response to HID event`，3.96 s。当时内存空闲 15%。
         - 每次醒来 Wi-Fi 都没自己连上（已知，等时间戳的修复）。
       - 充电：17:09 64%，17:38 80%，17:54 92%；17:54 读 `ShengBattery`：`Amperage` 3317 mA，4449 mV，34.9 °C，适配器 9 V 3 A（33 W）。比 11-15 量到的约 2 A 高。17:36:30 `pmset -g batt` 还显示 63%，两分钟后电源日志里是 80%：要么 17:37 前后换了充电头，要么醒着的时候百分比更新得慢，没查，要问用户。
-    - **睡眠第 3 级（合盖 15 分钟以上）进行中**：用户 17:57 前说"合盖了，开始计时"；17:57:04 平板已经不在网络上（睡着了）。计时到 18:13（16 分钟），到点请用户开盖、手动连 Wi-Fi，再取结果。开始前 Sleep Count 9，WindowServer pid 6733，接着 9 V 3 A 的充电头。要看的：入睡次数过 13 次没有 panic（`kern.boottime` 不变）；每次是 `woke by timer`，没有 3 ms 的盖子假唤醒；开盖那次是 `woke by lid`；面板和 WindowServer 正常。
+    - **合盖试了一次短的（17:56:42 合，17:58:10 开，约 1.5 分钟），正常；15 分钟的第 3 级还没做。** 用户 17:59："开盖了，没彩条，亮起很快"。日志：`lid-0157-kernel.log`、`lid-0157-pmset.txt`（同一目录，本地）。
+      - 合盖：`lid closed, panel dark`，6 s 后进 `IOCPUSleepKernel`（`Clamshell Sleep`，没有 30 s 的等待）。
+      - 60.001 s 后定时器叫醒（`sleeps 10`），盖子还合着，10 s 后再次入睡。
+      - 第二次睡了 5.9 s 被开盖叫醒：`woke by lid (intid 240) after 5910 ms; sleeps 11, spurious 1`，电源日志记 `due to sheng lid`。`spurious` 第一次不是 0，哪一下没查。
+      - 开盖后 88 ms 盖子又读成合上，系统开始再次入睡（进了 DarkWake），1.56 s 后读成打开、完全唤醒，面板 42 ms 后亮。**用户说明：这是真的，第一次没完全打开又合上了。驱动读得没错，不算问题。**
+      - 唤醒 5 s 后 loginwindow 有一份 spin 报告（`Slow response to HID event`，2.98 s）。加上 17:51 Terminal 那份，两次都是刚醒来几秒内的输入卡了 3 到 4 s，原因没查。
+      - 这次开机 Sleep Count 到 11，没有 panic，WindowServer 仍是 pid 6733（18:00 连续运行 1 小时）。计时用的后台任务已停。
+    - **Wi-Fi 列表里留着已经不在的网络（用户 18:0x 报告：已知网络里列着连过的 A、B，B 当前并不在）**。查了，没改任何东西：
+      - 驱动交给系统的扫描结果从不过期。18:15 用 `local-tools/tablet-wifi-scan-probe.js`（这次加了 `known` 一栏，标出名字是已存网络的结果）看：56 条结果，最新 7 s，中位 201 s，最旧 5814 s（开机后听到过一次）；12 条超过 5 分钟，5 条超过 30 分钟。每条的 `TIMESTAMP` 仍是 0。
+      - 原因是两处叠加：
+        - `drivers/Ath12kWifi/src/nw_mainline.c` 的 `scan_snapshot` 把 cfg80211 的 `bss_list` 整个抄出来，没有按时间丢掉旧条目（Linux 上是读结果时丢掉 30 s 以上没听到的），只把多久没听到写进 `age_ms`。
+        - `package/WifiNet.cpp:613`：连接中或已连接时，系统要的每一次扫描都直接拿手里的表回答，不让射频离开信道（上游 `b1de59e`，10-24，bluseliu50 的设计；日志 `scan N while joined: answered from the cache`，18:16 已到第 128 次）。所以连上之后，别的信道上的网络不再被重新确认。
+        - macOS 这边没有把旧结果筛掉（列表用的结果不按 `AGE` 筛；`TIMESTAMP` 是 0）。
+      - 已存的两个网络在结果里的样子（不写名字）：10 个字符的那个在 2.4 GHz 信道 6，-24 dBm，7 s 前听到，平板现在连的就是它（18:12:01 `explicit link down` 后重新 join 的）；16 个字符的那个在 5 GHz 信道 36，两个发射端 -52、-53 dBm，18:10:52 前后听到（`AGE` 266 s），约 5 分钟前还听到过一次。同一台路由的 2.4 GHz 名字（13 个字符，没存过）在信道 1，-30 dBm。
+      - 所以按射频的记录，16 个字符的那个在 18:10 前后确实在发射。它是不是用户说的 B、当时是不是真的不在，要问用户；如果 B 是它而且确实关了，那就还有别的原因，要再查。
+      - 18:11:50 有一次扫描没启动：`received scan start failure event`，`scan done 140: status 9, 57 networks held`，之后交出去的是手里的旧表。原因没查。
+      - 查过，没有：sheng `upstream/main` 的 `WifiNet.cpp` 里这条"连着就用缓存回答"的规则原样在；`UniXNU/Ath12kWifi` 的 `main`（`26cf2da`，比我们多 1 个合并提交）和我们的 `b455da9` 里都没有过期或按时间筛的代码（搜 `cfg80211_bss_expire`、`bss_expire`、`SCAN_RESULT_EXPIRE`、`max_age`、`too old`）；`gh search issues --include-prs`（UniXNU、CrossDarwin；`stale scan results`、`scan results expire`、`scan while joined`、`bss age`）没有。
+      - 可以做的修复（驱动改动，等用户同意，和时间戳那一项一起做最省事）：一、交结果时不交超过一定时间没听到的条目（没连接时 30 s 上下；连着时别的信道没法重新确认，得同时放开下面这一条）；二、连着的时候，界面主动要的扫描真的去扫（mac80211 自己会处理离开信道），后台的扫描仍用缓存；三、补上 `TIMESTAMP`，让 macOS 自己也能按时间筛。
     - 还没做：第 5 级（拔电合盖 1 小时）。
 
 **往上游 `main` 推的进度（2026-11-17 16:0x 起，规则 `.claude/rules/push-progress-to-main.md`）**
