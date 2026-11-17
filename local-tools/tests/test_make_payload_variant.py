@@ -356,6 +356,41 @@ class MakePayloadVariant(unittest.TestCase):
                          f'adt: unchanged, args: a=1, replaced: x={"2" * 6}')
         self.assertRefused(self.run_tool('--arg', 'a=1', '--replace-arg', 'x=' + '2' * 7), '1001 bytes')
 
+    def test_removes_an_argument_and_one_separator(self):
+        for args, left in (('debug=0x14e  log-gpu=1 vm_compression_limit=1572864 serial=3',
+                            'debug=0x14e  vm_compression_limit=1572864 serial=3'),
+                           ('debug=0x14e log-gpu=1', 'debug=0x14e'), ('log-gpu debug=0x14e', 'debug=0x14e'), ('log-gpu=1', '')):
+            with self.subTest(args=args):
+                self.make_base(args=args)
+                self.assertEqual(self.last_line(self.run_tool('--remove-arg', 'log-gpu')),
+                                 'adt: unchanged, args: unchanged, replaced: unchanged, removed: log-gpu')
+                self.assertEqual(self.read(self.out, TOML_PATH), toml(left))
+                self.assertEqual(self.read(self.out, ADT_PATH), ADT)
+                self.out.unlink()
+
+    def test_removal_makes_room_for_added_arguments(self):
+        # 'k=', 988 bytes and ' log-gpu=1' are 1000 bytes: 'a=1 ' in front fits only once log-gpu=1 has left the line.
+        self.make_base(args='k=' + 'v' * 988 + ' log-gpu=1')
+        self.assertRefused(self.run_tool('--arg', 'a=1'), '1004 bytes')
+        result = self.run_tool('--arg', 'a=1', '--remove-arg', 'log-gpu', '--replace-arg', 'k=' + 'w' * 988)
+        self.assertEqual(self.last_line(result), f'adt: unchanged, args: a=1, replaced: k={"w" * 988}, removed: log-gpu')
+        self.assertEqual(self.read(self.out, TOML_PATH), toml('a=1 k=' + 'w' * 988))
+
+    def test_refuses_a_removal_that_is_not_once_on_every_line(self):
+        for first, second in (('debug=1 log-gpu=1', 'debug=1'), ('log-gpu=1 log-gpu=2', 'log-gpu=1'), ('debug=1', 'debug=1')):
+            with self.subTest(first=first, second=second):
+                self.make_base(toml_bytes=toml(first, second))
+                self.assertRefused(self.run_tool('--remove-arg', 'log-gpu'), 'named log-gpu, expected 1')
+
+    def test_refuses_bad_removals(self):
+        self.make_base(args='debug=0x14e log-gpu=1')
+        for arguments, word in ((('--remove-arg', 'log-gpu=1'), 'does not match'), (('--remove-arg', 'a b'), 'does not match'),
+                                (('--remove-arg', 'log-gpu', '--remove-arg', 'log-gpu'), 'given twice'),
+                                (('--remove-arg', 'debug', '--replace-arg', 'debug=2'), 'debug is given to --remove-arg and'),
+                                (('--remove-arg', 'log-gpu', '--arg', 'log-gpu=2'), 'log-gpu is given to --remove-arg and')):
+            with self.subTest(arguments=arguments):
+                self.assertRefused(self.run_tool(*arguments), word)
+
     def test_refuses_args_lines_of_another_shape(self):
         for line in ('  args = "debug=1"', '\targs = "debug=1"', 'args="debug=1"', 'args = "debug=1" # note',
                      "args = 'debug=1'", 'args = "debug=1"  ', 'args = "a" "b"', 'args = "unterminated'):

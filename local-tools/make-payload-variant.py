@@ -2,6 +2,7 @@
 """Derive a variant of a payload volume that differs only in a few device tree values and in the boot arguments.
 
     make-payload-variant.py BASE OUT [--set NAME=VALUE]... [--arg NAME=VALUE]... [--replace-arg NAME=VALUE]...
+                            [--remove-arg NAME]...
 
 BASE is a payload volume (a FAT image holding EFI/UniXNU). OUT is a copy of it in which only two files change:
   --set NAME=VALUE          the 8-byte property NAME (darwinboot-*) of /chosen in Payloads/kernel.macho.adt becomes VALUE
@@ -12,6 +13,9 @@ BASE is a payload volume (a FAT image holding EFI/UniXNU). OUT is a copy of it i
                             --arg keep their command-line order. NAME alone (no =VALUE) is allowed.
   --replace-arg NAME=VALUE  the argument named NAME, which every `args = "..."` line must hold exactly once, becomes
                             NAME=VALUE where it stands. The same syntax as --arg.
+  --remove-arg NAME         the argument named NAME, which every `args = "..."` line must hold exactly once, leaves the
+                            line with the blanks that separated it from its neighbour. It makes room under the 1000-byte
+                            limit for the arguments a test image adds.
 With only --set unixnu.toml is not rewritten, without --set the device tree is not rewritten. The two files written get
 the modification time 1980-01-01 00:00 UTC, so the same command on the same BASE gives the same OUT byte for byte.
 
@@ -19,7 +23,7 @@ It refuses, and leaves no OUT, when OUT or OUT.tmp exists or OUT is BASE, when t
 is missing, appears twice, is not 8 bytes long or does not start with darwinboot-, when a value is not a 64-bit integer or
 breaks the generator's rule for it, when an argument is malformed, named data-reset, named like one the kernel build
 refuses (validation_disables, serverperfmode, lcks), given twice, or added under a name already on a line, when a replaced
-argument is not on every line exactly once, when data-reset is anywhere in unixnu.toml, when unixnu.toml is not UTF-8 or
+or removed argument is not on every line exactly once, when a removed name is also added or replaced, when data-reset is anywhere in unixnu.toml, when unixnu.toml is not UTF-8 or
 assigns args in another shape than `args = "..."` (column 0, nothing behind the closing quote), when a line would pass 1000
 bytes, when a file cannot be read or written, and when the volume it wrote does not read back as BASE plus exactly those
 two files. Needs GNU mtools (brew install mtools). It never writes BASE.
@@ -42,6 +46,7 @@ TOML = 'EFI/UniXNU/unixnu.toml'
 MTOOLS_ENV = dict(os.environ, MTOOLS_SKIP_CHECK='1', TZ='UTC')
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 ARGUMENT = re.compile(r'[A-Za-z0-9_.\-]+(=[A-Za-z0-9_.,/\-:=]+)?')
+NAME = re.compile(r'[A-Za-z0-9_.\-]+')
 ARGS_OPEN = b'args = "'
 # The one shape of an args line the tool edits, and any line that assigns args at all.
 ARGS_LINE = re.compile(rb'args = "([^"]*)"')
@@ -173,6 +178,17 @@ def parse_arguments(texts, option):
     return arguments
 
 
+def parse_removals(texts):
+    names = []
+    for text in texts:
+        if not NAME.fullmatch(text):
+            raise Refusal(f'--remove-arg {text!r} does not match NAME with the characters A-Za-z0-9_.-')
+        if text in names:
+            raise Refusal(f'--remove-arg {text} is given twice')
+        names.append(text)
+    return names
+
+
 def args_lines(toml):
     """The lines of unixnu.toml and (index, line ending, content between the quotes) of every `args = "..."` line.
 
@@ -199,14 +215,24 @@ def replace(content, replacement, line):
     return content[:start] + replacement.encode() + content[end:]
 
 
-def new_toml(toml, arguments, replacements):
+def remove(content, name, line):
+    """content without its one argument named name and without the blanks between it and its neighbour."""
+    spans = [match.span() for match in TOKEN.finditer(content) if match[0].partition(b'=')[0] == name.encode()]
+    if len(spans) != 1:
+        raise Refusal(f'unixnu.toml line {line} has {len(spans)} arguments named {name}, expected 1')
+    start, end = spans[0]
+    behind = content[end:].lstrip()
+    return content[:start] + behind if behind else content[:start].rstrip()
+
+
+def new_toml(toml, arguments, replacements, removals=()):
     if b'data-reset' in toml:
         raise Refusal('unixnu.toml already mentions data-reset (an args line, confirm_args or anything else)')
     try:
         toml.decode()
     except UnicodeDecodeError as error:
         raise Refusal(f'unixnu.toml is not valid UTF-8 (byte {error.start}: {error.reason})') from None
-    if not arguments and not replacements:
+    if not arguments and not replacements and not removals:
         return toml
     lines, found = args_lines(toml)
     if not found:
@@ -218,6 +244,8 @@ def new_toml(toml, arguments, replacements):
     for index, ending, content in found:
         for replacement in replacements:
             content = replace(content, replacement, index + 1)
+        for name in removals:
+            content = remove(content, name, index + 1)
         new = b' '.join([argument.encode() for argument in arguments] + ([content] if content else []))
         if len(new) > MAX_ARGS_BYTES:
             raise Refusal(f'an args line would be {len(new)} bytes; the limit is {MAX_ARGS_BYTES}')
@@ -255,7 +283,7 @@ def extract_all(volume, into):
     return tree(into)
 
 
-def make_variant(base, out, values, arguments, replacements):
+def make_variant(base, out, values, arguments, replacements, removals=()):
     reader = load_reader()
     temporary = out.with_name(out.name + '.tmp')
     if os.path.lexists(temporary):
@@ -278,7 +306,7 @@ def make_variant(base, out, values, arguments, replacements):
                 if old.get(path) is None:
                     raise Refusal(f'BASE has no file ::/{path}')
             adt = new_adt(reader, (work / 'old' / ADT).read_bytes(), values)
-            toml = new_toml((work / 'old' / TOML).read_bytes(), arguments, replacements)
+            toml = new_toml((work / 'old' / TOML).read_bytes(), arguments, replacements, removals)
             for path, content in ((ADT, adt), (TOML, toml)):
                 if content != (work / 'old' / path).read_bytes():
                     staged = work / 'stage' / Path(path).name
@@ -318,30 +346,35 @@ def main():
     parser.add_argument('--set', action='append', default=[], metavar='NAME=VALUE')
     parser.add_argument('--arg', action='append', default=[], metavar='NAME=VALUE')
     parser.add_argument('--replace-arg', action='append', default=[], metavar='NAME=VALUE')
+    parser.add_argument('--remove-arg', action='append', default=[], metavar='NAME')
     args = parser.parse_args()
     try:
         if not args.base.is_file():
             raise Refusal(f'BASE {args.base} does not exist')
         if args.out.exists() or args.out.is_symlink():
             raise Refusal(f'OUT {args.out} exists' + (' (it is BASE)' if same_file(args.base, args.out) else ''))
-        if not args.set and not args.arg and not args.replace_arg:
-            raise Refusal('nothing to do: give --set, --arg or --replace-arg')
+        if not args.set and not args.arg and not args.replace_arg and not args.remove_arg:
+            raise Refusal('nothing to do: give --set, --arg, --replace-arg or --remove-arg')
         values = parse_sets(args.set)
         arguments = parse_arguments(args.arg, '--arg')
         replacements = parse_arguments(args.replace_arg, '--replace-arg')
         both = set(map(argument_name, arguments)) & set(map(argument_name, replacements))
         if both:
             raise Refusal(f'{" ".join(sorted(both))} is given to --arg and --replace-arg')
+        removals = parse_removals(args.remove_arg)
+        both = set(removals) & (set(map(argument_name, arguments)) | set(map(argument_name, replacements)))
+        if both:
+            raise Refusal(f'{" ".join(sorted(both))} is given to --remove-arg and to --arg or --replace-arg')
         if not shutil.which('mcopy'):
             raise Refusal('mcopy not found (brew install mtools)')
-        size, digest = make_variant(args.base, args.out, values, arguments, replacements)
+        size, digest = make_variant(args.base, args.out, values, arguments, replacements, removals)
     except Refusal as refusal:
         sys.exit(f'{PREFIX}{refusal}')
     except OSError as error:
         sys.exit(f'{PREFIX}{describe(error)}')
     changes = ' '.join(f'{name}={number:#x}' for name, number in values.items()) or 'unchanged'
     print(f'{args.out}: {size} bytes, sha256 {digest}, adt: {changes}, args: {" ".join(arguments) or "unchanged"}, '
-          f'replaced: {" ".join(replacements) or "unchanged"}')
+          f'replaced: {" ".join(replacements) or "unchanged"}' + (f', removed: {" ".join(removals)}' if removals else ''))
 
 
 if __name__ == '__main__':

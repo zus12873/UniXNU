@@ -132,7 +132,8 @@ python3 -I local-tools/make-payload-variant.py <output>/payload/payload.cdN-base
 - `enable-jobs=com.openssh.sshd` 让每次开机都开着 sshd。内核每次开机都会重写 launchd 的禁用列表，所以在系统里 `launchctl load -w` 开的服务重启后会失效。
 - `log-gpu=1` 打开 Metal 插件的日志；`keyboard-backlight=0..100` 是键盘灯亮度，默认 0。
 - 对照项一次只加一个参数，例如 `charge-auth=0`（充电认证）。
-- 参数行不能超过 1000 字节。工具拒绝 `data-reset` 和内核构建不接受的参数名，拒绝时不留输出文件。`adt-chosen.py` 能打印一份载荷交给加载器的窗口值。
+- 参数行不能超过 1000 字节。合进上游的桌面参数以后基础行是 920 字节，睡眠测试的四个参数放不下：用 `--replace-arg debug=334` 和 `--remove-arg log-gpu`（去掉 Metal 插件日志这个诊断参数）腾出位置，得到 994 字节。`--remove-arg NAME` 要求每一行里正好有一个 NAME。
+- 工具拒绝 `data-reset` 和内核构建不接受的参数名，拒绝时不留输出文件。`adt-chosen.py` 能打印一份载荷交给加载器的窗口值。
 
 **打成 v4 镜像并核对**：
 
