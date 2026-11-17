@@ -199,7 +199,7 @@ Seed creation options:
 | `--real-name NAME` | Sets the displayed administrator name; the short account name and `/Users/NAME` remain unchanged |
 | `--user-stdin` | Reads `name`, `password` and optional `real_name` from a JSON object on standard input |
 | `--interactive-user` | Prompts for the account name, display name and password |
-| `--auto-login` | Logs the selected account in at boot. For unattended tests |
+| `--auto-login` | Logs the selected account in at boot. For unattended tests; requires `--user`, `--user-stdin` or `--interactive-user` |
 | `--keyboard-type PRODUCT-VENDOR-COUNTRY=TYPE` | Records a keyboard layout type, so Keyboard Setup Assistant does not ask |
 | `--volume-uuid UUID` | Gives the Data volume a fixed UUID, so a new seed replaces an older one without a kernel build |
 
