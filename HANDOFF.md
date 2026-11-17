@@ -187,6 +187,23 @@
     - sheng 其他主机检查里有 4 个失败，原来就失败，和这次改动无关：
       - `touch`、`boot-progress`、`gpu-power`：sheng 里没有 `drivers/QcomGeniSpi`；
       - `mhi-boot`：`mhi_boot_host.c:102` 报 `-Wmissing-field-initializers`。
+  - **cd13 第 3 级（合盖）通过，但之后 Wi-Fi 一直连不上**。以下全部取自 cd14 开机后读到的、留在盘上的 cd13 统一日志（平板时间 19:08 起）：
+    - 19:08:38 合盖：`sleep reason Clamshell Sleep`，`sleeping, lid closed`。
+    - 合着盖时，60 s 定时器叫醒了 8 次，每次约 10 s 后又以 Clamshell Sleep 睡回去（sleeps 3→10）。
+    - 19:19:59 `woke by lid (intid 240) after 36328 ms; sleeps 11`。之后盖子又报了合上、打开，19:22:19 `woke by lid after 3429 ms; sleeps 13`。全程 `cpu_off failures 0`。
+    - 小毛病：入睡没走到处理器那一步就醒时，仍会打印一行 `woke by …`，带的是上一次的统计（19:20:07 那行和 19:19:59 完全相同）。
+    - 19:22:47 其实已经连上了，拿到了 IPv6 地址。19:22:48 airportd 换了一个新的私有 MAC（`PRIVATE MAC: Successfully created private MAC`，`[DISASSOC] Will disassociate due to new association request`），之后每次连接都在约 10 s 后以 `-3905` 失败。用户手动连和关掉再开 Wi-Fi 都不行，只能强制重启。
+    - 怀疑：真正的原因还是 supplicant 不处理请求，扫描 12 s 超时，连接也一样超时；换 MAC 可能只是碰巧。没有驱动日志，没法确认。
+  - **cd14（11-17 11:13 构建，内核 `bb8e28de`，载荷 `32d330de`）**：
+    - 另存 `.cd14-bb8e28de`、`payload.cd14-base.img`；测试镜像 `boot-v4-payload.bigwin-cd14-sleep.img`（`1f2dbcb8`），载荷 `c4585fd1`；日常文件已还原，哈希都对。
+    - 12:03:59 从内存启动。
+    - 构建卷又断开过一次，而且 sparsebundle 被挂了两份（disk6/7 和 disk8/9，都没装载）。两份都卸掉后只挂一份，`verifyVolume` 通过。
+  - **cd14 上机：开机后还是没有自动连上**（等了 6 分钟，最后用户从系统设置手动连上，`WiFiNetworkJoinReason = Settings`，地址换成了 `.231`）：
+    - 修复本身起作用了：auto-join 的带名字扫描不再 `-3903`，驱动收到了 `named scan: len 5352, read, names 1, wildcard 1, scan type 1`（5352 = 0x14e8）；
+    - 但这些扫描约 12 s 后结束，结果为 0（15:39:07 那次 11.8 s；15:46:38 那次 11.97 s 后 `Operation canceled`）。也就是 supplicant 没有在 12 s 内回报。所以这个问题开机时也有，不只是唤醒后；
+    - 连上后 airportd 又记了 `Unable to detect … as broadcast or hidden`；
+    - 查 airportd 日志要按进程号：网络时间到了以后平板时钟会往前跳，`--last` 会漏掉开机早期的日志；
+    - supplicant 处理 UI 扫描请求的地方是 `nw_supplicant_frontend.c`：执行 wpa_supplicant 的 `SCAN` 或 `SCAN ssid <hex>`；被拒绝时会马上报 BUSY，不会拖满 12 s。所以 12 s 说明它接下了请求却没有回报，或者请求根本没到它手上。
   - 上机要看（cd14）：
     - 开机后不碰控制中心就自动连上；
     - 睡眠唤醒后很快自动重连；
