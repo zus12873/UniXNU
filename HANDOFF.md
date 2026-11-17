@@ -58,6 +58,7 @@
         - 驱动的 `scan_result`（`../UniXNU-sheng/package/WifiNet.cpp`）还是旧的 1164 字节，只写到 0x48c，0x8d0 没写，所以是 0。开机不自动连和唤醒后不自动连是同一个原因。
         - 修法（还没做；驱动改动，等用户同意）：把 `scan_result` 扩到 2280 字节，时间戳填"现在的连续时间（ns）减去 `age_ms`"，主机测试先断言布局和时间戳。动手前按规则再查一次上游。
         - 01:12:22 那次连上不是 auto-join：驱动记了 `explicit link down` 和 `join`，应是手动连的（没向用户确认）。
+      - 查过，没有（17:45，Wi-Fi 扫描结果的时间戳）：sheng `upstream/main`（`2061710`）和 `upstream/feat/platform-sleep-wake` 的 `package/WifiNet.cpp` 里 `scan_result` 都还是 1164 字节、没有 `timestamp` 字样；`git log --all -S'0x8d0'`、`-S'2280'`、`--grep` `timestamp`/`maxAge`/`auto-join` 只有我们自己的提交；`gh search prs`（UniXNU、CrossDarwin；`scan result timestamp`、`auto-join maxAge`、`CWFFilteredScanResults`、`wifi auto join`）和 `gh search issues --owner UniXNU "wifi auto join"` 都没有。修复是驱动改动，还没动手，等用户同意。
     - **WindowServer 崩了 4 次**（用户 16:5x："一直在崩溃"）：16:30:04、16:31:58、16:50:41、16:52:44。报告在 `out/boot-logs/cd16-1117-1635/ws/`（本地）。
       - 四次是同一处：主线程 `EXC_BAD_ACCESS KERN_INVALID_ADDRESS`，在 `_platform_memmove` 里。出错地址正好是一块 CoreAnimation 内存区域结束后的第一个字节（区域 184K、244K、116K、32K）。寄存器：源地址等于出错地址，目的地址在栈上，剩余长度 0x1000（16:50 那次 0x400）。
       - 用构建目录里的调试符号翻出调用链（UUID `FB2E63C9-1A40`，和报告里的一致）：`-[NBCommandBuffer commitAndWaitUntilSubmitted]` → `waitUntilScheduled` → `CommandBuffer::settle_commit` → `commit_now`（`command_buffer/mod.rs:4785`）→ `CopiedBuffers::copy_in` → `copy_in_untagged` → `copy_in_run`（`copied.rs:1859`）。16:50 那次走 `copy_in_tagged` → `copy_in_blocks` → `tag_in_place` → `read_block`（`copied.rs:1069`）。
@@ -89,7 +90,13 @@
     - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
       - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
       - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
-      - 从 `pmset sleepnow` 到真正入睡隔了 30 s：`Kernel Client Acks: Delays to Sleep notifications: [wifip2pd timed out(30000 ms)]`，两次都有；另有 `com.apple.bluetooth.sleep is slow(1534 ms)`。原因还没查。
+      - 从 `pmset sleepnow` 到真正入睡隔了 30 s：`Kernel Client Acks: Delays to Sleep notifications: [wifip2pd timed out(30000 ms)]`，两次都有；另有 `com.apple.bluetooth.sleep is slow(1534 ms)`。原因见下一条。
+      - **这 30 s 的原因（17:50，从已存的日志里查的，没改任何东西）**：`wifip2pd` 把这台机器当成虚拟机。
+        - 日志：01:08:44.484 `wifip2pd … System will sleep`，随后只有 `Rejecting XPC connection with PID 249 because virtual machine does not support Wi-Fi`（249 是 airportd，这一份日志里 46 次），之后没有回应；01:09:14.477 内核 `PM notification timeout (pid 306, wifip2pd)`，正好 30 s。
+        - 依据：`wifip2pd` 的二进制里有 `kern.hv_vmm_present` 和这句拒绝的话（在这台 Mac 的 27.2.1 上看的 `strings`，同时它导入 `IORegisterForSystemPower`、`IOAllowPowerChange`）。平板上这个值是 1，因为 `../UniXNU-sheng/board.toml:140` 写了 `"vmm-present" = 1`（没有 Apple 的 PMGR 和 SEP，报成虚拟平台让 AMFI 不等 `ApplePMGRNub`；evb10 的记录里写着不这样 watchdogd 会连崩三次后内核 panic）。
+        - 它在虚拟机模式下收到入睡通知后为什么不回应，没有反汇编，不知道；"不回应"是日志里看到的事实。cd14 的日志（`cd14-1117-1214/wake2-all.txt`）里也有同一句拒绝。
+        - 查过，没有：`gh search issues --include-prs`（UniXNU、CrossDarwin；`wifip2pd`、`hv_vmm_present wifi`、`virtual machine does not support Wi-Fi`、`PM notification timeout`）；核心、sheng、`UniXNU_macOS` 的 `git log --all -S'wifip2pd'` 只有我们自己的文档提交。
+        - 可以试的（都没做，要用户同意）：平板上有 root 的话先 `launchctl bootout system/com.apple.wifip2pd` 再睡一次，看 30 s 是不是没了（只是一次试验，重启就还原）；有效的话在镜像里不启动它（它本来就拒绝所有客户端，AirDrop 这类功能驱动也不支持）。不建议去掉 `vmm-present`。
       - 17:04 的第一次没睡成：01:04:13 收到 WillSleep、屏幕关了，01:04:24 键盘（`Xiaomi Keyboard eventType:3`）来了一次输入，系统取消了入睡，Sleep Count 仍是 0。等 wifip2pd 的那 30 s 里碰一下键盘就会取消。
       - 唤醒后的 Wi-Fi：芯片重新上电（`Requested to power ON`），随后 auto-join 一直扫、一直 `results=0`（原因见上面 Wi-Fi 那条），2 分 6 秒后才连上（应是手动）。平板从 17:09:17 到 17:12:24 不在网络上。
       - 唤醒时屏幕上有没有彩条，要问用户。还没做：第 2 级（电源键叫醒）、第 3 级（合盖 15 分钟以上）、第 5 级。16:48 平板上 `sleep 0`、`displaysleep 10`；17:36 电量 63%（接在 Mac 上，1 小时掉约 5%）。
@@ -109,6 +116,11 @@
   - 查过别人：`gh search prs`（UniXNU、CrossDarwin；`auto-login`、`sheng_sigp_recover`、`cpu_running SIGPdisabled`、`INTR_STATUS lid sleep`）和各仓库 `git log --all -S'target_proc->cpu_running'`，没有同类改动。
   - 主题分支上的提交说明重写过（不带 `integrate/*`、`cd15`）；测试注释里的 `cd15` 改成了 "seen on the tablet"，其余和工作分支的 `8d1a536`、`8a0c5f5`、核心 `c0f8627` 内容相同。
   - 工作树：`../UniXNU-pr-docs-autologin`、`../UniXNU-sheng-pr-sleep-lid`、`../UniXNU-sheng-pr-sleep-sigp`、`../AdrenoMetal-pr-copy-in`。
+- **上游 `main` 又前进了（17:50 拉取）**：
+  - sheng：#127 在 15:44 合进了 `main`（`2061710`）。`main` ＝ 作者分支的 `5d8fedb` ＋ 一个文档提交 `8a9d4c6`（`porting.toml`、`reports/macos-sleep-wake.md`），代码和 `5d8fedb` 一样。我们的两个修复都不在里面（`sheng_sleep_clear_lid_status` 在 `main` 里 0 处）。`fix/sleep-open-lid-wake`、`fix/sleep-sigp-recovery-race` 各比 `main` 多 1 个提交，`git merge-tree` 试合到 `main` 都干净：以后开 PR 的 base 直接用 `main`，不用重开分支。
+  - 核心：`main` 到 `630b85a`，比工作分支的基线多 16 个提交（#299 选用 ArmCpu 的睡眠和恢复、#300 到 #303 构建前的校验、#304 着色器缓存的登录代理、文档）。它钉的 `drivers/AdrenoMetal` 是 `8c7f950`，补丁列表仍只有 0063：`fix/copied-buffers-freed-pages` 正好基于这个提交。
+  - 工作分支照规则要从新的 `main` 重建，还没做。试合的冲突：sheng 只有 `porting.toml`；核心只有 `drivers/AdrenoMetal` 的指针（`8c7f950` 对本机的 `685f37c`）。
+  - 顺序（我的安排，用户可以改）：cd17 先从现在的工作分支构建，这样它和 cd16 的差别只有 0064 和 `5d8fedb` 的 `BootLog.c`，WindowServer 还崩不崩能直接归因；重建工作分支放在 cd17 验证之后。#303 会在编译前校验根卷策略文件，重建后的第一次构建可能要先过这一关。
 - 等用户决定：
   - Wi-Fi 两项（sheng `a28b056` 的 `kern.unixnu_wifi_log`、`e92978e` 的命名扫描和扫描信道）。作者在 #127 里写明没收网络这部分。要推就先向 `UniXNU/Ath12kWifi` 提组件 PR：本地两个提交 `0d8758a`（在 fork 的 `local/scan-diagnostics` 上）、`b455da9`（没推），基于 `39cc47b`，组件上游 main 已到 `26cf2da`；sheng 那边开 draft。
   - 旧 PR（sheng #109 到 #112，都开在上游改写历史之前，差异带 660 多个提交）。按新增的行逐行比过：
