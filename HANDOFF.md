@@ -15,6 +15,21 @@
 - 本地 `main` 两边都指到了上游 `main`（上游改写过历史，不能快进），旧位置留在 `backup/main-20261113`；`git branch -f` 顺带把 `main` 的跟踪分支设成了 `upstream/main`。`integrate/*` 分支原样保留，都没推。
 - 检查（都在新分支上跑）：核心 `check-unixnu.py`、`scripts/unixnu` 和 `local-tools` 的测试、`tests/` 四组；ArmCpu 的 `check-mmio-access.py` 和 `check-sleep-host.py`；sheng porting record 18 个区、21 个主机检查和 `check-ath12k-exports.py`（不过的还是那 7 个无关的）；`ArmCpu.cpp`、`KeyboardProbe.cpp`、`ShengSleep.cpp` 用构建参数单独编译通过（`KeyboardCover.cpp` 没单独编）。
 - 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
+- **cd17 构建成功（用户 19:17 前后起，19:30 完成），测试镜像已打好（20:00），平板在 fastboot 里，等用户说可以再从内存启动。**
+  - 构建用的提交：核心 `fad585e`、sheng `783cc8f`（组件 `Ath12kWifi` `f677aa4`、`AdrenoMetal` `685f37c`），都在 `local/on-main-20261117` 上。来源记录 `cd17-build.json`、`cd17-images.json`。
+  - 内核 `feede885`，另存 `kernel.macho.cd17-feede885`（json、map 同后缀，只读）；载荷 `91064f79`，另存 `payload.cd17-base.img`。日常文件已还原，7 个哈希都对；OS 镜像已卸载。
+  - 核对过（和 cd16 的差别就是要验证的三处）：
+    - 这次构建写的 27 份日志里没有 error、未定义符号、Traceback。
+    - Metal：构建缓存里的运行库源码是树 `6ab46c88`（钉住的版本 ＋ 0063 ＋ 0064）；桥和插件 19:2x 重编；载荷里的 GPU 附加包（32 个文件）装的插件 `044870b1` 就是这次编出来的。和 cd16 的附加包比只有 3 个文件不同：插件本体、`gpu-build.json`、签名。
+    - Wi-Fi：内核里有 `wifi-net: scan %u while joined: on the air` 这行日志的字符串（`WifiNet.cpp` 的第三项，时间戳在同一个文件里）；模块的 `nw_mainline.o` 19:30 重编，带 `_bss_heard`、`_wakes`、`_wake_count`、`_lead_before`，引用 `_lx_boottime_ns`。
+    - 睡眠相关的字符串和 `_nw_wifi_scan_frequencies`、`_sysctl__kern_unixnu_wifi_log` 都在。
+  - 测试载荷 `payload.cd17-sleep.img`（`8341304b`）：参数和 cd16 的测试载荷逐字相同（`enable-jobs=com.openssh.sshd platform-sleep=1 platform-sleep-wake-after=60 darkwake=1`、`debug=334`、不带 `log-gpu=1`，994 字节），其余设置也相同。
+  - 测试镜像 `out/flash/boot-v4-payload.bigwin-cd17-sleep.img`（`6aa21a9a`），`bootimg-contents.py --payload` 核对过装的是 `8341304b`；固件还是 11-15 的 `boot-bigwin.img`（`5c926a3f`）。`out/flash` 里今天 19:15 之后只多了这一个文件。
+  - 平板（20:00，fastboot 里读的，只读）：当前槽位 a，重试次数 a 6、b 7，两个槽位都不是 unbootable，电池 4385 mV。a 大于 4，不用补。fastboot 里不充电，别放太久。
+  - 上机要看的：
+    - Metal：WindowServer 还崩不崩（cd16 上的 `copy_in` 崩溃报告），日常操作有没有画面问题。
+    - Wi-Fi：见下面 Wi-Fi 一条的"cd17 上机时 Wi-Fi 要看的"（`TIMESTAMP` 不为 0、开机和唤醒后自己连上、离开范围的网络一两分钟内消失、`scan N while joined: on the air`、连着时扫描对延迟的影响、DHCP 照常）。
+    - 睡眠第 3 级（合盖 15 分钟以上）和第 5 级（拔电 1 小时）还没做。上机前要用户在平板上 `sudo pmset -a sleep 0`。
 - **cd16 构建成功（用户 15:49 起第四次，16:04 完成），测试镜像已打好，等用户说可以再从内存启动。**
   - 构建用的提交：核心 `2804d8b`（构建期间只多了文档和规则的提交）、sheng `8ca560d`，都在 `local/on-main-20261117` 上。来源记录 `cd16-build.json`、`cd16-images.json`。
   - 内核 `e677dce5`，另存 `kernel.macho.cd16-e677dce5`（json、map 同后缀，只读）；载荷 `297adb02`，另存 `payload.cd16-base.img`（200 MiB 装得下上游的桌面配置）。日常文件已还原，7 个哈希都对；OS 镜像已卸载。
@@ -87,7 +102,7 @@
         - 本地工作分支：`drivers/AdrenoMetal` 从 `f7b4ed1` 挪到 `685f37c`（`f7b4ed1` + 这一个提交，分支 `local/r2507-copy-in-fix`，只在本机；这样不带进上游 `main` 多出来的 5 个着色器缓存提交）。`scripts/build-adreno-metal-bridge.py` 的补丁列表加了 0064。核心提交 `471172b`。
         - 用构建脚本自己的办法核对过：构建目录里缓存的运行库源码现在是"钉住的版本 + 0063"（树 `a1c07cff`），加上 0064 是 `6ab46c88`，都在列表能产生的状态里，所以下一次构建会自己打上 0064 并重编桥。`scripts/check-unixnu.py` 通过。
         - 下一步：用户构建 cd17（`sudo -v` 后 `./unixnu build kernel payload …`），从内存启动，看 WindowServer 还崩不崩。向 `UniXNU/AdrenoMetal` 开 PR（draft，写明没上机）、要不要同时报给 `steelbrain/metal2vulkan`，等用户说。核心那边的 PR 要等组件 PR 合并后才能指向上游取得到的提交。
-        - **cd17 的构建准备 19:16 重做完了（用户 19:1x 接回外置盘），等用户在自己的终端里构建。** 残留的镜像设备已 `hdiutil detach`，构建盘重新挂上，`diskutil verifyVolume` 通过（退出码 0），剩 85 GiB；日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），7 个日常文件和各自的备份逐字节相同；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑。工作分支：核心 `471172b` 之后只有文档提交，sheng `783cc8f`（带 Wi-Fi 三项，组件 `f677aa4`；`check-ath12k-exports.py` 过）。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。（17:47 做过一次，18:44 发现外置盘不在而失效。）
+        - **cd17 已构建完（19:30），见本文件顶部"cd17 构建成功"一条。** 构建前的准备（19:16，用户 19:1x 接回外置盘后重做）： 残留的镜像设备已 `hdiutil detach`，构建盘重新挂上，`diskutil verifyVolume` 通过（退出码 0），剩 85 GiB；日常文件 7 个哈希都对（`33d294c8`、`8a36fe56`、`35f03ec4`、`aeaf38ac`、`4d0e0464`、`39f9ad3f`、`5c926a3f`），7 个日常文件和各自的备份逐字节相同；OS 镜像 `141-22233-021.dmg` 只读挂在 scratchpad 的 `os-mount`（`/dev/disk9s1`，构建完要 `hdiutil detach`）；sheng 主检出目录里那 9 个根卷策略文件在（显示为已修改）；没有构建在跑。工作分支：核心 `471172b` 之后只有文档提交，sheng `783cc8f`（带 Wi-Fi 三项，组件 `f677aa4`；`check-ath12k-exports.py` 过）。命令：`sudo -v && ./unixnu build kernel payload --os macos-27 --data-ramdisk /Volumes/UniXNUBuild/unixnu-out/sheng/macos-27.3-26C5035r/sheng_macos/runtime/data.dbr`。构建完我另存 cd17 产物、还原日常文件、卸载 OS 镜像，照 cd16 的参数打测试镜像。（17:47 做过一次，18:44 发现外置盘不在而失效。）
     - **睡眠第 1 级（开着盖 `pmset sleepnow`）通过**，17:08:29 触发。日志在 `out/boot-logs/cd16-1117-1635/sleep2-*`（本地）：
       - 01:08:44 `sheng sleep: sleeping, lid open; wakes by lid yes, power key yes`，背光关；01:09:16.079 `IOCPUSleepKernel enter`；01:10:16.085 `sheng sleep: woke by timer (intid 27) after 60001 ms; sleeps 1, spurious 0, masked 0, ticks 5, unarmed 0, cpu_off failures 0, phase 5`；`panel back to its level 189 ms after the wake, 2 frames shown`。
       - 没有再出现 3 ms 被盖子叫醒。`pmset -g stats`：Sleep Count 1；`kern.sleeptime` 01:09:16，`kern.waketime` 01:10:16。WindowServer 没重启（pid 6733）。
