@@ -5,7 +5,19 @@
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-17 09:3x）：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）上机卡死的原因找到了：启动核进入睡眠时读 GIC 的方式 Gunyah 模拟不了，触发 panic。ArmCpu `a2c5dd3` 已修好，等用户构建 cd13 再上机。** 详情见下面"cd12 构建和上机"一条。 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
+**工作分支（2026-11-17 16:xx 起）：核心和 sheng 都在 `local/on-main-20261117` 上，不再用 `integrate/*`。**
+- 用户说作者（rponeawa）告诉他"提交都合了"，要求切回 main。核对结果：上游 `main`（核心 `ae4ee0e`、sheng `8a85350`）里没有睡眠改动；作者当天 15:1x 建了两个还没合进 main 的功能分支：核心 `upstream/feat/sheng-sleep-wake`（`2e64418`）、sheng `upstream/feat/platform-sleep-wake`（`7ffbb0b`，比 main 多 15 个提交）。用户选的基线：main ＋ 作者的两个分支 ＋ 上游没有的本地修复。
+- 分支的构成（`git log upstream/main..HEAD` 就是全部差异）：
+  - 核心：作者的 `2e64418`（ArmCpu 换成 `5f37026`，含我们的睡眠和 GIC 修复，睡眠钩子改成弱引用），上面 4 个提交：`29e63b4`（12 GiB：9 GiB 窗口和下限、Adreno740 页表位图、`memory-outside-report`）、`c0f8627`（`--auto-login` 文档行）、`f09e70f`（`local-tools`）、`3440539`（HANDOFF、计划、设计、规则）。
+  - sheng：作者的 15 个提交（睡眠主体、背光等画面、键盘壳和盖子），上面 6 个提交：`8a0c5f5`（SIGP 恢复的竞态，第 13 次入睡的 panic）、`8d1a536`（开盖入睡不再 3 ms 被唤醒）、`a28b056`（`kern.unixnu_wifi_log`）、`e92978e`（命名扫描、扫描带信道、Ath12kWifi 指向 fork 的 `b455da9`、`nwk_` 改名修复）、`ced5524`（porting.toml）、`8ca560d`（12 GiB 的 board.toml 设置）。
+  - 上游哪里都没有的（就是上面 sheng 的前 4 个和两边的 12 GiB 提交）：其中 `8a0c5f5`、`8d1a536`、扫描信道还没上机验证；Wi-Fi 命名扫描和日志导出推过 fork，但作者这次没收（`7ffbb0b` 写着 "retain the existing network boundary"）。
+- 做法：先在临时工作树里把 `integrate/upstream-20261117` 和作者的分支做三方合并（核心 2 处冲突、sheng 11 处；两边都有的用作者的，上游没有的修复用我们的），再从作者的分支出发按主题重新提交，最终内容和合并结果一致。和上次能通过编译的 sheng 内容相比，只多了作者的键盘壳日志常量和设备启动时发布计数器；内核补丁文件和补丁顺序没变（154 个能打上的结论仍成立）。
+- 本地 `main` 两边都指到了上游 `main`（上游改写过历史，不能快进），旧位置留在 `backup/main-20261113`；`git branch -f` 顺带把 `main` 的跟踪分支设成了 `upstream/main`。`integrate/*` 分支原样保留，都没推。
+- 检查（都在新分支上跑）：核心 `check-unixnu.py`、`scripts/unixnu` 和 `local-tools` 的测试、`tests/` 四组；ArmCpu 的 `check-mmio-access.py` 和 `check-sleep-host.py`；sheng porting record 18 个区、21 个主机检查和 `check-ath12k-exports.py`（不过的还是那 7 个无关的）；`ArmCpu.cpp`、`KeyboardProbe.cpp`、`ShengSleep.cpp` 用构建参数单独编译通过（`KeyboardCover.cpp` 没单独编）。
+- 作者的功能分支以后可能改写或换个形式合进 main；到时候在 main 上重放我们这几个提交，不要去合旧的 `integrate/*`。
+- cd16 还没构建成功过：命令不变，见下面"cd16 要带的修复"一条。
+
+以下"当前阶段"写于 2026-11-17 09:3x，已被上面这一段取代：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）上机卡死的原因找到了：启动核进入睡眠时读 GIC 的方式 Gunyah 模拟不了，触发 panic。ArmCpu `a2c5dd3` 已修好，等用户构建 cd13 再上机。** 详情见下面"cd12 构建和上机"一条。 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
 - 已提交：
   - ArmCpu `local/platform-sleep`：`6062866`（唤醒判定，主机测试）和 `a26ef5d`（副核 PSCI CPU_OFF、启动核屏蔽中断等唤醒、`initCPU(false)` 恢复）。核心 `3bec015` 指向它。
   - sheng：`97df6fa`（XNU 补丁 `sheng-platform-sleep.patch`，放在 series 最后）、`0fdf9db`、`35858cc`（盖子和电源键唤醒、吞掉叫醒系统的那次按键）、`c35f3bc`（睡眠时关背光）。
