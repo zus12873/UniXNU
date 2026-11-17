@@ -1,11 +1,11 @@
 # Handoff：小米平板 6S Pro（sheng）构建 macOS 27.3
 
-更新时间：2026-11-16
+更新时间：2026-11-17
 **内存更正（2026-11-14 实测）：这台平板是 12 GiB 内存，不是之前一直写的 16 GiB，见文末"用户想把内存拉满"一条。本文件其他地方的"16 GiB"都指这台机器。**
 
 目标：用 UniXNU 为小米平板 6S Pro（代号 sheng，SM8550）构建 macOS 27.3（profile `macos-27.3-26C5035r`）镜像，刷入 `userdata` 后用 `fastboot boot` 启动。
 
-当前阶段（2026-11-16 晚）：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）的代码写完，等整条分支的审查，然后构建上机。** 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
+当前阶段（2026-11-17 09:3x）：**真睡眠（suspend-to-idle，启动参数 `platform-sleep=1`）上机卡死的原因找到了：启动核进入睡眠时读 GIC 的方式 Gunyah 模拟不了，触发 panic。ArmCpu `a2c5dd3` 已修好，等用户构建 cd13 再上机。** 详情见下面"cd12 构建和上机"一条。 设计 `docs/superpowers/specs/2026-11-16-sheng-suspend-design.md`（用户批准），计划 `docs/superpowers/plans/2026-11-16-sheng-suspend.md`，进度和每条取舍在 `.superpowers/sdd/2026-11-16-sheng-suspend/progress.md`（本地，不入库）。
 - 已提交：
   - ArmCpu `local/platform-sleep`：`6062866`（唤醒判定，主机测试）和 `a26ef5d`（副核 PSCI CPU_OFF、启动核屏蔽中断等唤醒、`initCPU(false)` 恢复）。核心 `3bec015` 指向它。
   - sheng：`97df6fa`（XNU 补丁 `sheng-platform-sleep.patch`，放在 series 最后）、`0fdf9db`、`35858cc`（盖子和电源键唤醒、吞掉叫醒系统的那次按键）、`c35f3bc`（睡眠时关背光）。
@@ -68,6 +68,48 @@
     - sheng `28ae25a`：`BootLog.c` 的 `prev_log_copy` 在写第一笔之前，用 `native_ufs_part_read` 读回上一次的头、消息区、最新 64 个 slot 和启动检查点（约 4.3 MiB）；`kern.unixnu_prev_log`（`BootDiagExport.c`）给出这份拷贝；`read-sheng-log.py --prev` 还原后解码。
     - `check-boot-log-prev-host.py` 主机测试通过；两份源文件都用内核参数编过。`NativeUfs` 没有改。
   - 下一步：用户构建 cd12，然后从内存启动。SSH 里 `sysctl -b kern.unixnu_prev_log > prev.bin`，取回后用 `read-sheng-log.py --prev` 解码。
+- **cd12 构建和上机（11-17 08:18–09:20）：找到睡眠卡死的原因**
+  - cd12（用户在自己的终端里构建）：
+    - 内核 `40dea98b`，另存 `.cd12-40dea98b`。有 `_boot_log_prev`、`_sysctl__kern_unixnu_prev_log` 和日志字符串 "the previous run's log is kept"。
+    - 载荷 `26518ce3`，另存 `payload.cd12-base.img`。
+    - 日常文件已还原，哈希都对。来源记录：`cd12-build.json`、`cd12-images.json`。
+    - 中途外置盘断开过一次，重新挂上后 `verifyVolume` 没问题，哈希都对。
+  - 测试镜像，内核块都是 `610fa1f6`：
+    - `boot-v4-payload.bigwin-cd12-sleep.img`（`40166d15`），载荷 `d2ccd398`，参数和 cd11-sleep 逐字节相同；
+    - `boot-v4-payload.bigwin-cd12-read.img`（`6dd01249`），载荷 `0c40c83a`，只多 `enable-jobs=com.openssh.sshd`，不开睡眠，专门用来读日志。
+  - 第一趟 cd12-sleep（08:34）：
+    - 用户是合着盖开机的，系统马上以 "Clamshell Sleep" 进入睡眠，然后黑屏，电源键叫不醒，只能强制重启。
+    - 卡死那次（cd11）的日志拷贝只在这趟的内存里，跟着丢了。
+    - 但这趟自己的板级日志记下了整个过程：86 s，44 个 slot，没有写入错误。
+  - 第二趟 cd12-read（09:12，开着盖）：
+    - SSH 取回 `kern.unixnu_prev_log`，3,084,288 字节，存在 `out/boot-logs/cd12-prev-1117-0916.bin`（本地，不入库），解码在同名目录。
+    - Mac 这边的局域网换了网段，平板换过一次地址才连上。
+  - 解码结果：
+    - 睡眠一直走到底：0x12 → 0x13（tasks suspend，DriverKit 挂起）→ 0x14 → 0x15 → 0x16 → `PowerChangeDone` → 0x17 → 0x18（停副核）→ 0x19（启动核）。
+    - 之后板级日志记下一次 panic：`Unhandled implementation specific error: esr 0x96000010 far 0xfffffff7ce74c104`。
+    - 栈：`armcpuPlatformSleep+0xbc` ← `ml_arm_sleep+0x94` ← `processor_offline_intstack` ← `processor_offline`。
+    - 所以显示驱动断电（0x14）没有问题，`nolpm` 对照镜像用不上了。cd11 的日志流停在 0x13，只是因为 Wi-Fi 在那里断了；那次多半也是这个 panic。
+  - 原因：
+    - `+0xbc` 是 `ldr w12, [x8], #4`，`sleepBootWait` 保存 `GICD_ISENABLER1..` 的循环。`read32` 原来是普通的 volatile 解引用，编译器把它编成了后变址（post-index）加载。
+    - Gunyah 截获 GIC 的访问再模拟。带回写的访问 CPU 不给可解码的 syndrome（ISV=0），Gunyah 模拟不了，就注入同步外部中止（DFSC 0x10）。
+    - 前一条 `ldr w9, [x8, #4]`（读 `GICD_TYPER`）是普通形式，读成功了。
+    - 后面的 ICENABLER/ISENABLER 写循环同样编成了后变址 `str`，也会出同样的问题。
+  - 查过上游，没有：
+    - 仓库：UniXNU/ArmCpu（`origin/main` 新增的两个提交是文档和 owned-SGI probe）、UniXNU-sheng，以及 UniXNU、CrossDarwin 的 issue 和 PR。
+    - 关键词：`Unhandled implementation specific error`、`external abort`、`esr 0x96000010`、`post-index`、`writeback`、`ldr %w0`。
+  - 修复：ArmCpu `a2c5dd3`（`local/platform-sleep`）。
+    - `read8/write8/read32/write32/read64/write64` 改成内联汇编，每次只用一条 `ldr`/`str`、地址放在寄存器里，和 Linux arm64 `__raw_readl` 的做法一样。
+    - 原来绕开这些函数直接访问的 7 处（IROUTER、IPRIORITYR、GICR_TYPER）都改为走它们。
+    - `tools/check-mmio-access.py`：检查没有访问绕开这些函数，并按驱动里的循环形状在 `-Os`/`-O2` 下编译，确认没有回写、成对或 SIMD 访问。改之前跑是失败的：读循环、两个写循环加 7 处直接访问；改之后通过。睡眠主机测试 1038 项也通过。
+    - 用内核参数编出的 `ArmCpu.o` 里，设备访问都是单寄存器的 `ldr`/`str`；剩下的 SIMD 和成对访问都在栈或普通内存上。
+  - sheng 板级的睡眠钩子不用改：
+    - 在 cd12 内核里反汇编过 `prepare`、`restore`、`shouldWake`、`sheng_buttons_sleep_check`；
+    - TLMM 和 PMIC 的访问都是单寄存器形式，SIMD 和成对访问只在 `gSaved`/`gAsleep` 数组上；
+    - 这几个钩子还没真正跑过：panic 发生在它们之前。
+  - 还没解决：
+    - panic 之后系统没有重启，停在黑屏。以前的 panic 都会重启，睡眠里副核已经 CPU_OFF、启动核屏蔽了中断，可能是这个原因，没查。
+    - 合着盖开机会直接进入睡眠：这是设计上合盖即睡眠的结果，不是 bug，但上机时要开着盖开机。
+  - 下一步：用户构建 cd13（核心指向 `a2c5dd3`），打 cd13-sleep，重新做第 1 级（`pmset sleepnow`，60 s 后自己醒）。
 - 整条分支的审查（11-16 晚）结论是"改完再构建"，下面是问题和处理情况：
   - 两处严重问题，正在改：
     - 启动核恢复时没给自己发 IPI，`processor_cpu_reinit` 会一直等，结果每次唤醒都挂住；
